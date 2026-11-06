@@ -167,6 +167,54 @@ final class AttendanceServiceTests: XCTestCase {
         XCTAssertEqual(service.todayAction(for: employee), .markDeparture(openSince: at(6, 9, 0)))
     }
 
+    func testMarksAreTruncatedToWholeMinutes() throws {
+        let service = try makeService(now: at(6, 8, 2).addingTimeInterval(50))
+        let employee = addEmployee(breakMinutes: 60)
+        try service.markArrival(employee)
+        clock = at(6, 17, 2).addingTimeInterval(10)
+
+        let r = try service.markDeparture(employee)
+
+        XCTAssertEqual(r.arrivalTime, at(6, 8, 2))
+        XCTAssertEqual(r.departureTime, at(6, 17, 2))
+        XCTAssertEqual(r.workedMinutes, 480)
+
+        let saved = try service.save(employee: employee, day: r.day, status: r.status, arrival: r.arrivalTime,
+                                     departure: r.departureTime, breakMinutes: r.breakMinutes,
+                                     manualMinutes: r.manualWorkedMinutes, comment: r.comment)
+        XCTAssertEqual(saved.workedMinutes, 480)
+    }
+
+    func testTomorrowsUnfinishedRecordIsNotOpen() throws {
+        let service = try makeService(now: at(6, 10, 0))
+        let employee = addEmployee()
+        try service.save(employee: employee, day: at(7, 0, 0), status: .present, arrival: at(7, 8, 0),
+                         departure: nil, breakMinutes: 60, manualMinutes: nil, comment: "")
+
+        XCTAssertNil(service.openRecord(for: employee))
+        XCTAssertEqual(service.todayAction(for: employee), .markArrival)
+    }
+
+    func testTodaysArrivalLaterThanNowIsNotOpen() throws {
+        let service = try makeService(now: at(6, 7, 0))
+        let employee = addEmployee()
+        try service.save(employee: employee, day: at(6, 0, 0), status: .present, arrival: at(6, 20, 0),
+                         departure: nil, breakMinutes: 60, manualMinutes: nil, comment: "")
+
+        XCTAssertNil(service.openRecord(for: employee))
+        XCTAssertNil(service.staleOpenRecord(for: employee))
+    }
+
+    func testTodaysUnfinishedRecordOlderThanSixteenHoursIsStale() throws {
+        let service = try makeService(now: at(6, 0, 10))
+        let employee = addEmployee()
+        let r = try service.markArrival(employee)
+        clock = at(6, 23, 0)
+
+        XCTAssertNil(service.openRecord(for: employee))
+        XCTAssertEqual(service.staleOpenRecord(for: employee)?.id, r.id)
+    }
+
     func testOpenRecordOlderThanYesterdayIsNotOpen() throws {
         let service = try makeService(now: at(3, 8, 0))
         let employee = addEmployee()

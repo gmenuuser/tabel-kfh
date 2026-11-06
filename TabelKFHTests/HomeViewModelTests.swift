@@ -117,6 +117,7 @@ final class HomeViewModelTests: XCTestCase {
         XCTAssertEqual(row.action, .markArrival)
         XCTAssertEqual(row.statusText, "Не отмечен")
         XCTAssertEqual(row.staleOpenDay, calendar.date(day: 5, month: 11, year: 2026))
+        XCTAssertEqual(row.staleNoteText, "Вчера не отмечен уход")
         XCTAssertEqual(model.staleOpenRecord(for: employee)?.day, calendar.date(day: 5, month: 11, year: 2026))
         XCTAssertEqual(model.atWorkCount, 0)
 
@@ -125,6 +126,47 @@ final class HomeViewModelTests: XCTestCase {
         XCTAssertNil(model.confirmation)
         XCTAssertEqual(model.rows.first?.action, .markDeparture(openSince: at(6, 9, 0)))
         XCTAssertEqual(model.rows.first?.staleOpenDay, calendar.date(day: 5, month: 11, year: 2026))
+    }
+
+    func testTodaysForgottenDepartureShowsNote() throws {
+        try setUpStore(now: at(6, 0, 10))
+        let employee = addEmployee("Алексеев")
+        try service().markArrival(employee)
+        clock = at(6, 23, 0)
+
+        let row = try XCTUnwrap(makeModel().rows.first)
+
+        XCTAssertEqual(row.staleOpenDay, calendar.date(day: 6, month: 11, year: 2026))
+        XCTAssertEqual(row.staleNoteText, "Не отмечен уход")
+    }
+
+    func testDepartureSoonAfterArrivalAsksForConfirmation() throws {
+        try setUpStore(now: at(6, 8, 0))
+        let employee = addEmployee("Алексеев")
+        try service().markArrival(employee)
+        clock = at(6, 8, 3)
+        let model = makeModel()
+
+        model.tapPrimary(employee)
+
+        let confirmation = try XCTUnwrap(model.confirmation)
+        XCTAssertEqual(confirmation.message, "Уход через 3 мин после прихода. Отметить уход?")
+        XCTAssertNil(service().record(for: employee, day: at(6, 0, 0))?.departureTime)
+        model.confirm(confirmation)
+        XCTAssertEqual(service().record(for: employee, day: at(6, 0, 0))?.departureTime, at(6, 8, 3))
+    }
+
+    func testDepartureAfterFiveMinutesNeedsNoConfirmation() throws {
+        try setUpStore(now: at(6, 8, 0))
+        let employee = addEmployee("Алексеев")
+        try service().markArrival(employee)
+        clock = at(6, 8, 5)
+        let model = makeModel()
+
+        model.tapPrimary(employee)
+
+        XCTAssertNil(model.confirmation)
+        XCTAssertEqual(service().record(for: employee, day: at(6, 0, 0))?.departureTime, at(6, 8, 5))
     }
 
     func testNoStaleNoteForNightShift() throws {
