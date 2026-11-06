@@ -74,7 +74,7 @@ enum CoalReportXLSXWriter {
                 addRow([])
                 mergedLine(s, .heading, height: 18)
             case .table(let t):
-                addRow(t.columns.map { cell(.text($0.title), .header) }, height: 30)
+                addRow(t.columns.map { cell(.text($0.title), nil, style: .header) }, height: 30)
                 for r in t.rows { addRow(r.map { cell($0, nil) }) }
                 if let total = t.total { addRow(total.map { cell($0, true) }) }
             case .pairs(let pairs):
