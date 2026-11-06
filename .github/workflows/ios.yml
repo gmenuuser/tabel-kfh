@@ -1,0 +1,78 @@
+name: iOS
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ios-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  build-test:
+    runs-on: macos-15
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Xcode
+        run: |
+          sudo xcode-select -s "$(ls -d /Applications/Xcode_16*.app | sort -V | tail -1)"
+          xcodebuild -version
+
+      - name: Generate project
+        run: |
+          brew install xcodegen
+          xcodegen generate
+
+      - name: Pick simulator
+        id: sim
+        run: |
+          UDID=$(xcrun simctl list devices available -j | python3 -c "
+          import json,sys
+          d=json.load(sys.stdin)['devices']
+          c=[(k,x) for k,v in d.items() if 'iOS' in k for x in v if x['name'].startswith('iPhone')]
+          c.sort(key=lambda t:(t[0],t[1]['name']))
+          print(c[-1][1]['udid'])")
+          echo "udid=$UDID" >> "$GITHUB_OUTPUT"
+          xcrun simctl list devices | grep "$UDID"
+
+      - name: Test
+        run: |
+          set -o pipefail
+          xcodebuild test \
+            -project TabelKFH.xcodeproj -scheme TabelKFH \
+            -destination "id=${{ steps.sim.outputs.udid }}" \
+            -resultBundlePath TestResults.xcresult \
+            CODE_SIGNING_ALLOWED=NO | tee xcodebuild-test.log | grep -E "error:|warning: .*TabelKFH|Test Case|Executed|\*\*"
+
+      - name: Unsigned IPA
+        if: success()
+        run: |
+          set -o pipefail
+          xcodebuild archive \
+            -project TabelKFH.xcodeproj -scheme TabelKFH \
+            -configuration Release -destination "generic/platform=iOS" \
+            -archivePath build/TabelKFH.xcarchive \
+            CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY="" | tail -5
+          mkdir -p build/ipa/Payload
+          cp -R build/TabelKFH.xcarchive/Products/Applications/TabelKFH.app build/ipa/Payload/
+          (cd build/ipa && zip -qry ../TabelKFH-unsigned.ipa Payload)
+          ls -la build/TabelKFH-unsigned.ipa
+
+      - uses: actions/upload-artifact@v4
+        if: success()
+        with:
+          name: TabelKFH-unsigned-ipa
+          path: build/TabelKFH-unsigned.ipa
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: test-results
+          path: |
+            TestResults.xcresult
+            xcodebuild-test.log
+          if-no-files-found: ignore
