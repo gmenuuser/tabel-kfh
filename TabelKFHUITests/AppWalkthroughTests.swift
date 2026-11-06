@@ -85,6 +85,12 @@ final class AppWalkthroughTests: XCTestCase {
         app.launchArguments = ["-uitest", "-AppleLanguages", "(ru)", "-AppleLocale", "ru_RU"]
         if dark { app.launchArguments.append("-uitest-dark") }
         app.launch()
+        // The start screen asks for the part of the app.
+        let timesheet = app.buttons["chooseTimesheet"]
+        XCTAssertTrue(timesheet.waitForExistence(timeout: 15), "the start screen offers «Табель»")
+        XCTAssertTrue(app.buttons["chooseCoal"].exists, "and «Уголь»")
+        if !dark { shot("00-start") }
+        timesheet.tap()
     }
 
     private func addEmployee(screenshot: String?) {

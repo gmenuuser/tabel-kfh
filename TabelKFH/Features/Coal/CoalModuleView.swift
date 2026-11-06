@@ -56,13 +56,13 @@ struct CoalCloseButton: ToolbarContent {
     }
 }
 
-/// The large «Продажа угля» card on Главная. The module opens again on launch when it was left open.
+/// The large «Продажа угля» card on Главная: switches to the coal part without going back to the start screen.
 struct CoalEntryCard: View {
-    @AppStorage("coalModuleOpen") private var isOpen = false
+    @Environment(\.openSection) private var openSection
 
     var body: some View {
         Button {
-            isOpen = true
+            openSection(.coal)
         } label: {
             HStack(spacing: 14) {
                 Image(systemName: "truck.box.fill")
@@ -84,9 +84,6 @@ struct CoalEntryCard: View {
         .buttonStyle(.plain)
         .accessibilityLabel("Продажа угля")
         .accessibilityIdentifier("openCoalModule")
-        .fullScreenCover(isPresented: $isOpen) {
-            CoalModuleView { isOpen = false }
-        }
     }
 }
 

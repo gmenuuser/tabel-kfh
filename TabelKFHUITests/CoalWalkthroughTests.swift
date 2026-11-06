@@ -11,7 +11,11 @@ final class CoalWalkthroughTests: XCTestCase {
 
     func testCoalDay() throws {
         launch(dark: false)
-        openModule()
+        // «Уголь» on the start screen opens the module directly.
+        let coal = app.buttons["chooseCoal"]
+        XCTAssertTrue(coal.waitForExistence(timeout: 15), "the start screen offers «Уголь»")
+        coal.tap()
+        XCTAssertTrue(app.navigationBars["Продажи за сегодня"].waitForExistence(timeout: 10))
         shot("30-coal-today-empty")
 
         tab("Водители")
@@ -83,6 +87,10 @@ final class CoalWalkthroughTests: XCTestCase {
 
     func testCoalDark() throws {
         launch(dark: true)
+        // «Табель», then the «Продажа угля» card on Главная.
+        let timesheet = app.buttons["chooseTimesheet"]
+        XCTAssertTrue(timesheet.waitForExistence(timeout: 15))
+        timesheet.tap()
         openModule()
         tab("Водители")
         addDriver("Мунгалов", "Сергей")

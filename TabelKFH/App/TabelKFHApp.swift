@@ -13,11 +13,7 @@ struct TabelKFHApp: App {
         let uiTest = arguments.contains("-uitest")
         // The farm's day keys use the zone stored on the first launch (UI tests: a fixed zone).
         Calendar.useFarmTimeZone(FarmTimeZone().launchZone(uiTest: uiTest))
-        if uiTest {
-            AppClock.startAtFixedMoment()
-            // Every UI test starts on Главная, not in the coal module left open by the previous one.
-            UserDefaults.standard.removeObject(forKey: "coalModuleOpen")
-        }
+        if uiTest { AppClock.startAtFixedMoment() }
         forcedScheme = uiTest && arguments.contains("-uitest-dark") ? .dark : nil
         do {
             container = try makeModelContainer(inMemory: uiTest)
@@ -28,7 +24,7 @@ struct TabelKFHApp: App {
 
     var body: some Scene {
         WindowGroup {
-            RootTabView()
+            AppRootView()
                 .environment(\.locale, Locale(identifier: "ru_RU"))
                 .preferredColorScheme(forcedScheme)
         }
