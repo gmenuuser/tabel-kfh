@@ -16,7 +16,15 @@ export interface AppOptions {
   log?: (line: string) => void;
   /** Sign-in attempts per address and minute (20). */
   authAttemptsPerMinute?: number;
+  /** The built site (web/dist): served from the same address, so no CORS and no second server. */
+  webDir?: string;
 }
+
+const STATIC_TYPES: Record<string, string> = {
+  '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.css': 'text/css; charset=utf-8',
+  '.svg': 'image/svg+xml', '.png': 'image/png', '.webmanifest': 'application/manifest+json', '.json': 'application/json',
+  '.woff2': 'font/woff2', '.ico': 'image/x-icon',
+};
 
 declare module 'fastify' {
   interface FastifyRequest { session: Session }
@@ -70,6 +78,22 @@ export function buildApp(o: AppOptions): FastifyInstance {
     const r = await tx.query('INSERT INTO devices (farm_id, user_id, name, platform, token_hash) VALUES ($1, $2, $3, $4, $5) RETURNING id',
       [farmId, userId, String(name ?? '').slice(0, 100), p, sha256(token)]);
     return { token, deviceId: r.rows[0].id as string };
+  }
+
+  if (o.webDir && existsSync(join(o.webDir, 'index.html'))) {
+    const webDir = o.webDir;
+    const sendFile = (reply: FastifyReply, rel: string) => {
+      const path = join(webDir, rel);
+      if (!path.startsWith(webDir) || !existsSync(path)) return fail(reply, 404, 'Не найдено');
+      const ext = rel.slice(rel.lastIndexOf('.'));
+      // index.html and the service worker are always checked again; the hashed assets are kept for a year.
+      const cache = rel.startsWith('assets/') ? 'public, max-age=31536000, immutable' : 'no-cache';
+      return reply.header('content-type', STATIC_TYPES[ext] ?? 'application/octet-stream').header('cache-control', cache)
+        .send(readFileSync(path));
+    };
+    app.get('/', (_req, reply) => sendFile(reply, 'index.html'));
+    app.get('/assets/:file', (req, reply) => sendFile(reply, `assets/${(req.params as { file: string }).file}`));
+    for (const f of ['sw.js', 'manifest.webmanifest', 'icon.svg']) app.get(`/${f}`, (_req, reply) => sendFile(reply, f));
   }
 
   app.get('/health', async () => {

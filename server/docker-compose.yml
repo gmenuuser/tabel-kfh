@@ -20,7 +20,9 @@ services:
       retries: 10
 
   api:
-    build: .
+    build:
+      context: ..
+      dockerfile: server/Dockerfile
     restart: unless-stopped
     depends_on:
       db:

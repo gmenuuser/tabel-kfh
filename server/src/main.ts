@@ -10,7 +10,8 @@ if (!url) {
 }
 const db = createPool(url);
 await migrate(db, join(import.meta.dirname, '..', 'sql'));
-const app = buildApp({ db, dataDir: process.env.DATA_DIR ?? join(import.meta.dirname, '..', 'data') });
+const app = buildApp({ db, dataDir: process.env.DATA_DIR ?? join(import.meta.dirname, '..', 'data'),
+                      webDir: process.env.WEB_DIR ?? join(import.meta.dirname, '..', '..', 'web', 'dist') });
 const port = Number(process.env.PORT ?? 8080);
 await app.listen({ port, host: '0.0.0.0' });
 console.log(`КФХ — Учёт API on :${port}`);

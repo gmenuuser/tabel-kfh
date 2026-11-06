@@ -1,0 +1,9 @@
+**/node_modules
+**/dist
+build
+TabelKFH*
+docs
+.git
+server/data
+server/backups
+server/.env

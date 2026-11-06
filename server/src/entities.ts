@@ -66,7 +66,8 @@ export function validate(entity: string, d: Data): string[] {
   switch (entity) {
     case 'hoursMark':
       need(typeof d.employeeId === 'string', 'Не указан сотрудник');
-      need([0, 4, 8, 12].includes(d.hours as number), 'Часы — 0, 4, 8 или 12');
+      // null = the mark was removed (the same stable record id is used again when the day is marked anew).
+      need(d.hours === null || [0, 4, 8, 12].includes(d.hours as number), 'Часы — 0, 4, 8 или 12');
       break;
     case 'coalSale':
       need(positiveInt(d.kilograms), 'Количество угля — целое число килограммов больше нуля');
