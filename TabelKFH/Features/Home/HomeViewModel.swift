@@ -207,8 +207,8 @@ final class HomeViewModel {
         return f
     }
 
-    private static let timeFormatter = formatter("HH:mm")
-    private static let dayTimeFormatter = formatter("dd.MM HH:mm")
+    private static var timeFormatter: DateFormatter { formatter("HH:mm") }
+    private static var dayTimeFormatter: DateFormatter { formatter("dd.MM HH:mm") }
     /// «пятница, 6 ноября 2026».
-    private static let dateFormatter = formatter("EEEE, d MMMM y")
+    private static var dateFormatter: DateFormatter { formatter("EEEE, d MMMM y") }
 }

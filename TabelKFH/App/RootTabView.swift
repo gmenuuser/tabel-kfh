@@ -33,6 +33,9 @@ struct RootTabView: View {
                 .tag(Tab.settings)
         }
         .tint(Theme.primary)
+        // Date pickers show and set times on the farm's calendar and zone, like every day key.
+        .environment(\.calendar, Calendar.farm)
+        .environment(\.timeZone, Calendar.farm.timeZone)
         .onAppear {
             // The store keeps exactly one settings row; it is made on the first launch.
             FarmSettingsStore.current(in: context)

@@ -138,12 +138,12 @@ enum EmployeeFormatting {
     /// «05.11.2026».
     static func date(_ d: Date) -> String { dateFormatter.string(from: d) }
 
-    private static let dateFormatter: DateFormatter = {
+    private static var dateFormatter: DateFormatter {
         let f = DateFormatter()
         f.calendar = Calendar.farm
         f.locale = Locale(identifier: "ru_RU")
         f.timeZone = Calendar.farm.timeZone
         f.dateFormat = "dd.MM.yyyy"
         return f
-    }()
+    }
 }

@@ -17,11 +17,12 @@ enum TimesheetError: LocalizedError, Equatable {
 final class TimesheetService {
     private let context: ModelContext
     private let now: () -> Date
-    private let calendar = Calendar.farm
+    private let calendar: Calendar
 
-    init(context: ModelContext, now: @escaping () -> Date = AppClock.now) {
+    init(context: ModelContext, now: @escaping () -> Date = AppClock.now, calendar: Calendar = .farm) {
         self.context = context
         self.now = now
+        self.calendar = calendar
     }
 
     /// A new version for (month, year, employee): the last version + 1. `employee == nil` = всё хозяйство.
@@ -36,7 +37,7 @@ final class TimesheetService {
         if let employee {
             people = [employee]
         } else {
-            people = EmployeeService(context: context).employed(from: first, through: last)
+            people = EmployeeService(context: context, calendar: calendar).employed(from: first, through: last)
         }
         let employees = people.map { e in
             EmployeeSnapshot(id: e.id, fullName: e.fullName, position: e.position,

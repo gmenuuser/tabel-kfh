@@ -64,10 +64,11 @@ enum EmployeeError: LocalizedError, Equatable {
 @MainActor
 final class EmployeeService {
     private let context: ModelContext
-    private let calendar = Calendar.farm
+    private let calendar: Calendar
 
-    init(context: ModelContext) {
+    init(context: ModelContext, calendar: Calendar = .farm) {
         self.context = context
+        self.calendar = calendar
     }
 
     @discardableResult
@@ -121,6 +122,23 @@ final class EmployeeService {
 
     func archived() -> [Employee] {
         Self.sortedByName(all().filter(\.isArchived))
+    }
+
+    /// Я days and worked minutes of `records`, counting, like the timesheet, only days within `e`'s employment;
+    /// an unfinished day counts as a day with 0 minutes.
+    static func monthTotals(_ records: [AttendanceRecord], of e: Employee,
+                            calendar: Calendar = .farm) -> (presentDays: Int, minutes: Int) {
+        let hire = calendar.dayStart(e.hireDate)
+        let dismissal = e.dismissalDate.map { calendar.dayStart($0) }
+        let counted = records.filter { r in
+            let day = calendar.dayStart(r.day)
+            return r.status == .present && day >= hire && (dismissal.map { day <= $0 } ?? true)
+        }
+        let minutes = counted.map { r in
+            let unfinished = r.arrivalTime != nil && r.departureTime == nil && r.manualWorkedMinutes == nil
+            return unfinished ? 0 : WorkTimeCalculator.effectiveMinutes(r)
+        }
+        return (counted.count, minutes.reduce(0, +))
     }
 
     /// By ФИО in Russian alphabetical order, ignoring case.

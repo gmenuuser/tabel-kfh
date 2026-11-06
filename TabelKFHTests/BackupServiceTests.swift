@@ -25,7 +25,7 @@ final class BackupServiceTests: XCTestCase {
     }
 
     private func service() -> BackupService {
-        BackupService(context: context, now: { [unowned self] in self.clock })
+        BackupService(context: context, now: { [unowned self] in self.clock }, adoptTimeZone: { _ in })
     }
 
     private func attendance() -> AttendanceService {

@@ -34,14 +34,15 @@ enum AttendanceError: LocalizedError, Equatable {
 final class AttendanceService {
     private let context: ModelContext
     private let now: () -> Date
-    private let calendar = Calendar.farm
+    private let calendar: Calendar
 
     /// An arrival without a departure counts as «на работе» for at most this long.
     static let maxOpenShift: TimeInterval = 16 * 3600
 
-    init(context: ModelContext, now: @escaping () -> Date = AppClock.now) {
+    init(context: ModelContext, now: @escaping () -> Date = AppClock.now, calendar: Calendar = .farm) {
         self.context = context
         self.now = now
+        self.calendar = calendar
     }
 
     private var today: Date { calendar.dayStart(now()) }

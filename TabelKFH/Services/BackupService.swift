@@ -7,11 +7,16 @@ import SwiftData
 final class BackupService {
     private let context: ModelContext
     private let now: () -> Date
-    private let calendar = Calendar.farm
+    private let calendar: Calendar
+    /// Called after a successful restore with the backup's farm time zone (or the current one).
+    private let adoptTimeZone: (TimeZone) -> Void
 
-    init(context: ModelContext, now: @escaping () -> Date = AppClock.now) {
+    init(context: ModelContext, now: @escaping () -> Date = AppClock.now, calendar: Calendar = .farm,
+         adoptTimeZone: @escaping (TimeZone) -> Void = FarmTimeZone.adoptInApp) {
         self.context = context
         self.now = now
+        self.calendar = calendar
+        self.adoptTimeZone = adoptTimeZone
     }
 
     /// «1.0» from the app bundle.
@@ -36,7 +41,8 @@ final class BackupService {
         return BackupPayload(settings: FarmSettingsStore.current(in: context).info,
                              employees: employees.map(Self.backup),
                              records: records.map(Self.backup),
-                             snapshots: snapshots.map(Self.backup))
+                             snapshots: snapshots.map(Self.backup),
+                             timeZone: calendar.timeZone.identifier)
     }
 
     func makeBackup() throws -> Data {
@@ -115,6 +121,8 @@ final class BackupService {
             context.rollback()
             throw error
         }
+        // The backup's day keys are midnights of its farm zone; a backup without one keeps the current zone.
+        adoptTimeZone(p.timeZone.flatMap(TimeZone.init(identifier:)) ?? calendar.timeZone)
     }
 
     /// «Копия от 06.11.2026: 5 сотрудников, 120 отметок. Текущие данные будут заменены.»

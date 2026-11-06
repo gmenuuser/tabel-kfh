@@ -41,6 +41,9 @@ struct BackupPayload: Codable, Equatable {
     var employees: [EmployeeBackup]
     var records: [RecordBackup]
     var snapshots: [SnapshotBackup]
+    /// The farm's time zone identifier («Asia/Yekaterinburg»). Absent in older files: the restore then keeps
+    /// the current farm zone. Left out of the JSON when nil, so older files keep their checksum.
+    var timeZone: String? = nil
 }
 
 /// The backup file: a header that identifies it and the payload with its checksum.
@@ -124,7 +127,13 @@ enum BackupCodec {
         let day: Date
     }
 
-    private static func validate(_ p: BackupPayload, calendar: Calendar = .farm) throws {
+    /// Day keys are compared in the backup's own farm zone; an unknown zone identifier is invalid data.
+    private static func validate(_ p: BackupPayload) throws {
+        var calendar = Calendar.farm
+        if let identifier = p.timeZone {
+            guard let zone = TimeZone(identifier: identifier) else { throw BackupError.invalidData }
+            calendar = .farm(timeZone: zone)
+        }
         let employeeIds = Set(p.employees.map(\.id))
         guard employeeIds.count == p.employees.count,
               Set(p.records.map(\.id)).count == p.records.count,

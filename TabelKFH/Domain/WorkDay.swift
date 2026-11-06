@@ -1,14 +1,26 @@
 import Foundation
 
 extension Calendar {
-    /// Gregorian, Russian locale, weeks start on Monday, device time zone.
-    static let farm: Calendar = {
+    /// Gregorian, Russian locale, weeks start on Monday, in the farm's time zone (`FarmTimeZone`):
+    /// every day key of the app — records, hire and dismissal dates, the timesheet — goes through it.
+    static var farm: Calendar { farmCalendar }
+
+    /// Set at launch and after a restore; the device's zone only until the app has started.
+    private static var farmCalendar = Calendar.farm(timeZone: .current)
+
+    /// The farm calendar in `timeZone` (tests build services with an explicit one).
+    static func farm(timeZone: TimeZone) -> Calendar {
         var calendar = Calendar(identifier: .gregorian)
         calendar.locale = Locale(identifier: "ru_RU")
         calendar.firstWeekday = 2
-        calendar.timeZone = .current
+        calendar.timeZone = timeZone
         return calendar
-    }()
+    }
+
+    /// Makes `Calendar.farm` use `timeZone` from now on.
+    static func useFarmTimeZone(_ timeZone: TimeZone) {
+        farmCalendar = farm(timeZone: timeZone)
+    }
 
     func dayStart(_ d: Date) -> Date {
         startOfDay(for: d)
