@@ -116,7 +116,7 @@ final class TimesheetServiceTests: XCTestCase {
         try context.save()
         try work(e, 2, from: 9, to: 17)
         try status(e, 3, .sick)
-        context.insert(FarmSettings(farmName: "КФХ Новое"))
+        FarmSettingsStore.current(in: context).farmName = "КФХ Новое"
         try context.save()
         clock = at(2, 9, 0, month: 12)
 

@@ -226,7 +226,8 @@ final class HomeViewModelTests: XCTestCase {
     func testFarmNameAndDateTitle() throws {
         try setUpStore(now: at(6, 9, 0))
         XCTAssertEqual(makeModel().farmName, "КФХ Зубахин")
-        context.insert(FarmSettings(farmName: "КФХ Иванов"))
+        XCTAssertEqual(try context.fetchCount(FetchDescriptor<FarmSettings>()), 1, "created on first use")
+        FarmSettingsStore.current(in: context).farmName = "КФХ Иванов"
         try context.save()
 
         let model = makeModel()
