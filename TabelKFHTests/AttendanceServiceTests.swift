@@ -188,8 +188,13 @@ final class AttendanceServiceTests: XCTestCase {
     func testTomorrowsUnfinishedRecordIsNotOpen() throws {
         let service = try makeService(now: at(6, 10, 0))
         let employee = addEmployee()
-        try service.save(employee: employee, day: at(7, 0, 0), status: .present, arrival: at(7, 8, 0),
-                         departure: nil, breakMinutes: 60, manualMinutes: nil, comment: "")
+        // save refuses times for a future day, so the record is put into the store directly
+        // (as old data or a restored backup could have it).
+        let record = AttendanceRecord(employeeId: employee.id, day: calendar.date(day: 7, month: 11, year: 2026),
+                                      arrivalTime: at(7, 8, 0), breakMinutes: 60)
+        context.insert(record)
+        record.employee = employee
+        try context.save()
 
         XCTAssertNil(service.openRecord(for: employee))
         XCTAssertEqual(service.todayAction(for: employee), .markArrival)
