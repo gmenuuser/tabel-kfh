@@ -8,7 +8,7 @@ struct RootTabView: View {
 
     var body: some View {
         TabView(selection: $tab) {
-            NavigationStack { TabPlaceholder(title: "Главная") }
+            NavigationStack { HomeView() }
                 .tabItem { Label("Главная", systemImage: "house") }
                 .tag(Tab.home)
             NavigationStack { TabPlaceholder(title: "Сотрудники") }
