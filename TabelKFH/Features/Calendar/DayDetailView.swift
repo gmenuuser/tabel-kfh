@@ -27,7 +27,7 @@ struct DayDetailView: View {
                 }
             } footer: {
                 if isFuture && !entries.isEmpty {
-                    Text("Будущий день: можно заранее отметить выходной, больничный, отпуск, отгул или командировку.")
+                    Text("Будущий день: можно заранее отметить выходной, больничный, отпуск, отгул, прогул или командировку.")
                 }
             }
         }
@@ -37,14 +37,14 @@ struct DayDetailView: View {
     }
 
     /// «6 ноября, пятница».
-    private static let dayFormatter: DateFormatter = {
+    private static var dayFormatter: DateFormatter {
         let f = DateFormatter()
         f.calendar = Calendar.farm
         f.locale = Locale(identifier: "ru_RU")
         f.timeZone = Calendar.farm.timeZone
         f.dateFormat = "d MMMM, EEEE"
         return f
-    }()
+    }
 }
 
 private struct DayEntryRow: View {
