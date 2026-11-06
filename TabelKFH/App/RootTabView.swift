@@ -14,7 +14,7 @@ struct RootTabView: View {
             NavigationStack { EmployeesView() }
                 .tabItem { Label("Сотрудники", systemImage: "person.2") }
                 .tag(Tab.employees)
-            NavigationStack { TabPlaceholder(title: "Календарь") }
+            NavigationStack { CalendarView() }
                 .tabItem { Label("Календарь", systemImage: "calendar") }
                 .tag(Tab.calendar)
             NavigationStack { TabPlaceholder(title: "Табель") }

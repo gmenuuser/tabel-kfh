@@ -30,7 +30,7 @@ struct EmployeeHistoryView: View {
             Section {
                 monthSwitcher
                 LabeledContent("Дней явки", value: "\(presentDays)")
-                LabeledContent("Отработано", value: HomeViewModel.durationText(workedMinutes))
+                LabeledContent("Отработано", value: durationText(minutes: workedMinutes))
             }
 
             Section {
@@ -185,7 +185,7 @@ private struct HistoryDayRow: View {
     /// «08:00–17:00 · 8 ч», «22:00–? · не закрыт», «7 ч 30 мин» (manual total without times).
     private func timesText(_ r: AttendanceRecord) -> String {
         let hasTotal = r.manualWorkedMinutes != nil || r.workedMinutes != nil
-        let hours = hasTotal ? HomeViewModel.durationText(WorkTimeCalculator.effectiveMinutes(r)) : "не закрыт"
+        let hours = hasTotal ? durationText(minutes: WorkTimeCalculator.effectiveMinutes(r)) : "не закрыт"
         guard let arrival = r.arrivalTime else {
             return hasTotal ? hours : "Время не указано"
         }

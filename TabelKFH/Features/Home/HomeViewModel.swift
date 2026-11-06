@@ -178,7 +178,7 @@ final class HomeViewModel {
         }
         var hours = "—"
         if let shown, shown.status == .present, shown.workedMinutes != nil || shown.manualWorkedMinutes != nil {
-            hours = Self.durationText(WorkTimeCalculator.effectiveMinutes(shown))
+            hours = durationText(minutes: WorkTimeCalculator.effectiveMinutes(shown))
         }
         let staleDay = service.staleOpenRecord(for: e)?.day
         return Row(employee: e, action: action, statusText: status,
@@ -194,13 +194,6 @@ final class HomeViewModel {
         guard let date else { return "—" }
         if calendar.dayStart(date) == today { return Self.time(date) }
         return Self.dayTimeFormatter.string(from: date)
-    }
-
-    /// «7 ч 30 мин», «8 ч», «45 мин».
-    static func durationText(_ minutes: Int) -> String {
-        let h = minutes / 60, m = minutes % 60
-        if h == 0 { return "\(m) мин" }
-        return m == 0 ? "\(h) ч" : "\(h) ч \(m) мин"
     }
 
     static func time(_ date: Date) -> String { timeFormatter.string(from: date) }

@@ -1,7 +1,8 @@
 import SwiftUI
 import SwiftData
 
-/// Edits one employee's mark for one day (any past day): status, times, break, manual total, comment.
+/// Edits one employee's mark for one day: status, times, break, manual total, comment.
+/// A future day takes only planned absences (В, Б, О, ОТ, К) and no times.
 /// Used from Home, Calendar and the employee's history. Dismisses itself after saving or deleting.
 struct RecordEditorView: View {
     let employee: Employee
@@ -27,11 +28,15 @@ struct RecordEditorView: View {
     @State private var confirmDelete = false
 
     private let calendar = Calendar.farm
+    private let today: Date
 
     init(employee: Employee, day: Date) {
         self.employee = employee
         let start = Calendar.farm.dayStart(day)
+        let today = Calendar.farm.dayStart(Date())
         self.day = start
+        self.today = today
+        _status = State(initialValue: start > today ? .dayOff : .present)
         _arrivalClock = State(initialValue: WorkTimeCalculator.clock(DateComponents(hour: 8, minute: 0), on: start))
         _departureClock = State(initialValue: WorkTimeCalculator.clock(DateComponents(hour: 17, minute: 0), on: start))
         _breakMinutes = State(initialValue: employee.defaultBreakMinutes)
@@ -50,7 +55,7 @@ struct RecordEditorView: View {
                     }
                 }
                 Picker("Статус", selection: $status) {
-                    ForEach(DayStatus.allCases, id: \.self) { s in
+                    ForEach(statusOptions, id: \.self) { s in
                         Text("\(s.rawValue) — \(s.title)").tag(s)
                     }
                 }
@@ -70,13 +75,15 @@ struct RecordEditorView: View {
             } header: {
                 Text("Время")
             } footer: {
-                if status != .present {
+                if isFuture {
+                    Text("Время можно отметить только за прошедшие дни и сегодня")
+                } else if status != .present {
                     Text("Время учитывается только для статуса «Явка».")
                 }
             }
-            .disabled(status != .present)
+            .disabled(status != .present || isFuture)
 
-            if status == .present {
+            if status == .present && !isFuture {
                 Section {
                     Toggle("Исправить итог", isOn: $manualOn)
                     if manualOn {
@@ -133,8 +140,16 @@ struct RecordEditorView: View {
 
     // MARK: Resolved values
 
+    private var isFuture: Bool { day > today }
+
+    /// Planned absences only for a future day; the current status stays listed so a stored mark shows.
+    private var statusOptions: [DayStatus] {
+        let allowed = DayStatus.statuses(on: day, today: today)
+        return allowed.contains(status) ? allowed : DayStatus.allCases.filter { allowed.contains($0) || $0 == status }
+    }
+
     private var arrival: Date? {
-        guard status == .present, hasArrival else { return nil }
+        guard status == .present, hasArrival, !isFuture else { return nil }
         return WorkTimeCalculator.clock(clockParts(arrivalClock), on: day)
     }
 
@@ -150,9 +165,9 @@ struct RecordEditorView: View {
     }
 
     private var workedText: String {
-        if manualOn { return HomeViewModel.durationText(manualHours * 60 + manualMinutes) }
+        if manualOn { return durationText(minutes: manualHours * 60 + manualMinutes) }
         guard let arrival, let departure else { return "—" }
-        return HomeViewModel.durationText(
+        return durationText(minutes: 
             WorkTimeCalculator.workedMinutes(arrival: arrival, departure: departure, breakMinutes: breakMinutes))
     }
 
@@ -216,7 +231,7 @@ struct RecordEditorView: View {
         do {
             try service.save(employee: employee, day: day, status: status,
                              arrival: arrival, departure: departure, breakMinutes: breakMinutes,
-                             manualMinutes: status == .present && manualOn ? manualHours * 60 + manualMinutes : nil,
+                             manualMinutes: status == .present && manualOn && !isFuture ? manualHours * 60 + manualMinutes : nil,
                              comment: comment.trimmingCharacters(in: .whitespacesAndNewlines))
             dismiss()
         } catch {

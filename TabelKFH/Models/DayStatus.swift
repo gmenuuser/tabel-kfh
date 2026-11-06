@@ -35,3 +35,13 @@ enum WorkSchedule: String, Codable, CaseIterable {
         }
     }
 }
+
+extension DayStatus {
+    /// Statuses that can be planned ahead: a future day takes only these, never Я or ПР.
+    static let plannedAbsences: [DayStatus] = [.dayOff, .sick, .vacation, .timeOff, .businessTrip]
+
+    /// The statuses that may be set on `day`: all of them up to today, planned absences after it.
+    static func statuses(on day: Date, today: Date, calendar: Calendar = .farm) -> [DayStatus] {
+        calendar.dayStart(day) > calendar.dayStart(today) ? plannedAbsences : allCases
+    }
+}

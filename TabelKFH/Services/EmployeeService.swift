@@ -99,10 +99,22 @@ final class EmployeeService {
 
     /// Not archived and employed on `day` (hired on or before it, not dismissed before it), by name.
     func active(on day: Date) -> [Employee] {
-        let start = calendar.dayStart(day)
+        employed(on: day).filter { !$0.isArchived }
+    }
+
+    /// Employed on `day`, archived or not, by name: who can have a mark that day.
+    func employed(on day: Date) -> [Employee] {
+        employed(from: day, through: day)
+    }
+
+    /// Employed on at least one day of `start…end` (hired by `end`, not dismissed before `start`),
+    /// archived or not, by name.
+    func employed(from start: Date, through end: Date) -> [Employee] {
+        let first = calendar.dayStart(start)
+        let last = calendar.dayStart(end)
         return Self.sortedByName(all().filter { e in
-            guard !e.isArchived, calendar.dayStart(e.hireDate) <= start else { return false }
-            if let dismissal = e.dismissalDate { return calendar.dayStart(dismissal) >= start }
+            guard calendar.dayStart(e.hireDate) <= last else { return false }
+            if let dismissal = e.dismissalDate { return calendar.dayStart(dismissal) >= first }
             return true
         })
     }

@@ -74,7 +74,7 @@ struct EmployeeDayCard: View {
                 .disabled(isBusy)
                 .opacity(isBusy ? 0.5 : 1)
         case .closed(let minutes):
-            Button("\(HomeViewModel.durationText(minutes)) · Изменить", action: onEdit)
+            Button("\(durationText(minutes: minutes)) · Изменить", action: onEdit)
                 .buttonStyle(BigButtonStyle(color: Color(uiColor: .systemGray)))
         }
     }
