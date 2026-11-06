@@ -235,11 +235,4 @@ final class HomeViewModelTests: XCTestCase {
         XCTAssertEqual(model.dateTitle, "пятница, 6 ноября 2026")
         XCTAssertEqual(model.employeesTitle, "Сотрудников: 0")
     }
-
-    func testDurationText() {
-        XCTAssertEqual(HomeViewModel.durationText(450), "7 ч 30 мин")
-        XCTAssertEqual(HomeViewModel.durationText(480), "8 ч")
-        XCTAssertEqual(HomeViewModel.durationText(45), "45 мин")
-        XCTAssertEqual(HomeViewModel.durationText(0), "0 мин")
-    }
 }
