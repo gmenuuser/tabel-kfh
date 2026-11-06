@@ -46,9 +46,9 @@ struct EmployeeDayCard: View {
                 info("Часы", row.hoursText)
             }
 
-            if row.staleOpenDay != nil {
+            if let note = row.staleNoteText {
                 Button(action: onEditStale) {
-                    Label("Вчера не отмечен уход", systemImage: "exclamationmark.triangle.fill")
+                    Label(note, systemImage: "exclamationmark.triangle.fill")
                         .font(.subheadline.weight(.medium))
                         .foregroundStyle(Theme.accent)
                 }

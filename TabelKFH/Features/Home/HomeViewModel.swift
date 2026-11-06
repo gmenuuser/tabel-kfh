@@ -15,8 +15,10 @@ final class HomeViewModel {
         let hoursText: String
         /// The day the editor opens: the open record's day (yesterday for a night shift) or today.
         let editorDay: Date
-        /// Yesterday, when its departure was forgotten («Вчера не отмечен уход»).
+        /// The day (today or yesterday) whose departure was forgotten.
         let staleOpenDay: Date?
+        /// «Вчера не отмечен уход» / «Не отмечен уход» when `staleOpenDay` is set.
+        let staleNoteText: String?
         var id: UUID { employee.id }
     }
 
@@ -106,8 +108,17 @@ final class HomeViewModel {
         reload()
     }
 
+    /// A departure this soon after the arrival is probably a mistaken tap and needs confirmation.
+    static let shortShift: TimeInterval = 5 * 60
+
     func tapDeparture(_ e: Employee) {
         guard begin(e) else { return }
+        if let since = service.openRecord(for: e)?.arrivalTime, now().timeIntervalSince(since) < Self.shortShift {
+            let minutes = max(0, WorkTimeCalculator.intervalMinutes(from: since, to: now()))
+            confirmation = Confirmation(employee: e, kind: .departure,
+                                        message: "Уход через \(minutes) мин после прихода. Отметить уход?")
+            return
+        }
         do {
             try service.markDeparture(e)
         } catch AttendanceError.alreadyLeft {
@@ -169,11 +180,13 @@ final class HomeViewModel {
         if let shown, shown.status == .present, shown.workedMinutes != nil || shown.manualWorkedMinutes != nil {
             hours = Self.durationText(WorkTimeCalculator.effectiveMinutes(shown))
         }
+        let staleDay = service.staleOpenRecord(for: e)?.day
         return Row(employee: e, action: action, statusText: status,
                    arrivalText: timeText(shown?.arrivalTime, today: today),
                    departureText: timeText(shown?.departureTime, today: today),
                    hoursText: hours, editorDay: shown?.day ?? today,
-                   staleOpenDay: service.staleOpenRecord(for: e)?.day)
+                   staleOpenDay: staleDay,
+                   staleNoteText: staleDay.map { $0 < today ? "Вчера не отмечен уход" : "Не отмечен уход" })
     }
 
     /// «08:02», or «05.11 22:00» for a time on another day.
