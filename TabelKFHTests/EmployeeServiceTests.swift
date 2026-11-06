@@ -181,6 +181,31 @@ final class EmployeeServiceTests: XCTestCase {
         XCTAssertEqual(names, ["Алексеев", "борисов", "Ёлкин", "Яковлев"])
     }
 
+    // The history's month totals count, like the timesheet, only days within employment.
+    func testMonthTotalsCountOnlyDaysWithinEmployment() {
+        let e = Employee(lastName: "Зубахин", firstName: "Иван", hireDate: day(3, 11, 2026),
+                         dismissalDate: day(20, 11, 2026))
+        func record(_ d: Int, _ status: DayStatus, minutes: Int? = nil, open: Bool = false) -> AttendanceRecord {
+            let start = day(d, 11, 2026)
+            return AttendanceRecord(employeeId: e.id, day: start,
+                                    arrivalTime: status == .present ? start.addingTimeInterval(8 * 3600) : nil,
+                                    departureTime: status == .present && !open ? start.addingTimeInterval(17 * 3600) : nil,
+                                    breakMinutes: 60, workedMinutes: minutes, status: status)
+        }
+        let records = [
+            record(2, .present, minutes: 480),   // before the hire date
+            record(5, .present, minutes: 480),
+            record(6, .present, open: true),     // unfinished: a day, 0 hours
+            record(7, .sick),
+            record(21, .present, minutes: 300),  // after the dismissal date
+        ]
+
+        let totals = EmployeeService.monthTotals(records, of: e, calendar: calendar)
+
+        XCTAssertEqual(totals.presentDays, 2)
+        XCTAssertEqual(totals.minutes, 480)
+    }
+
     func testDraftFromEmployeeCopiesAllFields() throws {
         var d = draft(dismissal: day(1, 12, 2026))
         d.patronymic = "Петрович"

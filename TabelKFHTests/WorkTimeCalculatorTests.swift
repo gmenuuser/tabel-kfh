@@ -113,6 +113,12 @@ final class WorkTimeCalculatorTests: XCTestCase {
         XCTAssertEqual(warnings, [.arrivalInFuture, .notFinished])
     }
 
+    func testDepartureInFuture() {
+        let warnings = WorkTimeCalculator.warnings(status: .present, arrival: at(6, 8, 0), departure: at(6, 17, 0),
+                                                   breakMinutes: 60, now: at(6, 12, 0))
+        XCTAssertEqual(warnings, [.departureInFuture])
+    }
+
     func testStatusWithoutTimesHasNoWarnings() {
         XCTAssertEqual(WorkTimeCalculator.warnings(status: .sick, arrival: nil, departure: nil,
                                                    breakMinutes: 0, now: at(6, 12, 0)), [])
@@ -125,6 +131,7 @@ final class WorkTimeCalculatorTests: XCTestCase {
         XCTAssertEqual(WorkWarning.timesWithNonPresentStatus.text, "Указано время, но статус не «Явка»")
         XCTAssertEqual(WorkWarning.arrivalInFuture.text, "Приход в будущем")
         XCTAssertEqual(WorkWarning.notFinished.text, "День не закрыт: нет времени ухода")
+        XCTAssertEqual(WorkWarning.departureInFuture.text, "Уход в будущем")
     }
 
     // MARK: effectiveMinutes
