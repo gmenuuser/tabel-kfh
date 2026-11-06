@@ -1,24 +1,17 @@
-import Foundation
-import SwiftData
-
-// How to change the stored models without losing the owner's data (the app must always open a V1 store):
+// How the stored models change without losing the owner's data (the app must always open every shipped store):
 //
-// 1. Freeze V1 first. Move today's model classes into `SchemaV1` as nested copies
-//    (`extension SchemaV1 { @Model final class Employee { … } }`, same stored properties, same names) and list
-//    those nested types in `SchemaV1.models`. From then on V1 never changes: it describes the stores that exist
-//    on phones.
-// 2. Add `enum SchemaV2: VersionedSchema` (`Schema.Version(2, 0, 0)`) with its own nested copies carrying the
-//    change, and point the app's typealiases at them (`typealias Employee = SchemaV2.Employee`).
-// 3. In `TabelMigrationPlan` append `SchemaV2.self` to `schemas` and a stage to `stages`:
-//    `.lightweight(fromVersion: SchemaV1.self, toVersion: SchemaV2.self)` for added optional/defaulted
-//    properties or renames marked `@Attribute(originalName:)`; `.custom(fromVersion:toVersion:willMigrate:didMigrate:)`
-//    when values must be computed (fill the new fields in `didMigrate`, then save).
-// 4. Make `makeModelContainer` build `Schema(versionedSchema: SchemaV2.self)`.
-// 5. Test before shipping: create a store with the V1 container at a temporary URL, insert data, close it,
-//    open it with the new container (`makeModelContainer(url:)`) and check every value survived; also raise
-//    `BackupCodec.schemaVersion` only when the backup format changes.
-// Never edit V1's nested models after they ship, and never remove a schema from `schemas`: a phone that skipped
-// versions migrates through every stage in order.
+// - A version lists the model classes of its store. A class that is not edited may be listed by several
+//   versions (V1's four classes are also V2's): its shape is the same in both.
+// - Adding new model classes is a lightweight stage (V1 → V2 added the coal module).
+// - Editing a shipped class: first freeze the old shape as a nested copy inside the old version
+//   (`extension SchemaV2 { @Model final class Employee { … } }`, same stored properties, same names, listed in
+//   that version's `models`), then change the top-level class and add the new version with
+//   `.lightweight(…)` for added optional/defaulted properties or renames marked `@Attribute(originalName:)`,
+//   or `.custom(…)` when values must be computed.
+// - Always add a test that creates a store with the previous version at a temporary URL, opens it with
+//   `makeModelContainer(url:)` and checks every value survived (`CoalPersistenceTests`).
+// - Never edit a version after it ships and never remove one from `schemas`: a phone that skipped versions
+//   migrates through every stage in order. Raise `BackupCodec.schemaVersion` only when the backup format changes.
 enum SchemaV1: VersionedSchema {
     static var versionIdentifier: Schema.Version { Schema.Version(1, 0, 0) }
 
@@ -27,14 +20,26 @@ enum SchemaV1: VersionedSchema {
     }
 }
 
+/// V1 + the coal module («Продажа угля»).
+enum SchemaV2: VersionedSchema {
+    static var versionIdentifier: Schema.Version { Schema.Version(2, 0, 0) }
+
+    static var models: [any PersistentModel.Type] {
+        SchemaV1.models + [CoalSettings.self, DeliveryLocation.self, Driver.self, CoalSale.self,
+                           DriverPayment.self, CoalWorkDay.self]
+    }
+}
+
 enum TabelMigrationPlan: SchemaMigrationPlan {
-    static var schemas: [any VersionedSchema.Type] { [SchemaV1.self] }
-    static var stages: [MigrationStage] { [] }
+    static var schemas: [any VersionedSchema.Type] { [SchemaV1.self, SchemaV2.self] }
+    static var stages: [MigrationStage] {
+        [.lightweight(fromVersion: SchemaV1.self, toVersion: SchemaV2.self)]
+    }
 }
 
 /// The app's store. `inMemory` wins over `url`; with neither, the default on-disk store is used.
 func makeModelContainer(inMemory: Bool = false, url: URL? = nil) throws -> ModelContainer {
-    let schema = Schema(versionedSchema: SchemaV1.self)
+    let schema = Schema(versionedSchema: SchemaV2.self)
     let configuration: ModelConfiguration
     if inMemory {
         configuration = ModelConfiguration(schema: schema, isStoredInMemoryOnly: true, cloudKitDatabase: .none)

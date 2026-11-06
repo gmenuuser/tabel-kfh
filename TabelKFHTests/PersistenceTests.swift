@@ -131,9 +131,12 @@ final class PersistenceTests: XCTestCase {
         XCTAssertEqual(fetched.employeeData, Data("[]".utf8))
     }
 
-    func testSchemaVersionIsOne() {
+    func testSchemaVersions() {
         XCTAssertEqual(SchemaV1.versionIdentifier, Schema.Version(1, 0, 0))
-        XCTAssertEqual(TabelMigrationPlan.schemas.count, 1)
+        XCTAssertEqual(SchemaV2.versionIdentifier, Schema.Version(2, 0, 0))
+        XCTAssertEqual(TabelMigrationPlan.schemas.count, 2)
+        XCTAssertEqual(TabelMigrationPlan.stages.count, 1)
         XCTAssertEqual(SchemaV1.models.count, 4)
+        XCTAssertEqual(SchemaV2.models.count, 10)
     }
 }
