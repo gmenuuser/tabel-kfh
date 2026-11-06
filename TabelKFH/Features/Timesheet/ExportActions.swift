@@ -17,16 +17,30 @@ enum ExportFiles {
         FileManager.default.temporaryDirectory.appendingPathComponent("Export", isDirectory: true)
     }
 
-    /// Writes «Табель_<Месяц>_<год>[_<Фамилия>]_v<N>.pdf» and «….xlsx» into `directory`, replacing older files
-    /// of the same name. `surname` is given for one employee's timesheet.
+    /// Empties `directory`, then writes «Табель_<Месяц>_<год>[_<Фамилия>]_v<N>.pdf» and «….xlsx» into it,
+    /// so only the shown version's files stay. `surname` is given for one employee's timesheet.
     static func write(_ d: TimesheetDocument, surname: String? = nil,
                       in directory: URL = ExportFiles.directory) throws -> ExportedFiles {
-        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        let manager = FileManager.default
+        if manager.fileExists(atPath: directory.path) {
+            try manager.removeItem(at: directory)
+        }
+        try manager.createDirectory(at: directory, withIntermediateDirectories: true)
         let pdf = directory.appendingPathComponent(exportFileName(d, surname: surname, ext: "pdf"))
         let xlsx = directory.appendingPathComponent(exportFileName(d, surname: surname, ext: "xlsx"))
         try TimesheetPDFRenderer.render(d).write(to: pdf, options: .atomic)
         try XLSXWriter.make(d).write(to: xlsx, options: .atomic)
         return ExportedFiles(pdf: pdf, xlsx: xlsx)
+    }
+}
+
+/// Renders and writes the export files off the main thread, one version at a time,
+/// so the files of two versions never mix in `tmp/Export`.
+private actor ExportWriter {
+    static let shared = ExportWriter()
+
+    func write(_ d: TimesheetDocument, surname: String?) throws -> ExportedFiles {
+        try ExportFiles.write(d, surname: surname)
     }
 }
 
@@ -100,7 +114,7 @@ struct ExportActions: View {
         .lineLimit(1)
         .minimumScaleFactor(0.8)
         .disabled(files == nil)
-        .task(id: Source(document: document, surname: surname)) { prepare() }
+        .task(id: Source(document: document, surname: surname)) { await prepare() }
         .fileExporter(isPresented: $isExporting, document: exporting,
                       contentType: exporting?.contentType ?? .pdf, defaultFilename: exportName) { result in
             switch result {
@@ -115,12 +129,17 @@ struct ExportActions: View {
         }
     }
 
-    /// Writes both files of the shown version so «Поделиться» has them ready.
-    private func prepare() {
+    /// Writes both files of the shown version off the main thread so the screen stays responsive;
+    /// the buttons stay disabled until the files are ready.
+    private func prepare() async {
+        files = nil
         do {
-            files = try ExportFiles.write(document, surname: surname)
+            let written = try await ExportWriter.shared.write(document, surname: surname)
+            // Another version was chosen meanwhile: its own task writes and shows its files.
+            guard !Task.isCancelled else { return }
+            files = written
         } catch {
-            files = nil
+            guard !Task.isCancelled else { return }
             message = "Не удалось подготовить файлы табеля: \(error.localizedDescription)"
         }
     }
