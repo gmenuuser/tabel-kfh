@@ -32,7 +32,7 @@ final class CoalWalkthroughTests: XCTestCase {
         close.tap()
         let confirm = app.buttons["ПОДТВЕРДИТЬ ЗАВЕРШЕНИЕ ДНЯ"]
         XCTAssertTrue(confirm.waitForExistence(timeout: 10))
-        XCTAssertTrue(element(containing: "Выплатить Мунгалов Сергей").exists, "what to pay Мунгалов")
+        XCTAssertTrue(element(containing: "Мунгалов Сергей: к выплате").exists, "what to pay Мунгалов")
         XCTAssertTrue(element(containing: "Доход от собственной машины").exists)
         shot("35-close-day")
         confirm.tap()

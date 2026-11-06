@@ -32,7 +32,7 @@ struct CloseDayView: View {
                             Text("Наёмным водителям платить нечего.").foregroundStyle(.secondary)
                         }
                         ForEach(report.drivers) { d in
-                            CoalMoneyRow(label: "Выплатить \(d.name)", amount: d.debtAfter, color: CoalTheme.hired)
+                            CoalMoneyRow(label: "\(d.name): к выплате", amount: d.debtAfter, color: CoalTheme.hired)
                         }
                         Divider()
                         CoalMoneyRow(label: "Всего выплатить наёмным водителям", amount: report.totalDebtAfter,
