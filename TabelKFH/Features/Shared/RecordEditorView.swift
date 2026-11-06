@@ -222,6 +222,11 @@ struct RecordEditorView: View {
                     manualMinutes = manual % 60
                 }
             }
+        } else if day == today {
+            // A new mark for today: the person has come now and has not left yet.
+            let now = AppClock.now()
+            arrivalClock = calendar.dateInterval(of: .minute, for: now)?.start ?? now
+            hasDeparture = false
         }
         loaded = true
     }
@@ -250,12 +255,12 @@ struct RecordEditorView: View {
     }
 
     /// «6 ноября 2026, пятница».
-    private static let dayFormatter: DateFormatter = {
+    private static var dayFormatter: DateFormatter {
         let f = DateFormatter()
         f.calendar = Calendar.farm
         f.locale = Locale(identifier: "ru_RU")
         f.timeZone = Calendar.farm.timeZone
         f.dateFormat = "d MMMM y, EEEE"
         return f
-    }()
+    }
 }

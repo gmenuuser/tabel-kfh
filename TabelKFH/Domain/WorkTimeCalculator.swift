@@ -7,6 +7,7 @@ enum WorkWarning: Equatable {
     case overSixteenHours
     case timesWithNonPresentStatus
     case arrivalInFuture
+    case departureInFuture
     case notFinished
 
     var text: String {
@@ -16,6 +17,7 @@ enum WorkWarning: Equatable {
         case .overSixteenHours: return "Смена больше 16 часов — проверь время"
         case .timesWithNonPresentStatus: return "Указано время, но статус не «Явка»"
         case .arrivalInFuture: return "Приход в будущем"
+        case .departureInFuture: return "Уход в будущем"
         case .notFinished: return "День не закрыт: нет времени ухода"
         }
     }
@@ -62,6 +64,10 @@ enum WorkTimeCalculator {
         }
         if let arrival, arrival > now {
             result.append(.arrivalInFuture)
+        } else if let departure, departure > now {
+            // A future arrival already says the times are ahead; a past arrival with a later departure is today's
+            // shift entered ahead of time.
+            result.append(.departureInFuture)
         }
         if let arrival, let departure {
             let shift = intervalMinutes(from: arrival, to: departure)
