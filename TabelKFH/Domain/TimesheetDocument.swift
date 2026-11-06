@@ -100,6 +100,23 @@ struct TimesheetTotals: Codable, Equatable {
     }
 }
 
+extension TimesheetTotals {
+    /// Titles of the totals columns of the screen, the PDF and the XLSX.
+    static let columnTitles = ["Явки", "Часы", "В", "Б", "О", "ОТ", "ПР", "К"]
+    /// Index of «Часы» in `columnTitles`.
+    static let minutesColumn = 1
+
+    /// Values in `columnTitles` order; «Часы» as minutes.
+    var columnValues: [Int] { [presentDays, minutes, dayOff, sick, vacation, timeOff, absent, businessTrip] }
+
+    /// Values in `columnTitles` order as text; hours as a decimal with a comma.
+    var columnTexts: [String] {
+        columnValues.enumerated().map { index, value in
+            index == Self.minutesColumn ? decimalHoursText(minutes: value) : String(value)
+        }
+    }
+}
+
 struct TimesheetRow: Codable, Equatable {
     /// 1-based row number.
     let number: Int
@@ -120,6 +137,22 @@ struct TimesheetDocument: Codable, Equatable {
     let farmTotals: TimesheetTotals
     /// «Зубахин И. П. — 5 ноября», in row order, then by day.
     let unfinished: [String]
+}
+
+extension TimesheetDocument {
+    /// «06.11.2026».
+    func createdDateText(calendar: Calendar = .farm) -> String {
+        let c = calendar.dateComponents([.day, .month, .year], from: createdAt)
+        return String(format: "%02d.%02d.%04d", c.day ?? 0, c.month ?? 0, c.year ?? 0)
+    }
+
+    /// Codes and their meaning, for the legend under the table.
+    static let legend = DayStatus.allCases.map { "\($0.rawValue) — \($0.title.lowercased())" }.joined(separator: ", ")
+}
+
+/// «Табель_Ноябрь_2026_v2.pdf» for ext "pdf".
+func exportFileName(_ d: TimesheetDocument, ext: String) -> String {
+    "Табель_\(Calendar.farm.monthName(d.month))_\(d.year)_v\(d.version).\(ext)"
 }
 
 /// Hours as a decimal with a comma, at most two decimals: 480 → «8», 450 → «7,5», 465 → «7,75», 470 → «7,83».

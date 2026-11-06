@@ -7,7 +7,7 @@ import SwiftData
 @Observable
 final class TimesheetViewModel {
     /// Titles of the totals columns, in the order of `totalsValues`.
-    static let totalsTitles = ["Явки", "Часы", "В", "Б", "О", "ОТ", "ПР", "К"]
+    static let totalsTitles = TimesheetTotals.columnTitles
 
     private(set) var month: Int
     private(set) var year: Int
@@ -109,8 +109,7 @@ final class TimesheetViewModel {
 
     /// Values of the totals columns, matching `totalsTitles`; hours as a decimal with a comma.
     static func totalsValues(_ t: TimesheetTotals) -> [String] {
-        [String(t.presentDays), decimalHoursText(minutes: t.minutes), String(t.dayOff), String(t.sick),
-         String(t.vacation), String(t.timeOff), String(t.absent), String(t.businessTrip)]
+        t.columnTexts
     }
 
     private func service() -> TimesheetService {

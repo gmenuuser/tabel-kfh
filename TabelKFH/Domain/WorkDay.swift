@@ -28,11 +28,16 @@ extension Calendar {
         return range(of: .day, in: .month, for: first)?.count ?? 0
     }
 
-    /// «Ноябрь 2026».
-    func monthTitle(month: Int, year: Int) -> String {
+    /// «Ноябрь» for 11; "" outside 1...12.
+    func monthName(_ month: Int) -> String {
         let names = ["Январь", "Февраль", "Март", "Апрель", "Май", "Июнь",
                      "Июль", "Август", "Сентябрь", "Октябрь", "Ноябрь", "Декабрь"]
+        return (1...12).contains(month) ? names[month - 1] : ""
+    }
+
+    /// «Ноябрь 2026».
+    func monthTitle(month: Int, year: Int) -> String {
         guard (1...12).contains(month) else { return "\(year)" }
-        return "\(names[month - 1]) \(year)"
+        return "\(monthName(month)) \(year)"
     }
 }
