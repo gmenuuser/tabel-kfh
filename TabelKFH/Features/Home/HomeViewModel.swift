@@ -65,7 +65,7 @@ final class HomeViewModel {
     func reload() {
         let moment = now()
         let today = calendar.dayStart(moment)
-        farmName = (try? context.fetch(FetchDescriptor<FarmSettings>()))?.first?.farmName ?? "КФХ Зубахин"
+        farmName = FarmSettingsStore.current(in: context).farmName
         dateTitle = Self.dateFormatter.string(from: moment)
 
         let employees = EmployeeService(context: context).active(on: today)

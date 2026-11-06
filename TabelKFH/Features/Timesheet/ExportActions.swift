@@ -97,7 +97,7 @@ struct ExportActions: View {
             case .success:
                 message = "Файл сохранён"
             case .failure(let error):
-                message = "Не удалось сохранить файл: \(error.localizedDescription)"
+                if !error.isCancellation { message = "Не удалось сохранить файл: \(error.localizedDescription)" }
             }
         }
         .alert(message ?? "", isPresented: Binding(get: { message != nil }, set: { if !$0 { message = nil } })) {

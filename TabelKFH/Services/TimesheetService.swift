@@ -52,7 +52,7 @@ final class TimesheetService {
             .map { Self.snapshot($0) }
 
         let version = try latestVersion(month: month, year: year, employeeId: employee?.id) + 1
-        let settings = try farmInfo()
+        let settings = farmInfo()
         let createdAt = now()
         let document = TimesheetBuilder.build(month: month, year: year, employees: employees, records: records,
                                               settings: settings, format: format, version: version,
@@ -78,13 +78,9 @@ final class TimesheetService {
         try JSONDecoder().decode(TimesheetDocument.self, from: s.documentData)
     }
 
-    /// The farm details; defaults («КФХ Зубахин», the rest empty) while settings were never saved.
-    private func farmInfo() throws -> FarmInfo {
-        var descriptor = FetchDescriptor<FarmSettings>()
-        descriptor.fetchLimit = 1
-        guard let s = try context.fetch(descriptor).first else { return .default }
-        return FarmInfo(farmName: s.farmName, managerName: s.managerName, responsiblePerson: s.responsiblePerson,
-                        address: s.address, phone: s.phone, extraInfo: s.extraInfo)
+    /// The farm details of the one settings row (created with the defaults when missing).
+    private func farmInfo() -> FarmInfo {
+        FarmSettingsStore.current(in: context).info
     }
 
     private func latestVersion(month: Int, year: Int, employeeId: UUID?) throws -> Int {
