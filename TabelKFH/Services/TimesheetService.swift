@@ -30,6 +30,7 @@ final class TimesheetService {
         guard (1...12).contains(month), year > 0 else { throw TimesheetError.invalidMonth }
         let first = calendar.date(day: 1, month: month, year: year)
         let last = calendar.date(day: calendar.daysInMonth(month: month, year: year), month: month, year: year)
+        let next = calendar.date(byAdding: .month, value: 1, to: first) ?? last
 
         let people: [Employee]
         if let employee {
@@ -42,8 +43,10 @@ final class TimesheetService {
                              hireDate: e.hireDate, dismissalDate: e.dismissalDate)
         }
         let ids = Set(employees.map(\.id))
+        // Up to the start of the next month, so a last-day record whose `day` is not exactly midnight
+        // is kept; the builder's calendar decides its cell.
         let descriptor = FetchDescriptor<AttendanceRecord>(
-            predicate: #Predicate { $0.day >= first && $0.day <= last })
+            predicate: #Predicate { $0.day >= first && $0.day < next })
         let records = try context.fetch(descriptor)
             .filter { ids.contains($0.employeeId) }
             .map { Self.snapshot($0) }

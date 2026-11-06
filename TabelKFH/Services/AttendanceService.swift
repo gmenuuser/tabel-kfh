@@ -92,7 +92,8 @@ final class AttendanceService {
         }
     }
 
-    /// Я records of yesterday and today (never later days) with an arrival and no departure, latest day first.
+    /// Я records of yesterday and today (never later days) with an arrival, no departure and no manual
+    /// total (a manual total closes the day, as in the timesheet), latest day first.
     private func unfinishedRecords(for e: Employee) throws -> [AttendanceRecord] {
         let id = e.id
         let to = today
@@ -101,7 +102,10 @@ final class AttendanceService {
             predicate: #Predicate { $0.employeeId == id && $0.day >= from && $0.day <= to },
             sortBy: [SortDescriptor(\.day, order: .reverse)])
         return try context.fetch(descriptor)
-            .filter { $0.status == .present && $0.arrivalTime != nil && $0.departureTime == nil }
+            .filter {
+                $0.status == .present && $0.arrivalTime != nil && $0.departureTime == nil
+                    && $0.manualWorkedMinutes == nil
+            }
     }
 
     func todayAction(for e: Employee) -> TodayAction {

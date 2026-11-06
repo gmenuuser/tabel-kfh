@@ -133,7 +133,7 @@ func decimalHoursText(minutes: Int) -> String {
 }
 
 enum TimesheetBuilder {
-    /// Rows: employees whose employment overlaps the month, by ФИО. Days outside employment are blank and
+    /// Rows: employees whose employment overlaps the month, by ФИО (equal names by id). Days outside employment are blank and
     /// not counted; a day without a record is blank (never ПР); farm totals are the sum of the rows.
     static func build(month: Int, year: Int, employees: [EmployeeSnapshot], records: [RecordSnapshot],
                       settings: FarmInfo, format: CellFormat, version: Int, createdAt: Date,
@@ -149,7 +149,11 @@ enum TimesheetBuilder {
         }
         let locale = Locale(identifier: "ru_RU")
         let sorted = working.sorted {
-            $0.fullName.compare($1.fullName, options: [.caseInsensitive], locale: locale) == .orderedAscending
+            switch $0.fullName.compare($1.fullName, options: [.caseInsensitive], locale: locale) {
+            case .orderedAscending: return true
+            case .orderedDescending: return false
+            case .orderedSame: return $0.id.uuidString < $1.id.uuidString
+            }
         }
 
         // Records of this month by employee and day of month (1-based).
