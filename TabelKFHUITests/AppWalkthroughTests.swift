@@ -30,6 +30,15 @@ final class AppWalkthroughTests: XCTestCase {
         XCTAssertTrue(element(containing: "Тракторист").exists)
         shot("07-employees")
 
+        app.buttons.matching(NSPredicate(format: "label CONTAINS %@", "Зубахин Иван Петрович")).firstMatch.tap()
+        XCTAssertTrue(app.navigationBars["Зубахин Иван Петрович"].waitForExistence(timeout: 10), "the history opens")
+        XCTAssertTrue(element(containing: "Дней явки").waitForExistence(timeout: 10))
+        shot("07a-employee-history")
+        let archive = app.buttons["В архив"].firstMatch
+        scroll(to: archive)
+        XCTAssertTrue(archive.exists, "the history offers «В архив»")
+        shot("07b-employee-history-archive")
+
         tab("Календарь")
         XCTAssertTrue(app.navigationBars["Календарь"].waitForExistence(timeout: 10))
         shot("08-calendar")
