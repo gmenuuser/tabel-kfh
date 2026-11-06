@@ -62,8 +62,10 @@ final class FarmTimeZoneTests: XCTestCase {
     // MARK: Day keys
 
     func testFarmDayRecordIsFoundAndCountedWhileThePhoneIsOnMoscowTime() throws {
+        // The phone's zone as far as a test can set it (Swift's TimeZone.current may stay cached); the services
+        // below take the farm calendar explicitly and never look at the device zone.
         NSTimeZone.default = moscow
-        XCTAssertEqual(TimeZone.current.identifier, "Europe/Moscow")
+        XCTAssertEqual(NSTimeZone.default.identifier, "Europe/Moscow")
         let farm = Calendar.farm(timeZone: yekaterinburg)
         let container = try makeModelContainer(inMemory: true)
         let context = ModelContext(container)
