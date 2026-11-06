@@ -105,6 +105,40 @@ final class HomeViewModelTests: XCTestCase {
         XCTAssertEqual(model.dateTitle, "пятница, 6 ноября 2026")
     }
 
+    func testForgottenDepartureShowsNoteAndAllowsArrival() throws {
+        try setUpStore(now: at(5, 8, 0))
+        let employee = addEmployee("Алексеев")
+        try service().markArrival(employee)
+        clock = at(6, 9, 0)
+
+        let model = makeModel()
+
+        let row = try XCTUnwrap(model.rows.first)
+        XCTAssertEqual(row.action, .markArrival)
+        XCTAssertEqual(row.statusText, "Не отмечен")
+        XCTAssertEqual(row.staleOpenDay, calendar.date(day: 5, month: 11, year: 2026))
+        XCTAssertEqual(model.staleOpenRecord(for: employee)?.day, calendar.date(day: 5, month: 11, year: 2026))
+        XCTAssertEqual(model.atWorkCount, 0)
+
+        model.tapPrimary(employee)
+
+        XCTAssertNil(model.confirmation)
+        XCTAssertEqual(model.rows.first?.action, .markDeparture(openSince: at(6, 9, 0)))
+        XCTAssertEqual(model.rows.first?.staleOpenDay, calendar.date(day: 5, month: 11, year: 2026))
+    }
+
+    func testNoStaleNoteForNightShift() throws {
+        try setUpStore(now: at(5, 22, 0))
+        let employee = addEmployee("Алексеев")
+        try service().markArrival(employee)
+        clock = at(6, 6, 0)
+
+        let model = makeModel()
+
+        XCTAssertNil(model.rows.first?.staleOpenDay)
+        XCTAssertNil(model.staleOpenRecord(for: employee))
+    }
+
     func testDoubleTapIsIgnoredWhileBusy() throws {
         try setUpStore(now: at(6, 8, 0))
         let employee = addEmployee("Алексеев")

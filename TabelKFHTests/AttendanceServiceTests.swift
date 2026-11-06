@@ -134,6 +134,39 @@ final class AttendanceServiceTests: XCTestCase {
         XCTAssertEqual(service.todayAction(for: employee), .markArrival)
     }
 
+    func testEightHourNightShiftIsStillOpen() throws {
+        let service = try makeService(now: at(5, 22, 0))
+        let employee = addEmployee(breakMinutes: 30)
+        try service.markArrival(employee)
+        clock = at(6, 6, 0)
+
+        XCTAssertEqual(service.todayAction(for: employee), .markDeparture(openSince: at(5, 22, 0)))
+        XCTAssertNil(service.staleOpenRecord(for: employee))
+    }
+
+    // A departure forgotten yesterday (25 h ago) does not block today's arrival.
+    func testForgottenDepartureDoesNotBlockTodaysArrival() throws {
+        let service = try makeService(now: at(5, 8, 0))
+        let employee = addEmployee()
+        let yesterday = try service.markArrival(employee)
+        clock = at(6, 9, 0)
+
+        XCTAssertNil(service.openRecord(for: employee))
+        XCTAssertEqual(service.todayAction(for: employee), .markArrival)
+        XCTAssertEqual(service.staleOpenRecord(for: employee)?.id, yesterday.id)
+
+        let today = try service.markArrival(employee)
+
+        XCTAssertNotEqual(today.id, yesterday.id)
+        XCTAssertEqual(today.day, calendar.date(day: 6, month: 11, year: 2026))
+        XCTAssertEqual(today.arrivalTime, at(6, 9, 0))
+        XCTAssertEqual(yesterday.day, calendar.date(day: 5, month: 11, year: 2026))
+        XCTAssertNil(yesterday.departureTime)
+        XCTAssertNil(yesterday.workedMinutes)
+        XCTAssertEqual(try recordCount(), 2)
+        XCTAssertEqual(service.todayAction(for: employee), .markDeparture(openSince: at(6, 9, 0)))
+    }
+
     func testOpenRecordOlderThanYesterdayIsNotOpen() throws {
         let service = try makeService(now: at(3, 8, 0))
         let employee = addEmployee()
