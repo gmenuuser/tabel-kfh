@@ -226,4 +226,18 @@ final class TimesheetBuilderTests: XCTestCase {
         XCTAssertEqual(FarmInfo.default.farmName, "КФХ Зубахин")
         XCTAssertEqual(FarmInfo.default.responsiblePerson, "")
     }
+
+    // Equal ФИО: the employee id decides the order, whatever order the employees come in.
+    func testEqualNamesAreOrderedByEmployeeId() {
+        let low = EmployeeSnapshot(id: UUID(uuidString: "00000000-0000-0000-0000-000000000001")!,
+                                   fullName: "Иванов Иван", position: "", hireDate: day(1, 1), dismissalDate: nil)
+        let high = EmployeeSnapshot(id: UUID(uuidString: "00000000-0000-0000-0000-000000000002")!,
+                                    fullName: "Иванов Иван", position: "", hireDate: day(1, 1), dismissalDate: nil)
+
+        for input in [[high, low], [low, high]] {
+            let doc = build(input)
+            XCTAssertEqual(doc.rows.map(\.employee.id), [low.id, high.id])
+            XCTAssertEqual(doc.rows.map(\.number), [1, 2])
+        }
+    }
 }

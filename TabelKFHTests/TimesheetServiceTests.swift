@@ -192,4 +192,19 @@ final class TimesheetServiceTests: XCTestCase {
             XCTAssertEqual(error as? TimesheetError, .invalidMonth)
         }
     }
+
+    // A last-day record whose `day` is not exactly midnight (old data, a restored backup) is kept;
+    // the builder's calendar decides its cell.
+    func testLastDayRecordAfterMidnightIsKept() throws {
+        let e = addEmployee("Зубахин")
+        let r = AttendanceRecord(employeeId: e.id, day: at(30, 12), status: .sick)
+        context.insert(r)
+        r.employee = e
+        try context.save()
+
+        let doc = try service().document(try service().generate(month: 11, year: 2026, employee: nil, format: .codes))
+
+        XCTAssertEqual(doc.rows[0].cells[29].text, "Б")
+        XCTAssertEqual(doc.rows[0].totals, TimesheetTotals(sick: 1))
+    }
 }

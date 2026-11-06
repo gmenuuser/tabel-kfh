@@ -388,4 +388,17 @@ final class AttendanceServiceTests: XCTestCase {
         XCTAssertNotNil(AttendanceError.outsideEmployment.errorDescription)
         XCTAssertNotNil(AttendanceError.alreadyLeft.errorDescription)
     }
+
+    // A manual total closes the day, as in the timesheet and the calendar.
+    func testRecordWithManualTotalIsNotOpenOrStale() throws {
+        let service = try makeService(now: at(6, 10, 0))
+        let employee = addEmployee()
+        try service.save(employee: employee, day: at(6, 0, 0), status: .present, arrival: at(6, 8, 0),
+                         departure: nil, breakMinutes: 60, manualMinutes: 240, comment: "")
+
+        XCTAssertNil(service.openRecord(for: employee))
+        XCTAssertEqual(service.todayAction(for: employee), .closed(minutes: 240))
+        clock = at(7, 9, 0)
+        XCTAssertNil(service.staleOpenRecord(for: employee))
+    }
 }
