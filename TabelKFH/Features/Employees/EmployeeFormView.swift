@@ -40,12 +40,16 @@ struct EmployeeFormView: View {
             }
 
             Section("ФИО и должность") {
+                // Names are not dictionary words: no autocorrection.
                 TextField("Фамилия", text: $draft.lastName)
                     .textContentType(.familyName)
+                    .autocorrectionDisabled()
                 TextField("Имя", text: $draft.firstName)
                     .textContentType(.givenName)
+                    .autocorrectionDisabled()
                 TextField("Отчество", text: $draft.patronymic)
                     .textContentType(.middleName)
+                    .autocorrectionDisabled()
                 TextField("Должность", text: $draft.position)
                     .textContentType(.jobTitle)
             }
@@ -139,7 +143,7 @@ struct EmployeeFormView: View {
     private var dismissedBinding: Binding<Bool> {
         Binding(get: { draft.dismissalDate != nil },
                 set: { on in
-                    let today = Calendar.farm.dayStart(Date())
+                    let today = Calendar.farm.dayStart(AppClock.now())
                     draft.dismissalDate = on ? max(today, Calendar.farm.dayStart(draft.hireDate)) : nil
                 })
     }

@@ -33,7 +33,7 @@ struct RecordEditorView: View {
     init(employee: Employee, day: Date) {
         self.employee = employee
         let start = Calendar.farm.dayStart(day)
-        let today = Calendar.farm.dayStart(Date())
+        let today = Calendar.farm.dayStart(AppClock.now())
         self.day = start
         self.today = today
         _status = State(initialValue: start > today ? .dayOff : .present)
@@ -161,7 +161,7 @@ struct RecordEditorView: View {
 
     private var warnings: [WorkWarning] {
         WorkTimeCalculator.warnings(status: status, arrival: arrival, departure: departure,
-                                    breakMinutes: breakMinutes, now: Date())
+                                    breakMinutes: breakMinutes, now: AppClock.now())
     }
 
     private var workedText: String {

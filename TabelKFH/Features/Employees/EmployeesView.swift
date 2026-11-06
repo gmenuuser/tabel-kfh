@@ -123,7 +123,7 @@ private struct EmployeeRow: View {
     /// «Принят с 10.11.2026» / «Уволен 05.11.2026» when not employed today.
     private var employmentNote: String? {
         let calendar = Calendar.farm
-        let today = calendar.dayStart(Date())
+        let today = calendar.dayStart(AppClock.now())
         if calendar.dayStart(employee.hireDate) > today {
             return "Принят с \(EmployeeFormatting.date(employee.hireDate))"
         }

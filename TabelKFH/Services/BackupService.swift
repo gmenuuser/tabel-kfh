@@ -9,7 +9,7 @@ final class BackupService {
     private let now: () -> Date
     private let calendar = Calendar.farm
 
-    init(context: ModelContext, now: @escaping () -> Date = Date.init) {
+    init(context: ModelContext, now: @escaping () -> Date = AppClock.now) {
         self.context = context
         self.now = now
     }

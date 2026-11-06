@@ -7,7 +7,7 @@ struct EmployeeDraft: Equatable {
     var firstName = ""
     var patronymic = ""
     var position = ""
-    var hireDate = Calendar.farm.dayStart(Date())
+    var hireDate = Calendar.farm.dayStart(AppClock.now())
     var dismissalDate: Date?
     var workSchedule: WorkSchedule = .fiveTwo
     /// Norm of working hours per day.

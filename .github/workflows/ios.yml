@@ -43,7 +43,7 @@ jobs:
         run: |
           set -o pipefail
           mkdir -p build/samples
-          # TEST_RUNNER_ variables reach the test process without the prefix (SAMPLES_DIR).
+          # TEST_RUNNER_ variables reach the test process without the prefix (SAMPLES_DIR), the UI test runner too.
           TEST_RUNNER_SAMPLES_DIR="$PWD/build/samples" xcodebuild test \
             -project TabelKFH.xcodeproj -scheme TabelKFH \
             -destination "id=${{ steps.sim.outputs.udid }}" \

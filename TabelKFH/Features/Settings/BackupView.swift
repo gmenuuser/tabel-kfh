@@ -67,7 +67,7 @@ struct BackupView: View {
         do {
             let data = try BackupService(context: context).makeBackup()
             backup = ExportedFile(data: data, contentType: .json)
-            backupName = (BackupService.fileName(on: Date()) as NSString).deletingPathExtension
+            backupName = (BackupService.fileName(on: AppClock.now()) as NSString).deletingPathExtension
             isExporting = true
         } catch {
             message = "Не удалось создать копию: \(error.localizedDescription)"

@@ -27,7 +27,7 @@ final class TimesheetViewModel {
     private let now: () -> Date
     private let calendar = Calendar.farm
 
-    init(context: ModelContext, now: @escaping () -> Date = Date.init) {
+    init(context: ModelContext, now: @escaping () -> Date = AppClock.now) {
         self.context = context
         self.now = now
         let parts = Calendar.farm.dateComponents([.month, .year], from: now())

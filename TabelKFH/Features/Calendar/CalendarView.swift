@@ -255,7 +255,7 @@ struct MonthYearPicker: View {
     }
 
     private var years: [Int] {
-        let current = Calendar.farm.component(.year, from: Date())
+        let current = Calendar.farm.component(.year, from: AppClock.now())
         return Array(min(current - 10, year)...max(current + 2, year))
     }
 

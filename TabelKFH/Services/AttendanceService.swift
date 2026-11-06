@@ -39,7 +39,7 @@ final class AttendanceService {
     /// An arrival without a departure counts as «на работе» for at most this long.
     static let maxOpenShift: TimeInterval = 16 * 3600
 
-    init(context: ModelContext, now: @escaping () -> Date = Date.init) {
+    init(context: ModelContext, now: @escaping () -> Date = AppClock.now) {
         self.context = context
         self.now = now
     }

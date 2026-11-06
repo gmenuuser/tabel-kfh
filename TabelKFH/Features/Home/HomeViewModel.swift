@@ -45,7 +45,7 @@ final class HomeViewModel {
     private let service: AttendanceService
     private let calendar = Calendar.farm
 
-    init(context: ModelContext, now: @escaping () -> Date = Date.init) {
+    init(context: ModelContext, now: @escaping () -> Date = AppClock.now) {
         self.context = context
         self.now = now
         self.service = AttendanceService(context: context, now: now)

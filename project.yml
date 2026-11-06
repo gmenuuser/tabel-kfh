@@ -46,13 +46,27 @@ targets:
         PRODUCT_BUNDLE_IDENTIFIER: ru.zubakhin.tabelkfh.tests
         TEST_HOST: "$(BUILT_PRODUCTS_DIR)/TabelKFH.app/TabelKFH"
         BUNDLE_LOADER: "$(TEST_HOST)"
+  TabelKFHUITests:
+    type: bundle.ui-testing
+    platform: iOS
+    sources:
+      - path: TabelKFHUITests
+    dependencies:
+      - target: TabelKFH
+    settings:
+      base:
+        GENERATE_INFOPLIST_FILE: YES
+        PRODUCT_BUNDLE_IDENTIFIER: ru.zubakhin.tabelkfh.uitests
+        TEST_TARGET_NAME: TabelKFH
 schemes:
   TabelKFH:
     build:
       targets:
         TabelKFH: all
         TabelKFHTests: [test]
+        TabelKFHUITests: [test]
     test:
       targets:
         - TabelKFHTests
+        - TabelKFHUITests
       gatherCoverageData: false

@@ -16,7 +16,7 @@ struct EmployeeHistoryView: View {
 
     init(employee: Employee) {
         self.employee = employee
-        let now = Calendar.farm.dateComponents([.month, .year], from: Date())
+        let now = Calendar.farm.dateComponents([.month, .year], from: AppClock.now())
         _month = State(initialValue: now.month ?? 1)
         _year = State(initialValue: now.year ?? 2026)
     }
