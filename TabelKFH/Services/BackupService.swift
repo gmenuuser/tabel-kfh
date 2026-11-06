@@ -44,7 +44,11 @@ final class BackupService {
                              snapshots: snapshots.map(Self.backup),
                              timeZone: calendar.timeZone.identifier,
                              coal: try coalPayload(),
-                             livestock: try livestockPayload())
+                             livestock: try livestockPayload(),
+                             agro: try context.fetch(FetchDescriptor<AgroCalculation>())
+                                 .sorted { $0.id.uuidString < $1.id.uuidString }
+                                 .map { AgroBackup(id: $0.id, kind: $0.kind, title: $0.title, inputs: $0.inputs,
+                                                   lines: $0.lines, createdAt: $0.createdAt, updatedAt: $0.updatedAt) })
     }
 
     func makeBackup() throws -> Data {
@@ -122,6 +126,20 @@ final class BackupService {
 
             if let coal = p.coal { try restoreCoal(coal) }
             if let livestock = p.livestock { try restoreLivestock(livestock) }
+            if let agro = p.agro {
+                let encoder = JSONEncoder()
+                merge(agro, existing: try context.fetch(FetchDescriptor<AgroCalculation>()), id: { $0.id },
+                      rowId: { $0.id },
+                      make: { AgroCalculation(id: $0.id, kind: $0.kind, title: $0.title, inputsData: Data(),
+                                              resultData: Data(), createdAt: $0.createdAt, updatedAt: $0.updatedAt) }) { b, c in
+                    c.kindRaw = b.kind.rawValue
+                    c.title = b.title
+                    c.inputsData = AgroService.encode(b.inputs)
+                    c.resultData = (try? encoder.encode(b.lines)) ?? Data("[]".utf8)
+                    c.createdAt = b.createdAt
+                    c.updatedAt = b.updatedAt
+                }
+            }
 
             try context.save()
         } catch {

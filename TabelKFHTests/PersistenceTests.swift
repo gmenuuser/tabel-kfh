@@ -135,10 +135,12 @@ final class PersistenceTests: XCTestCase {
         XCTAssertEqual(SchemaV1.versionIdentifier, Schema.Version(1, 0, 0))
         XCTAssertEqual(SchemaV2.versionIdentifier, Schema.Version(2, 0, 0))
         XCTAssertEqual(SchemaV3.versionIdentifier, Schema.Version(3, 0, 0))
-        XCTAssertEqual(TabelMigrationPlan.schemas.count, 3)
-        XCTAssertEqual(TabelMigrationPlan.stages.count, 2)
+        XCTAssertEqual(SchemaV4.versionIdentifier, Schema.Version(4, 0, 0))
+        XCTAssertEqual(TabelMigrationPlan.schemas.count, 4)
+        XCTAssertEqual(TabelMigrationPlan.stages.count, 3)
         XCTAssertEqual(SchemaV1.models.count, 4)
         XCTAssertEqual(SchemaV2.models.count, 10)
         XCTAssertEqual(SchemaV3.models.count, 14)
+        XCTAssertEqual(SchemaV4.models.count, 15)
     }
 }

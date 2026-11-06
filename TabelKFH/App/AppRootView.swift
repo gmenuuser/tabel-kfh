@@ -3,7 +3,7 @@ import SwiftData
 
 /// Where the main screen leads.
 enum MainDestination: Hashable {
-    case timesheet, coal, livestock, reports, settings
+    case timesheet, coal, livestock, agro, reports, settings
 }
 
 /// One main screen with three large buttons; every part opens on top of it and «Назад» returns to it.
@@ -20,6 +20,7 @@ struct AppRootView: View {
                     case .timesheet: HomeView()
                     case .coal: CoalSaleScreen()
                     case .livestock: LivestockHomeView()
+                    case .agro: AgroHomeView()
                     case .reports: ReportsView()
                     case .settings: SettingsView()
                     }
@@ -70,6 +71,8 @@ struct MainScreen: View {
                           icon: "truck.box.fill", color: Theme.accent, id: "openCoal") { open(.coal) }
                 bigButton("СКОТ И ЗАБОЙ", subtitle: "Поголовье, забой, приплод, история",
                           icon: "pawprint.fill", color: LivestockTheme.module, id: "openLivestock") { open(.livestock) }
+                bigButton("АГРОНОМИЧЕСКИЕ КАЛЬКУЛЯТОРЫ", subtitle: "Посев, удобрения, опрыскивание, урожай и другие",
+                          icon: "function", color: CoalTheme.hired, id: "openAgro") { open(.agro) }
                 bigButton("ОТЧЁТЫ", subtitle: "Табель, продажи угля, выплаты водителям — PDF и Excel",
                           icon: "doc.text.fill", color: Color(uiColor: .systemGray), id: "openReports") { open(.reports) }
             }
@@ -136,8 +139,8 @@ struct MainScreen: View {
         Button(action: action) {
             HStack(spacing: 16) {
                 Image(systemName: icon)
-                    .font(.system(size: 30, weight: .semibold))
-                    .frame(width: 60, height: 60)
+                    .font(.system(size: 26, weight: .semibold))
+                    .frame(width: 52, height: 52)
                     .background(.white.opacity(0.2), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
                 VStack(alignment: .leading, spacing: 4) {
                     Text(title).font(.title3.bold()).lineLimit(1).minimumScaleFactor(0.7)
@@ -147,8 +150,8 @@ struct MainScreen: View {
                 Image(systemName: "chevron.right").font(.headline)
             }
             .foregroundStyle(.white)
-            .padding(18)
-            .frame(maxWidth: .infinity, minHeight: 104, alignment: .leading)
+            .padding(14)
+            .frame(maxWidth: .infinity, minHeight: 84, alignment: .leading)
             .background(color, in: RoundedRectangle(cornerRadius: 20, style: .continuous))
         }
         .buttonStyle(.plain)

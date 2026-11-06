@@ -13,7 +13,13 @@ struct TabelKFHApp: App {
         let uiTest = arguments.contains("-uitest")
         // The farm's day keys use the zone stored on the first launch (UI tests: a fixed zone).
         Calendar.useFarmTimeZone(FarmTimeZone().launchZone(uiTest: uiTest))
-        if uiTest { AppClock.startAtFixedMoment() }
+        if uiTest {
+            AppClock.startAtFixedMoment()
+            // Calculator drafts of an earlier UI test run would change the screenshots.
+            for key in UserDefaults.standard.dictionaryRepresentation().keys where key.hasPrefix("agroDraft.") {
+                UserDefaults.standard.removeObject(forKey: key)
+            }
+        }
         forcedScheme = uiTest && arguments.contains("-uitest-dark") ? .dark : nil
         do {
             container = try makeModelContainer(inMemory: uiTest)

@@ -49,6 +49,18 @@ struct BackupPayload: Codable, Equatable {
     var coal: CoalBackup? = nil
     /// The livestock module («Скот и забой»). Absent in older files: the restore keeps the current livestock data.
     var livestock: LivestockBackup? = nil
+    /// Saved agronomic calculations. Absent in older files: the restore keeps the current ones.
+    var agro: [AgroBackup]? = nil
+}
+
+/// A saved agronomic calculation in the backup file.
+struct AgroBackup: Codable, Equatable {
+    let id: UUID
+    let kind: AgroKind
+    let title: String
+    let inputs: [String: String]
+    let lines: [AgroLine]
+    let createdAt, updatedAt: Date
 }
 
 /// The backup file: a header that identifies it and the payload with its checksum.
@@ -81,8 +93,8 @@ enum BackupError: LocalizedError, Equatable {
 /// Dates are kept as the exact number of seconds (`Date`'s own encoding), so a restore gives back the same values.
 enum BackupCodec {
     static let format = "tabel-kfh-backup"
-    /// 2 added the coal module, 3 the livestock module; files of versions 1 and 2 are still restored.
-    static let schemaVersion = 3
+    /// 2 added the coal module, 3 the livestock module, 4 the agronomic calculations; older files are still restored.
+    static let schemaVersion = 4
     static let oldestSchemaVersion = 1
 
     static func encode(_ p: BackupPayload, createdAt: Date, appVersion: String) throws -> Data {
@@ -153,6 +165,7 @@ enum BackupCodec {
         }
         if let coal = p.coal, !coal.isValid(calendar: calendar) { throw BackupError.invalidData }
         if let livestock = p.livestock, !livestock.isValid { throw BackupError.invalidData }
+        if let agro = p.agro, Set(agro.map(\.id)).count != agro.count { throw BackupError.invalidData }
     }
 
     /// A cut or broken file of ours still names the format near its start.
