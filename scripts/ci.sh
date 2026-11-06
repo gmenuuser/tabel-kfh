@@ -29,7 +29,7 @@ print_failed_log() {
 cmd=${1:-wait}
 case $cmd in
   wait)
-    sha=${2:-$(git rev-parse HEAD)}
+    sha=$(git rev-parse "${2:-HEAD}")
     echo "waiting for run of $sha"
     run=""
     for _ in $(seq 1 60); do run=$(latest_run "$sha"); [ -n "$run" ] && break; sleep 10; done
