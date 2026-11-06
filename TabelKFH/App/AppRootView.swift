@@ -143,7 +143,8 @@ struct MainScreen: View {
                     .frame(width: 52, height: 52)
                     .background(.white.opacity(0.2), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
                 VStack(alignment: .leading, spacing: 4) {
-                    Text(title).font(.title3.bold()).lineLimit(1).minimumScaleFactor(0.7)
+                    Text(title).font(.title3.bold()).lineLimit(2).minimumScaleFactor(0.8)
+                        .multilineTextAlignment(.leading)
                     Text(subtitle).font(.subheadline).opacity(0.9).multilineTextAlignment(.leading)
                 }
                 Spacer(minLength: 0)
