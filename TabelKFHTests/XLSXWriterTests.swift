@@ -80,13 +80,13 @@ final class XLSXWriterTests: XCTestCase {
         XCTAssertTrue(workbook.contains("name=\"Табель\""))
     }
 
-    func testSheetHasTitleEscapedTextDayHeadersAndNumericHours() throws {
+    func testSheetHasTitleEscapedTextDayHeadersAndDayCounts() throws {
         let xml = try sheet()
         XCTAssertTrue(xml.contains("ТАБЕЛЬ УЧЁТА РАБОЧЕГО ВРЕМЕНИ"))
         XCTAssertTrue(xml.contains("ООО &quot;Тест&quot; &amp; Ко"))
         XCTAssertFalse(xml.contains("\"Тест\" & Ко"))
         XCTAssertTrue(xml.contains("&lt;центр&gt;"))
-        XCTAssertTrue(xml.contains("<v>7.5</v>"), "hours of the row as a number")
+        XCTAssertFalse(xml.contains("<v>7.5</v>"), "no hours in the timesheet")
         XCTAssertTrue(xml.contains("t=\"inlineStr\""))
 
         let rows = try rows(xml)
