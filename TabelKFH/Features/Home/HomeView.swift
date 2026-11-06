@@ -33,18 +33,23 @@ private struct HomeContent: View {
     @Bindable var model: HomeViewModel
     @Environment(\.scenePhase) private var scenePhase
     @State private var editing: EditorTarget?
+    @State private var addingEmployee = false
 
     var body: some View {
         ScrollView {
             LazyVStack(spacing: 12) {
                 header
                 if model.rows.isEmpty {
-                    Text("Нет работающих сотрудников. Добавьте их на вкладке «Сотрудники».")
-                        .font(.body)
-                        .foregroundStyle(.secondary)
-                        .multilineTextAlignment(.center)
-                        .padding(.vertical, 32)
-                        .frame(maxWidth: .infinity)
+                    VStack(spacing: 16) {
+                        Text("Сегодня нет работающих сотрудников.")
+                            .font(.body)
+                            .foregroundStyle(.secondary)
+                            .multilineTextAlignment(.center)
+                        Button("Добавить сотрудника") { addingEmployee = true }
+                            .buttonStyle(BigButtonStyle(color: Theme.primary))
+                    }
+                    .padding(.vertical, 32)
+                    .frame(maxWidth: .infinity)
                 }
                 ForEach(model.rows) { row in
                     EmployeeDayCard(
@@ -80,6 +85,9 @@ private struct HomeContent: View {
             Button("OK", role: .cancel) {}
         } message: {
             Text(model.errorMessage ?? "")
+        }
+        .sheet(isPresented: $addingEmployee, onDismiss: { model.reload() }) {
+            NavigationStack { EmployeeFormView(employee: nil) }
         }
         .sheet(item: $editing, onDismiss: { model.reload() }) { target in
             NavigationStack {

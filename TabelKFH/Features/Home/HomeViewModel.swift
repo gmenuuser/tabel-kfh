@@ -66,9 +66,7 @@ final class HomeViewModel {
         farmName = (try? context.fetch(FetchDescriptor<FarmSettings>()))?.first?.farmName ?? "КФХ Зубахин"
         dateTitle = Self.dateFormatter.string(from: moment)
 
-        let employees = ((try? context.fetch(FetchDescriptor<Employee>())) ?? [])
-            .filter { !$0.isArchived && service.isEmployed($0, on: today) }
-            .sorted { $0.fullName.localizedCaseInsensitiveCompare($1.fullName) == .orderedAscending }
+        let employees = EmployeeService(context: context).active(on: today)
 
         var atWork = 0
         rows = employees.map { e in

@@ -44,47 +44,62 @@ final class AttendanceService {
 
     private var today: Date { calendar.dayStart(now()) }
 
+    /// Now, truncated to the whole minute: marks are stored as hh:mm:00.
+    private func currentMinute() -> Date {
+        let moment = now()
+        return calendar.dateInterval(of: .minute, for: moment)?.start ?? moment
+    }
+
     /// The record of `day` (normalised to the start of the day).
     func record(for e: Employee, day: Date) -> AttendanceRecord? {
+        (try? fetchRecord(for: e, day: day)) ?? nil
+    }
+
+    /// The latest Я record from today or yesterday with an arrival no later than now and no more
+    /// than `maxOpenShift` ago, and no departure. Yesterday counts so a night shift (or the app left
+    /// open past midnight) still shows «Ушёл»; a departure forgotten long ago does not block today's arrival.
+    func openRecord(for e: Employee) -> AttendanceRecord? {
+        (try? fetchOpenRecord(for: e)) ?? nil
+    }
+
+    /// Today's or yesterday's Я record whose departure was never marked and whose arrival is more
+    /// than `maxOpenShift` ago. It stays unfinished (0 hours) until the owner fixes it.
+    func staleOpenRecord(for e: Employee) -> AttendanceRecord? {
+        let moment = now()
+        let records = (try? unfinishedRecords(for: e)) ?? []
+        return records.first { r in
+            guard let arrival = r.arrivalTime else { return false }
+            return moment.timeIntervalSince(arrival) > Self.maxOpenShift
+        }
+    }
+
+    private func fetchRecord(for e: Employee, day: Date) throws -> AttendanceRecord? {
         let id = e.id
         let start = calendar.dayStart(day)
         var descriptor = FetchDescriptor<AttendanceRecord>(
             predicate: #Predicate { $0.employeeId == id && $0.day == start })
         descriptor.fetchLimit = 1
-        return (try? context.fetch(descriptor))?.first
+        return try context.fetch(descriptor).first
     }
 
-    /// The latest Я record from today or yesterday with an arrival no more than `maxOpenShift` ago
-    /// and no departure. Yesterday counts so a night shift (or the app left open past midnight)
-    /// still shows «Ушёл»; a departure forgotten long ago does not block today's arrival.
-    func openRecord(for e: Employee) -> AttendanceRecord? {
+    private func fetchOpenRecord(for e: Employee) throws -> AttendanceRecord? {
         let moment = now()
-        return unfinishedRecords(for: e).first { r in
-            guard let arrival = r.arrivalTime else { return false }
+        return try unfinishedRecords(for: e).first { r in
+            guard let arrival = r.arrivalTime, arrival <= moment else { return false }
             return moment.timeIntervalSince(arrival) <= Self.maxOpenShift
         }
     }
 
-    /// Yesterday's Я record whose departure was never marked and that is too old to be open.
-    /// It stays unfinished (0 hours) until the owner fixes it.
-    func staleOpenRecord(for e: Employee) -> AttendanceRecord? {
-        let moment = now()
-        let yesterday = calendar.date(byAdding: .day, value: -1, to: today) ?? today
-        return unfinishedRecords(for: e).first { r in
-            guard r.day == yesterday, let arrival = r.arrivalTime else { return false }
-            return moment.timeIntervalSince(arrival) > Self.maxOpenShift
-        }
-    }
-
-    /// Я records of today and yesterday with an arrival and no departure, latest day first.
-    private func unfinishedRecords(for e: Employee) -> [AttendanceRecord] {
+    /// Я records of yesterday and today (never later days) with an arrival and no departure, latest day first.
+    private func unfinishedRecords(for e: Employee) throws -> [AttendanceRecord] {
         let id = e.id
-        let from = calendar.date(byAdding: .day, value: -1, to: today) ?? today
+        let to = today
+        let from = calendar.date(byAdding: .day, value: -1, to: to) ?? to
         let descriptor = FetchDescriptor<AttendanceRecord>(
-            predicate: #Predicate { $0.employeeId == id && $0.day >= from },
+            predicate: #Predicate { $0.employeeId == id && $0.day >= from && $0.day <= to },
             sortBy: [SortDescriptor(\.day, order: .reverse)])
-        let records = (try? context.fetch(descriptor)) ?? []
-        return records.filter { $0.status == .present && $0.arrivalTime != nil && $0.departureTime == nil }
+        return try context.fetch(descriptor)
+            .filter { $0.status == .present && $0.arrivalTime != nil && $0.departureTime == nil }
     }
 
     func todayAction(for e: Employee) -> TodayAction {
@@ -110,11 +125,11 @@ final class AttendanceService {
     /// with `force` today's record is started again.
     @discardableResult
     func markArrival(_ e: Employee, force: Bool = false) throws -> AttendanceRecord {
-        let moment = now()
+        let moment = currentMinute()
         guard isEmployed(e, on: moment) else { throw AttendanceError.outsideEmployment }
-        let existing = record(for: e, day: moment)
+        let existing = try fetchRecord(for: e, day: moment)
         if !force {
-            if openRecord(for: e) != nil { throw AttendanceError.alreadyArrived }
+            if try fetchOpenRecord(for: e) != nil { throw AttendanceError.alreadyArrived }
             if let existing {
                 throw existing.status == .present
                     ? AttendanceError.alreadyArrived
@@ -137,11 +152,11 @@ final class AttendanceService {
     /// Without an open record: `force` moves the departure of today's closed day to now.
     @discardableResult
     func markDeparture(_ e: Employee, force: Bool = false) throws -> AttendanceRecord {
-        let moment = now()
+        let moment = currentMinute()
         let r: AttendanceRecord
-        if let open = openRecord(for: e) {
+        if let open = try fetchOpenRecord(for: e) {
             r = open
-        } else if let closed = record(for: e, day: moment), closed.status == .present,
+        } else if let closed = try fetchRecord(for: e, day: moment), closed.status == .present,
                   closed.arrivalTime != nil, closed.departureTime != nil {
             guard force else { throw AttendanceError.alreadyLeft }
             r = closed
@@ -164,7 +179,7 @@ final class AttendanceService {
     func save(employee: Employee, day: Date, status: DayStatus, arrival: Date?, departure: Date?,
               breakMinutes: Int, manualMinutes: Int?, comment: String) throws -> AttendanceRecord {
         guard isEmployed(employee, on: day) else { throw AttendanceError.outsideEmployment }
-        let r = record(for: employee, day: day) ?? insertRecord(for: employee, day: day)
+        let r = try fetchRecord(for: employee, day: day) ?? insertRecord(for: employee, day: day)
         r.status = status
         r.breakMinutes = max(0, breakMinutes)
         r.comment = comment
