@@ -39,7 +39,8 @@ enum TimesheetPDFRenderer {
         let content: CGRect
         let numberWidth: CGFloat = 18
         let nameWidth: CGFloat = 110
-        let totalWidth: CGFloat = 25
+        /// Widths of the totals columns, «Часы» wider.
+        let totalWidths: [CGFloat] = TimesheetTotals.columnTitles.indices.map { $0 == TimesheetTotals.minutesColumn ? 30 : 20 }
         let dayWidth: CGFloat
         let headerHeight: CGFloat = 20
         let rowHeights: [CGFloat]
@@ -57,7 +58,7 @@ enum TimesheetPDFRenderer {
             let m = TimesheetPDFRenderer.margin, size = TimesheetPDFRenderer.pageSize
             content = CGRect(x: m, y: m, width: size.width - 2 * m, height: size.height - 2 * m)
             let days = max(1, d.daysInMonth)
-            let fixed = numberWidth + nameWidth + totalWidth * CGFloat(TimesheetTotals.columnTitles.count)
+            let fixed = numberWidth + nameWidth + totalWidths.reduce(0, +)
             dayWidth = (content.width - fixed) / CGFloat(days)
             let calendar = self.calendar
             weekends = Set((1...days).filter { day in
@@ -73,7 +74,8 @@ enum TimesheetPDFRenderer {
             let nameWidth = self.nameWidth, dayWidth = self.dayWidth
             rowHeights = d.rows.map { row in
                 let name = Text.height(row.employee.fullName, font: Font.body, width: nameWidth - 2 * Text.padX)
-                let cell = row.cells.map { Text.height($0.text, font: Font.body, width: dayWidth) }.max() ?? 0
+                let lines = row.cells.map { $0.text.isEmpty ? 0 : $0.text.components(separatedBy: "\n").count }.max() ?? 0
+                let cell = CGFloat(lines) * Font.number.lineHeight
                 return ceil(max(14, name + 2 * Text.padY + 1, cell + 2 * Text.padY + 1))
             }
             pages = paginate()
@@ -165,9 +167,9 @@ enum TimesheetPDFRenderer {
                 Cell.stroke(rect)
                 x += dayWidth
             }
-            for title in TimesheetTotals.columnTitles {
-                Cell.draw(title, CGRect(x: x, y: y, width: totalWidth, height: headerHeight), font: Font.bold, fill: Color.header)
-                x += totalWidth
+            for (title, width) in zip(TimesheetTotals.columnTitles, totalWidths) {
+                Cell.draw(title, CGRect(x: x, y: y, width: width, height: headerHeight), font: Font.bold, fill: Color.header)
+                x += width
             }
         }
 
@@ -185,9 +187,9 @@ enum TimesheetPDFRenderer {
                           color: cell.unfinished ? Color.unfinished : .black)
                 x += dayWidth
             }
-            for value in row.totals.columnTexts {
-                Cell.draw(value, CGRect(x: x, y: y, width: totalWidth, height: height), font: Font.number, fill: Color.totals)
-                x += totalWidth
+            for (value, width) in zip(row.totals.columnTexts, totalWidths) {
+                Cell.draw(value, CGRect(x: x, y: y, width: width, height: height), font: Font.number, fill: Color.totals)
+                x += width
             }
         }
 
@@ -199,10 +201,10 @@ enum TimesheetPDFRenderer {
             let daysWidth = dayWidth * CGFloat(max(1, d.daysInMonth))
             Cell.draw("", CGRect(x: x, y: y, width: daysWidth, height: farmHeight), font: Font.bold, fill: Color.header)
             x += daysWidth
-            for value in d.farmTotals.columnTexts {
-                Cell.draw(value, CGRect(x: x, y: y, width: totalWidth, height: farmHeight), font: Font.boldNumber,
+            for (value, width) in zip(d.farmTotals.columnTexts, totalWidths) {
+                Cell.draw(value, CGRect(x: x, y: y, width: width, height: farmHeight), font: Font.boldNumber,
                           fill: Color.header)
-                x += totalWidth
+                x += width
             }
         }
 
@@ -257,19 +259,24 @@ enum TimesheetPDFRenderer {
 
     // MARK: - Drawing primitives
 
+    /// Arial (built into iOS, full Cyrillic, tabular digits). Not the system font: in its PDF text the Cyrillic
+    /// «к» comes out as «ĸ», which breaks search and copy («Руĸоводитель»).
     private enum Font {
-        static let title = UIFont.boldSystemFont(ofSize: 14)
-        static let info = UIFont.systemFont(ofSize: 9)
-        static let infoBold = UIFont.boldSystemFont(ofSize: 10)
+        static func regular(_ size: CGFloat) -> UIFont { UIFont(name: "ArialMT", size: size) ?? .systemFont(ofSize: size) }
+        static func heavy(_ size: CGFloat) -> UIFont { UIFont(name: "Arial-BoldMT", size: size) ?? .boldSystemFont(ofSize: size) }
+
+        static let title = heavy(14)
+        static let info = regular(9)
+        static let infoBold = heavy(10)
         static let infoLine: CGFloat = 12
-        static let body = UIFont.systemFont(ofSize: 7)
-        static let bold = UIFont.boldSystemFont(ofSize: 7)
-        static let number = UIFont.monospacedDigitSystemFont(ofSize: 7, weight: .regular)
-        static let boldNumber = UIFont.monospacedDigitSystemFont(ofSize: 7, weight: .bold)
-        static let weekday = UIFont.systemFont(ofSize: 5.5)
-        static let small = UIFont.systemFont(ofSize: 7)
-        static let signature = UIFont.systemFont(ofSize: 9)
-        static let signatureName = UIFont.systemFont(ofSize: 9)
+        static let body = regular(7)
+        static let bold = heavy(7)
+        static let number = regular(7)
+        static let boldNumber = heavy(7)
+        static let weekday = regular(5.5)
+        static let small = regular(7)
+        static let signature = regular(9)
+        static let signatureName = regular(9)
     }
 
     private enum Color {
@@ -307,7 +314,7 @@ enum TimesheetPDFRenderer {
     }
 
     private enum Text {
-        static let padX: CGFloat = 2
+        static let padX: CGFloat = 1.5
         static let padY: CGFloat = 1.5
         private static let options: NSStringDrawingOptions = [.usesLineFragmentOrigin, .usesFontLeading]
 
@@ -335,12 +342,22 @@ enum TimesheetPDFRenderer {
                          align: NSTextAlignment, wraps: Bool = false, inset: Bool = true) {
             guard !text.isEmpty else { return }
             let inner = inset ? rect.insetBy(dx: padX, dy: padY) : rect
-            var font = font
             if !wraps {
-                let widest = width(text, font: font)
-                if widest > inner.width, widest > 0 {
-                    font = font.withSize(max(4.5, font.pointSize * inner.width / widest))
+                // Line by line, each shrunk to the width if needed: «Я» keeps its size above «7,75».
+                let lines = text.components(separatedBy: "\n").map { line -> (String, UIFont) in
+                    let widest = width(line, font: font)
+                    guard widest > inner.width, widest > 0 else { return (line, font) }
+                    return (line, font.withSize(max(4.5, font.pointSize * inner.width / widest)))
                 }
+                let total = lines.reduce(CGFloat(0)) { $0 + $1.1.lineHeight }
+                var y = inner.minY + max(0, (inner.height - total) / 2)
+                for (line, lineFont) in lines {
+                    attributed(line, font: lineFont, color: color, align: align, wraps: false)
+                        .draw(with: CGRect(x: inner.minX, y: y, width: inner.width, height: ceil(lineFont.lineHeight)),
+                              options: options, context: nil)
+                    y += lineFont.lineHeight
+                }
+                return
             }
             let string = attributed(text, font: font, color: color, align: align, wraps: wraps)
             let height = ceil(string.boundingRect(with: CGSize(width: inner.width, height: .greatestFiniteMagnitude),

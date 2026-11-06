@@ -45,7 +45,7 @@ final class PDFRendererTests: XCTestCase {
                          "Итого по хозяйству", "Страница 1 из 1",
                          "Руководитель КФХ: ___________________", "Ответственное лицо: ___________________",
                          "Дата формирования: 06.11.2026"] {
-            XCTAssertTrue(page.contains(expected), "page 1 has «\(expected)»")
+            XCTAssertTrue(page.contains(expected), "page 1 has «\(expected)» in: \(page)")
         }
     }
 
@@ -56,9 +56,9 @@ final class PDFRendererTests: XCTestCase {
         XCTAssertTrue(second.contains("ФИО"), "header repeated on page 2")
         XCTAssertTrue(second.contains("Страница 2 из \(pdf.pageCount)"))
         let last = text(pdf.page(at: pdf.pageCount - 1))
-        XCTAssertTrue(last.contains("Руководитель КФХ:"))
-        XCTAssertTrue(last.contains("Ответственное лицо:"))
-        XCTAssertTrue(last.contains("Страница \(pdf.pageCount) из \(pdf.pageCount)"))
+        XCTAssertTrue(last.contains("Руководитель КФХ:"), last)
+        XCTAssertTrue(last.contains("Ответственное лицо:"), last)
+        XCTAssertTrue(last.contains("Страница \(pdf.pageCount) из \(pdf.pageCount)"), last)
         XCTAssertFalse(text(pdf.page(at: 0)).contains("Руководитель КФХ:"))
     }
 
