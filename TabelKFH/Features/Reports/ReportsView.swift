@@ -12,6 +12,8 @@ struct ReportsView: View {
                     icon: "truck.box.fill", color: Theme.accent) { CoalSalesReportView() }
                 row("Выплаты водителям", subtitle: "Сколько заработал, получил и кому сколько ещё выплатить",
                     icon: "banknote.fill", color: CoalTheme.hired) { DriverPaymentsReportView() }
+                row("Скот и забой", subtitle: "Остаток поголовья, забой, движение поголовья",
+                    icon: "pawprint.fill", color: LivestockTheme.module) { LivestockReportsView() }
             }
             .padding(16)
         }

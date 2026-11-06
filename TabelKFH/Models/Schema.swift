@@ -33,16 +33,27 @@ enum SchemaV2: VersionedSchema {
     }
 }
 
+/// V2 + the livestock module («Скот и забой»).
+enum SchemaV3: VersionedSchema {
+    static var versionIdentifier: Schema.Version { Schema.Version(3, 0, 0) }
+
+    static var models: [any PersistentModel.Type] {
+        SchemaV2.models + [LivestockCategory.self, LivestockOperation.self, SlaughterRecord.self,
+                           LivestockSettings.self]
+    }
+}
+
 enum TabelMigrationPlan: SchemaMigrationPlan {
-    static var schemas: [any VersionedSchema.Type] { [SchemaV1.self, SchemaV2.self] }
+    static var schemas: [any VersionedSchema.Type] { [SchemaV1.self, SchemaV2.self, SchemaV3.self] }
     static var stages: [MigrationStage] {
-        [.lightweight(fromVersion: SchemaV1.self, toVersion: SchemaV2.self)]
+        [.lightweight(fromVersion: SchemaV1.self, toVersion: SchemaV2.self),
+         .lightweight(fromVersion: SchemaV2.self, toVersion: SchemaV3.self)]
     }
 }
 
 /// The app's store. `inMemory` wins over `url`; with neither, the default on-disk store is used.
 func makeModelContainer(inMemory: Bool = false, url: URL? = nil) throws -> ModelContainer {
-    let schema = Schema(versionedSchema: SchemaV2.self)
+    let schema = Schema(versionedSchema: SchemaV3.self)
     let configuration: ModelConfiguration
     if inMemory {
         configuration = ModelConfiguration(schema: schema, isStoredInMemoryOnly: true, cloudKitDatabase: .none)

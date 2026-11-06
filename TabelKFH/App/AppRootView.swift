@@ -3,7 +3,7 @@ import SwiftData
 
 /// Where the main screen leads.
 enum MainDestination: Hashable {
-    case timesheet, coal, reports, settings
+    case timesheet, coal, livestock, reports, settings
 }
 
 /// One main screen with three large buttons; every part opens on top of it and «Назад» returns to it.
@@ -19,6 +19,7 @@ struct AppRootView: View {
                     switch destination {
                     case .timesheet: HomeView()
                     case .coal: CoalSaleScreen()
+                    case .livestock: LivestockHomeView()
                     case .reports: ReportsView()
                     case .settings: SettingsView()
                     }
@@ -45,6 +46,7 @@ struct MainScreen: View {
     @Environment(\.scenePhase) private var scenePhase
     @Query private var sales: [CoalSale]
     @Query private var workDays: [CoalWorkDay]
+    @Query private var herdOperations: [LivestockOperation]
     @State private var today = Calendar.farm.dayStart(AppClock.now())
     @State private var farmName = ""
     /// People working today and those marked Я.
@@ -66,6 +68,8 @@ struct MainScreen: View {
                           icon: "person.2.fill", color: Theme.primary, id: "openTimesheet") { open(.timesheet) }
                 bigButton("ПРОДАЖА УГЛЯ", subtitle: "Новая продажа, продажи за сегодня, итоги дня",
                           icon: "truck.box.fill", color: Theme.accent, id: "openCoal") { open(.coal) }
+                bigButton("СКОТ И ЗАБОЙ", subtitle: "Поголовье, забой, приплод, история",
+                          icon: "pawprint.fill", color: LivestockTheme.module, id: "openLivestock") { open(.livestock) }
                 bigButton("ОТЧЁТЫ", subtitle: "Табель, продажи угля, выплаты водителям — PDF и Excel",
                           icon: "doc.text.fill", color: Color(uiColor: .systemGray), id: "openReports") { open(.reports) }
             }
@@ -112,6 +116,10 @@ struct MainScreen: View {
                 Label(t.salesCount == 0 ? "Продаж угля сегодня нет"
                       : "Уголь: \(CoalText.sales(t.salesCount)) на \(CoalMath.rubles(t.revenue))",
                       systemImage: "truck.box")
+                let herd = LivestockLedger.balances(herdOperations.map(HerdMove.init)).values.reduce(0, +)
+                if herd > 0 {
+                    Label("Скот: \(LivestockText.heads(herd))", systemImage: "pawprint")
+                }
                 if dayClosed {
                     Label("Рабочий день по углю завершён", systemImage: "checkmark.seal.fill")
                         .foregroundStyle(Theme.primary)

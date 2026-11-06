@@ -43,7 +43,8 @@ final class BackupService {
                              records: records.map(Self.backup),
                              snapshots: snapshots.map(Self.backup),
                              timeZone: calendar.timeZone.identifier,
-                             coal: try coalPayload())
+                             coal: try coalPayload(),
+                             livestock: try livestockPayload())
     }
 
     func makeBackup() throws -> Data {
@@ -120,6 +121,7 @@ final class BackupService {
             }
 
             if let coal = p.coal { try restoreCoal(coal) }
+            if let livestock = p.livestock { try restoreLivestock(livestock) }
 
             try context.save()
         } catch {
@@ -284,6 +286,72 @@ final class BackupService {
             d.totalDriverPayments = b.totalDriverPayments
             d.ownVehicleDeliveryRevenue = b.ownVehicleDeliveryRevenue
             d.createdAt = b.createdAt
+        }
+    }
+
+    // MARK: - Livestock module
+
+    private func livestockPayload() throws -> LivestockBackup {
+        func byId<T>(_ items: [T], _ id: (T) -> UUID) -> [T] { items.sorted { id($0).uuidString < id($1).uuidString } }
+        return LivestockBackup(
+            defaultsCreated: try context.fetchCount(FetchDescriptor<LivestockSettings>()) > 0,
+            categories: byId(try context.fetch(FetchDescriptor<LivestockCategory>()), { $0.id }).map {
+                LivestockBackup.Category(id: $0.id, species: $0.species, name: $0.name, sortOrder: $0.sortOrder,
+                                         isBuiltIn: $0.isBuiltIn, createdAt: $0.createdAt)
+            },
+            operations: byId(try context.fetch(FetchDescriptor<LivestockOperation>()), { $0.id }).map {
+                LivestockBackup.Operation(id: $0.id, kind: $0.kind, date: $0.date, categoryId: $0.categoryId,
+                                          targetCategoryId: $0.targetCategoryId, heads: $0.heads, comment: $0.comment,
+                                          createdAt: $0.createdAt, updatedAt: $0.updatedAt)
+            },
+            slaughters: byId(try context.fetch(FetchDescriptor<SlaughterRecord>()), { $0.id }).map {
+                LivestockBackup.Slaughter(id: $0.id, operationId: $0.operationId, reason: $0.reason,
+                                          liveWeightGrams: $0.liveWeightGrams, carcassWeightGrams: $0.carcassWeightGrams,
+                                          meatWeightGrams: $0.meatWeightGrams, createdAt: $0.createdAt)
+            })
+    }
+
+    private func restoreLivestock(_ l: LivestockBackup) throws {
+        let settings = try context.fetch(FetchDescriptor<LivestockSettings>())
+        if l.defaultsCreated {
+            if settings.isEmpty { context.insert(LivestockSettings(createdAt: now())) }
+            settings.dropFirst().forEach { context.delete($0) }
+        } else {
+            settings.forEach { context.delete($0) }
+        }
+        merge(l.categories, existing: try context.fetch(FetchDescriptor<LivestockCategory>()), id: { $0.id },
+              rowId: { $0.id },
+              make: { LivestockCategory(id: $0.id, species: $0.species, name: $0.name, sortOrder: $0.sortOrder,
+                                        createdAt: $0.createdAt) }) { b, c in
+            c.species = b.species
+            c.name = b.name
+            c.sortOrder = b.sortOrder
+            c.isBuiltIn = b.isBuiltIn
+            c.createdAt = b.createdAt
+        }
+        merge(l.operations, existing: try context.fetch(FetchDescriptor<LivestockOperation>()), id: { $0.id },
+              rowId: { $0.id },
+              make: { LivestockOperation(id: $0.id, kind: $0.kind, date: $0.date, categoryId: $0.categoryId,
+                                         heads: $0.heads, createdAt: $0.createdAt, updatedAt: $0.updatedAt) }) { b, o in
+            o.kind = b.kind
+            o.date = b.date
+            o.categoryId = b.categoryId
+            o.targetCategoryId = b.targetCategoryId
+            o.heads = b.heads
+            o.comment = b.comment
+            o.createdAt = b.createdAt
+            o.updatedAt = b.updatedAt
+        }
+        merge(l.slaughters, existing: try context.fetch(FetchDescriptor<SlaughterRecord>()), id: { $0.id },
+              rowId: { $0.id },
+              make: { SlaughterRecord(id: $0.id, operationId: $0.operationId, reason: $0.reason,
+                                      createdAt: $0.createdAt) }) { b, s in
+            s.operationId = b.operationId
+            s.reason = b.reason
+            s.liveWeightGrams = b.liveWeightGrams
+            s.carcassWeightGrams = b.carcassWeightGrams
+            s.meatWeightGrams = b.meatWeightGrams
+            s.createdAt = b.createdAt
         }
     }
 
