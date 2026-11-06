@@ -50,12 +50,14 @@ final class CoalSettingsService {
 
     /// The villages offered in a new sale, by name.
     func activeLocations() throws -> [DeliveryLocation] {
-        current()
-        return try allLocations().filter(\.isActive)
+        try allLocations().filter(\.isActive)
     }
 
+    /// Every village, hidden ones too. The defaults are seeded first, so a village added before the module
+    /// was ever opened does not keep the owner's two from being made.
     func allLocations() throws -> [DeliveryLocation] {
-        try context.fetch(FetchDescriptor<DeliveryLocation>()).sorted {
+        current()
+        return try context.fetch(FetchDescriptor<DeliveryLocation>()).sorted {
             $0.name.compare($1.name, options: [.caseInsensitive], locale: Locale(identifier: "ru_RU")) == .orderedAscending
         }
     }
