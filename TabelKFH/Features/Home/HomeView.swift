@@ -39,6 +39,7 @@ private struct HomeContent: View {
         ScrollView {
             LazyVStack(spacing: 12) {
                 header
+                CoalEntryCard()
                 if model.rows.isEmpty {
                     VStack(spacing: 16) {
                         Text("Сегодня нет работающих сотрудников.")

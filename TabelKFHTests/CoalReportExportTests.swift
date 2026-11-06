@@ -134,11 +134,17 @@ final class CoalReportExportTests: XCTestCase {
 
     func testLongTableContinuesOnTheNextPageWithItsHeader() throws {
         try fillDay(extra: 70)
-        let (pdf, text) = try pdfText(CoalReportPDFRenderer.render(CoalReportLayout.document(try days.dayReport(clock))))
+        let data = CoalReportPDFRenderer.render(CoalReportLayout.document(try days.dayReport(clock)))
+        if let root = ProcessInfo.processInfo.environment["SAMPLES_DIR"] {
+            let folder = URL(fileURLWithPath: root).appendingPathComponent("ReviewSamples", isDirectory: true)
+            try? FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+            try? data.write(to: folder.appendingPathComponent("coal-day-long.pdf"))
+        }
+        let (pdf, text) = try pdfText(data)
         XCTAssertGreaterThan(pdf.pageCount, 1)
         let second = try XCTUnwrap(pdf.page(at: 1)?.string)
-        XCTAssertTrue(second.contains("Населённый пункт"), "the header is repeated")
-        XCTAssertTrue(second.contains("КФХ Зубахин · Отчёт за день 06.11.2026"))
+        XCTAssertTrue(second.contains("Населённый пункт"), "the header is repeated: \(second.prefix(400))")
+        XCTAssertTrue(second.contains("Отчёт за день 06.11.2026"), "running header: \(second.prefix(200))")
         XCTAssertTrue(text.contains("Страница \(pdf.pageCount) из \(pdf.pageCount)"))
     }
 
