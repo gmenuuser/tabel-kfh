@@ -67,6 +67,7 @@ final class BackupFlow {
             let s = try BackupService(context: context).summary(of: data)
             pending = PendingRestore(data: data, summary: BackupService.summaryText(employees: s.employees,
                                                                                      records: s.records,
+                                                                                     coalSales: s.coalSales,
                                                                                      createdAt: s.createdAt))
         } catch {
             message = error.localizedDescription
