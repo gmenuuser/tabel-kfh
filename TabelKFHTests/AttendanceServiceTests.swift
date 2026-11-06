@@ -317,6 +317,43 @@ final class AttendanceServiceTests: XCTestCase {
         XCTAssertEqual(try recordCount(), 2)
     }
 
+    func testSaveRefusesPresenceAndTimesForFutureDays() throws {
+        let service = try makeService(now: at(6, 12, 0))
+        let employee = addEmployee()
+        let tomorrow = calendar.date(day: 7, month: 11, year: 2026)
+
+        XCTAssertThrowsError(try service.save(employee: employee, day: tomorrow, status: .present,
+                                              arrival: nil, departure: nil, breakMinutes: 0,
+                                              manualMinutes: nil, comment: "")) { error in
+            XCTAssertEqual(error as? AttendanceError, .futureTimes)
+        }
+        XCTAssertThrowsError(try service.save(employee: employee, day: tomorrow, status: .sick,
+                                              arrival: at(7, 8, 0), departure: nil, breakMinutes: 0,
+                                              manualMinutes: nil, comment: "")) { error in
+            XCTAssertEqual(error as? AttendanceError, .futureTimes)
+        }
+        XCTAssertThrowsError(try service.save(employee: employee, day: tomorrow, status: .vacation,
+                                              arrival: nil, departure: at(7, 17, 0), breakMinutes: 0,
+                                              manualMinutes: nil, comment: "")) { error in
+            XCTAssertEqual(error as? AttendanceError, .futureTimes)
+        }
+        XCTAssertEqual(try recordCount(), 0)
+
+        for (offset, status) in DayStatus.plannedAbsences.enumerated() {
+            let day = calendar.date(day: 7 + offset, month: 11, year: 2026)
+            XCTAssertNoThrow(try service.save(employee: employee, day: day, status: status,
+                                              arrival: nil, departure: nil, breakMinutes: 0,
+                                              manualMinutes: nil, comment: "План"))
+        }
+        // Today and past days still take Я with times.
+        XCTAssertNoThrow(try service.save(employee: employee, day: at(6, 0, 0), status: .present,
+                                          arrival: at(6, 8, 0), departure: nil, breakMinutes: 60,
+                                          manualMinutes: nil, comment: ""))
+        XCTAssertEqual(try recordCount(), DayStatus.plannedAbsences.count + 1)
+        XCTAssertEqual(AttendanceError.futureTimes.errorDescription,
+                       "Время можно отметить только за прошедшие дни и сегодня")
+    }
+
     // A missing mark is never turned into ПР.
     func testNoRecordMeansMarkArrivalNeverAbsent() throws {
         let service = try makeService(now: at(6, 18, 0))
