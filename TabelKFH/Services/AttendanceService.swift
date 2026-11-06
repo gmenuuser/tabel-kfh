@@ -15,6 +15,7 @@ enum AttendanceError: LocalizedError, Equatable {
     case dayHasOtherStatus(DayStatus)
     case notArrived
     case outsideEmployment
+    case futureTimes
 
     var errorDescription: String? {
         switch self {
@@ -23,6 +24,7 @@ enum AttendanceError: LocalizedError, Equatable {
         case .dayHasOtherStatus(let status): return "На этот день уже стоит статус «\(status.title)»"
         case .notArrived: return "Сначала отметьте приход"
         case .outsideEmployment: return "В этот день сотрудник не работал в хозяйстве (до приёма или после увольнения)"
+        case .futureTimes: return "Время можно отметить только за прошедшие дни и сегодня"
         }
     }
 }
@@ -175,10 +177,14 @@ final class AttendanceService {
 
     /// Creates or updates the record of (employee, day) — any day within employment.
     /// Times and the manual total are kept only for Я; other statuses are stored without them.
+    /// A day after today takes no Я and no times: only planned absences can be set ahead.
     @discardableResult
     func save(employee: Employee, day: Date, status: DayStatus, arrival: Date?, departure: Date?,
               breakMinutes: Int, manualMinutes: Int?, comment: String) throws -> AttendanceRecord {
         guard isEmployed(employee, on: day) else { throw AttendanceError.outsideEmployment }
+        if calendar.dayStart(day) > today, status == .present || arrival != nil || departure != nil {
+            throw AttendanceError.futureTimes
+        }
         let r = try fetchRecord(for: employee, day: day) ?? insertRecord(for: employee, day: day)
         r.status = status
         r.breakMinutes = max(0, breakMinutes)
