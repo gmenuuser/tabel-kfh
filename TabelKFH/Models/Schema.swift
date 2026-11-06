@@ -1,3 +1,6 @@
+import Foundation
+import SwiftData
+
 // How the stored models change without losing the owner's data (the app must always open every shipped store):
 //
 // - A version lists the model classes of its store. A class that is not edited may be listed by several
