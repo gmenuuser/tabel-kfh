@@ -11,6 +11,8 @@ struct EmployeeHistoryView: View {
     @State private var year: Int
     @State private var records: [Date: AttendanceRecord] = [:]
     @State private var editingProfile = false
+    @State private var confirmArchive = false
+    @State private var errorMessage: String?
 
     private let calendar = Calendar.farm
 
@@ -48,6 +50,17 @@ struct EmployeeHistoryView: View {
             } header: {
                 Text("Дни")
             }
+
+            Section {
+                if employee.isArchived {
+                    Button("Вернуть из архива") { run { try EmployeeService(context: context).restore(employee) } }
+                } else {
+                    Button("В архив") { confirmArchive = true }
+                        .foregroundStyle(Theme.accent)
+                }
+            } footer: {
+                Text("Архив только скрывает сотрудника с Главной; отметки и табели остаются.")
+            }
         }
         .navigationTitle(employee.fullName)
         .navigationBarTitleDisplayMode(.inline)
@@ -58,6 +71,18 @@ struct EmployeeHistoryView: View {
         }
         .sheet(isPresented: $editingProfile, onDismiss: reload) {
             NavigationStack { EmployeeFormView(employee: employee) }
+        }
+        .confirmationDialog("Убрать \(employee.fullName) в архив?", isPresented: $confirmArchive,
+                            titleVisibility: .visible) {
+            Button("В архив", role: .destructive) { run { try EmployeeService(context: context).archive(employee) } }
+            Button("Отмена", role: .cancel) {}
+        } message: {
+            Text("Сотрудник пропадёт с Главной. Вернуть его можно здесь или во вкладке «Архив».")
+        }
+        .alert("Не получилось", isPresented: errorShown) {
+            Button("OK", role: .cancel) {}
+        } message: {
+            Text(errorMessage ?? "")
         }
         .onAppear(perform: reload)
         .onChange(of: month) { _, _ in reload() }
@@ -122,12 +147,25 @@ struct EmployeeHistoryView: View {
             .filter { day in day >= hire && (dismissal.map { day <= $0 } ?? true) }
     }
 
-    private var presentDays: Int {
-        records.values.filter { $0.status == .present }.count
+    /// Only days within employment count, as in the timesheet.
+    private var totals: (presentDays: Int, minutes: Int) {
+        EmployeeService.monthTotals(Array(records.values), of: employee, calendar: calendar)
     }
 
-    private var workedMinutes: Int {
-        records.values.filter { $0.status == .present }.map { WorkTimeCalculator.effectiveMinutes($0) }.reduce(0, +)
+    private var presentDays: Int { totals.presentDays }
+
+    private var workedMinutes: Int { totals.minutes }
+
+    private var errorShown: Binding<Bool> {
+        Binding(get: { errorMessage != nil }, set: { if !$0 { errorMessage = nil } })
+    }
+
+    private func run(_ action: () throws -> Void) {
+        do {
+            try action()
+        } catch {
+            errorMessage = error.localizedDescription
+        }
     }
 
     private func shiftMonth(_ delta: Int) {
@@ -194,12 +232,12 @@ private struct HistoryDayRow: View {
     }
 
     /// «6, пт».
-    private static let dayFormatter: DateFormatter = {
+    private static var dayFormatter: DateFormatter {
         let f = DateFormatter()
         f.calendar = Calendar.farm
         f.locale = Locale(identifier: "ru_RU")
         f.timeZone = Calendar.farm.timeZone
         f.dateFormat = "d, EE"
         return f
-    }()
+    }
 }
