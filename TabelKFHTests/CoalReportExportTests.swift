@@ -187,6 +187,23 @@ final class CoalReportExportTests: XCTestCase {
         XCTAssertTrue(text.contains("Итоги по населённым пунктам"))
     }
 
+    func testPaymentsReport() throws {
+        try fillDay()
+        let doc = CoalReportLayout.paymentsDocument(try days.dayReport(clock))
+        XCTAssertEqual(doc.fileName, "Выплаты_водителям_2026-11-06")
+        XCTAssertEqual(doc.blocks.first, .title("ВЫПЛАТЫ ВОДИТЕЛЯМ"))
+        let rows = try sheetRows(CoalReportXLSXWriter.make(doc))
+        XCTAssertTrue(rows.contains { $0 == ["Мунгалов Сергей Иванович", "3", "0", "3200", "2000", "1200"] })
+        XCTAssertTrue(rows.contains { $0.first == "ИТОГО К ВЫПЛАТЕ" && $0.last == "3400" })
+        XCTAssertTrue(rows.contains { $0.count > 2 && $0[1] == "Мунгалов Сергей Иванович" && $0[2] == "2000" },
+                      "the payment is listed")
+        let (_, text) = try pdfText(CoalReportPDFRenderer.render(doc))
+        XCTAssertTrue(text.contains("ВЫПЛАТЫ ВОДИТЕЛЯМ"))
+        let month = CoalReportLayout.paymentsDocument(try days.monthReport(month: 11, year: 2026))
+        XCTAssertEqual(month.fileName, "Выплаты_водителям_2026-11")
+        XCTAssertTrue(month.blocks.contains(.text("Месяц: Ноябрь 2026")))
+    }
+
     func testEmptyDayStillMakesAReport() throws {
         let doc = CoalReportLayout.document(try days.dayReport(clock))
         XCTAssertTrue(doc.blocks.contains(.text("Продаж нет.")))

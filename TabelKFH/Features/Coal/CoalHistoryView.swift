@@ -4,7 +4,6 @@ import SwiftData
 /// «История»: sales of any day or month with search and the truck filter, the month's report and export,
 /// closed days, payments to drivers.
 struct CoalHistoryView: View {
-    let onClose: () -> Void
 
     enum Mode: Hashable { case sales, days, payments }
     enum Period: Hashable { case day, month }
@@ -73,9 +72,8 @@ struct CoalHistoryView: View {
             case .payments: paymentsSection
             }
         }
-        .navigationTitle("История")
+        .navigationTitle("История продаж")
         .navigationBarTitleDisplayMode(.inline)
-        .toolbar { CoalCloseButton(onClose: onClose) }
         .sheet(isPresented: $pickingMonth) {
             MonthYearPicker(month: month, year: year) { m, y in
                 month = m
@@ -195,7 +193,6 @@ struct CoalHistoryView: View {
 
 /// «Цены»: the coal price per ton and the villages with their delivery prices and drivers' pay.
 struct CoalPricesView: View {
-    let onClose: () -> Void
 
     @Environment(\.modelContext) private var context
     @Query(filter: #Predicate<DeliveryLocation> { $0.isActive == true }) private var locationRows: [DeliveryLocation]
@@ -258,9 +255,8 @@ struct CoalPricesView: View {
                      + "По умолчанию наёмный водитель получает всю стоимость доставки.")
             }
         }
-        .navigationTitle("Цены")
+        .navigationTitle("Цены и населённые пункты")
         .navigationBarTitleDisplayMode(.inline)
-        .toolbar { CoalCloseButton(onClose: onClose) }
         .keyboardDoneButton()
         .onAppear {
             priceText = CoalMath.rublesField(CoalSettingsService(context: context).pricePerTon)

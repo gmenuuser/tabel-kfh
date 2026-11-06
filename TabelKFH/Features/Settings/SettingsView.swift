@@ -54,6 +54,23 @@ private struct SettingsForm: View {
                 Text("Эти данные печатаются в шапке и подписях табеля.")
             }
 
+            Section {
+                NavigationLink {
+                    CoalPricesView()
+                } label: {
+                    Label("Цена угля и населённые пункты", systemImage: "rublesign.circle")
+                }
+                NavigationLink {
+                    DriversView()
+                } label: {
+                    Label("Водители", systemImage: "person.2")
+                }
+            } header: {
+                Text("Продажа угля")
+            } footer: {
+                Text("Новые водители и населённые пункты сразу появляются кнопками в продаже угля.")
+            }
+
             BackupView(flow: backup)
 
             Section("О приложении") {

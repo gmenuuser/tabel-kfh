@@ -3,7 +3,6 @@ import SwiftData
 
 /// «Водители»: hired drivers with what the farm owes each of them.
 struct DriversView: View {
-    let onClose: () -> Void
 
     @Query private var driverRows: [Driver]
     @Query private var sales: [CoalSale]
@@ -63,7 +62,6 @@ struct DriversView: View {
         .navigationTitle("Водители")
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
-            CoalCloseButton(onClose: onClose)
             ToolbarItem(placement: .primaryAction) {
                 Button { adding = true } label: { Image(systemName: "plus") }
                     .accessibilityLabel("Добавить водителя")

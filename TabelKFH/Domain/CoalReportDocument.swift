@@ -148,6 +148,39 @@ enum CoalReportLayout {
                                   runningHeader: "\(r.farmName) · \(kindTitle) \(period)", blocks: blocks)
     }
 
+    /// «Выплаты водителям» for a day or a month: what each hired driver earned, was paid and is owed, and the
+    /// payments themselves.
+    static func paymentsDocument(_ r: CoalReport, calendar: Calendar = .farm) -> CoalReportDocument {
+        let period = r.periodTitle(calendar: calendar)
+        var blocks: [ReportBlock] = [
+            .title("ВЫПЛАТЫ ВОДИТЕЛЯМ"),
+            .boldText(r.farmName),
+            .text(r.kind == .day ? "Дата: \(period)" : "Месяц: \(period)"),
+            .heading("Взаиморасчёты с водителями"),
+        ]
+        if r.drivers.isEmpty {
+            blocks.append(.text("Начислений и долгов перед наёмными водителями нет."))
+        } else {
+            blocks.append(.table(driversTable(r)))
+            blocks.append(.note("«К выплате» — долг на конец периода: начислено за доставки минус выплачено. "
+                                + "Начисленное само выплаченным не считается."))
+        }
+        blocks.append(.heading("Выплаты"))
+        if r.payments.isEmpty {
+            blocks.append(.text("Выплат за период не было."))
+        } else {
+            blocks.append(.table(paymentsTable(r, calendar: calendar)))
+        }
+        blocks.append(.signature(label: signatureLabel, name: r.managerName))
+        blocks.append(.note("Дата формирования: \(CoalText.dateTime(r.createdAt, calendar: calendar))"))
+        let c = calendar.dateComponents([.day, .month, .year], from: r.start)
+        let name = r.kind == .day
+            ? String(format: "Выплаты_водителям_%04d-%02d-%02d", c.year ?? 0, c.month ?? 0, c.day ?? 0)
+            : String(format: "Выплаты_водителям_%04d-%02d", c.year ?? 0, c.month ?? 0)
+        return CoalReportDocument(fileName: name, runningHeader: "\(r.farmName) · Выплаты водителям \(period)",
+                                  blocks: blocks)
+    }
+
     /// «Уголь_день_2026-11-06», «Уголь_месяц_2026-11».
     static func fileName(_ r: CoalReport, calendar: Calendar = .farm) -> String {
         let c = calendar.dateComponents([.day, .month, .year], from: r.start)

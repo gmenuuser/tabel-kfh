@@ -1,7 +1,7 @@
 import XCTest
 
-/// The coal module in the simulator the way the owner would use it on the first day: two drivers, a hired and
-/// an own-vehicle sale, a payment, closing the day. Screenshots go to `SAMPLES_DIR/Screens/3N-*.png`.
+/// Coal sales the way the owner works: everything on one screen — drivers added from the truck buttons, two
+/// sales, the day closed; then the reports and the settings. Screenshots go to `SAMPLES_DIR/Screens/3N-*.png`.
 final class CoalWalkthroughTests: XCTestCase {
     private var app: XCUIApplication!
 
@@ -11,96 +11,83 @@ final class CoalWalkthroughTests: XCTestCase {
 
     func testCoalDay() throws {
         launch(dark: false)
-        // «Уголь» on the start screen opens the module directly.
-        let coal = app.buttons["chooseCoal"]
-        XCTAssertTrue(coal.waitForExistence(timeout: 15), "the start screen offers «Уголь»")
-        coal.tap()
-        XCTAssertTrue(app.navigationBars["Продажи за сегодня"].waitForExistence(timeout: 10))
-        shot("30-coal-today-empty")
+        openCoal()
+        shot("30-coal-empty")
 
-        tab("Водители")
         addDriver("Мунгалов", "Сергей")
         addDriver("Кайдолов", "Пётр")
-        XCTAssertTrue(element(containing: "Мунгалов Сергей").waitForExistence(timeout: 10))
-        shot("31-drivers")
+        XCTAssertTrue(app.buttons["М Мунгалов"].waitForExistence(timeout: 10), "the new driver is a button")
+        XCTAssertTrue(app.buttons["К Кайдолов"].exists)
+        shot("31-coal-drivers")
 
-        tab("Продажи")
-        newSale(tons: "2 т", place: "Новоцурухайтуй", driver: "М Мунгалов", own: false, expectTotal: "14", shotName: "32-new-sale")
-        newSale(tons: "1 т", place: "Приаргунск", driver: nil, own: true, expectTotal: "7", shotName: "33-new-sale-own")
-        XCTAssertTrue(element(containing: "Наёмная: Мунгалов").waitForExistence(timeout: 10))
-        XCTAssertTrue(element(containing: "Собственная машина КФХ").exists)
+        sell(tons: "2 т", place: "Новоцурухайтуй", vehicle: "М Мунгалов", expectTotal: "14", shotName: "32-coal-sale")
+        XCTAssertTrue(element(containing: "Наёмная: Мунгалов").waitForExistence(timeout: 10), "the sale is listed")
+        XCTAssertTrue(app.staticTexts["saleTotal"].label.hasPrefix("0"), "the form is clean for the next sale")
+        sell(tons: "1 т", place: "Приаргунск", vehicle: "vehicle-own", expectTotal: "7", shotName: "33-coal-sale-own")
+        XCTAssertTrue(element(containing: "Собственная машина КФХ").waitForExistence(timeout: 10))
         shot("34-coal-today")
 
-        tab("Итоги дня")
-        XCTAssertTrue(element(containing: "Финансовые итоги").waitForExistence(timeout: 10))
-        shot("35-day-summary")
-        let pay = app.buttons["Выплатить водителю"].firstMatch
-        scroll(to: pay)
-        shot("36-day-summary-drivers")
-        pay.tap()
-        let amount = app.textFields["paymentAmount"]
-        XCTAssertTrue(amount.waitForExistence(timeout: 10))
-        // The cursor goes to the end of «1000», then the text is replaced.
-        amount.coordinate(withNormalizedOffset: CGVector(dx: 0.97, dy: 0.5)).tap()
-        amount.typeText(String(repeating: XCUIKeyboardKey.delete.rawValue, count: 10) + "500")
-        shot("37-payment")
-        app.navigationBars.buttons["Выплатить"].tap()
-        XCTAssertTrue(element(containing: "Выплаты водителям").waitForExistence(timeout: 10))
-        let export = app.buttons["Поделиться"].firstMatch
-        scroll(to: export)
-        shot("38-day-summary-export")
-
-        tab("Продажи")
         let close = app.buttons.matching(NSPredicate(format: "label CONTAINS %@", "ЗАВЕРШИТЬ РАБОЧИЙ ДЕНЬ")).firstMatch
         scroll(to: close)
         close.tap()
-        let confirm = app.buttons["Подтвердить завершение дня"]
+        let confirm = app.buttons["ПОДТВЕРДИТЬ ЗАВЕРШЕНИЕ ДНЯ"]
         XCTAssertTrue(confirm.waitForExistence(timeout: 10))
-        shot("39-close-day")
+        XCTAssertTrue(element(containing: "Выплатить Мунгалов Сергей").exists, "what to pay Мунгалов")
+        XCTAssertTrue(element(containing: "Доход от собственной машины").exists)
+        shot("35-close-day")
         confirm.tap()
-        let finish = app.buttons["Завершить день"]
-        XCTAssertTrue(finish.waitForExistence(timeout: 5))
-        finish.tap()
         XCTAssertTrue(element(containing: "Рабочий день завершён").waitForExistence(timeout: 10))
-        shot("40-day-closed")
+        app.swipeDown()
+        shot("36-day-closed")
 
-        tab("История")
-        XCTAssertTrue(app.navigationBars["История"].waitForExistence(timeout: 10))
-        shot("41-history")
-        app.buttons["Дни"].firstMatch.tap()
-        XCTAssertTrue(element(containing: "06.11.2026").waitForExistence(timeout: 10))
-        shot("42-history-days")
+        app.navigationBars["Продажа угля"].buttons["Ещё"].tap()
+        app.buttons["Итоги дня и выплаты"].firstMatch.tap()
+        XCTAssertTrue(element(containing: "Финансовые итоги").waitForExistence(timeout: 10))
+        shot("37-day-summary")
 
-        tab("Водители")
-        app.buttons.matching(NSPredicate(format: "label CONTAINS %@", "Мунгалов Сергей")).firstMatch.tap()
-        XCTAssertTrue(element(containing: "Текущий долг").waitForExistence(timeout: 10))
-        shot("43-driver")
+        backToMain()
+        shot("38-main-after-sales")
+        app.buttons["openReports"].tap()
+        XCTAssertTrue(app.navigationBars["Отчёты"].waitForExistence(timeout: 10))
+        shot("39-reports")
+        app.buttons["Выплаты водителям"].firstMatch.tap()
+        let pay = app.buttons["Выплатить Мунгалов"].firstMatch
+        XCTAssertTrue(pay.waitForExistence(timeout: 10))
+        shot("40-payments")
+        pay.tap()
+        let amount = app.textFields["paymentAmount"]
+        XCTAssertTrue(amount.waitForExistence(timeout: 10))
+        amount.coordinate(withNormalizedOffset: CGVector(dx: 0.97, dy: 0.5)).tap()
+        amount.typeText(String(repeating: XCUIKeyboardKey.delete.rawValue, count: 10) + "500")
+        shot("41-payment")
+        app.navigationBars.buttons["Выплатить"].tap()
+        XCTAssertTrue(element(containing: "получил 500").waitForExistence(timeout: 10), "the payment is counted")
+        app.navigationBars.buttons.element(boundBy: 0).tap()
+        app.buttons["Продажи угля"].firstMatch.tap()
+        XCTAssertTrue(app.buttons["Экспорт в Excel"].firstMatch.waitForExistence(timeout: 10))
+        shot("42-sales-report")
 
-        tab("Цены")
+        backToMain()
+        app.buttons["openSettings"].tap()
+        let prices = app.buttons["Цена угля и населённые пункты"].firstMatch
+        XCTAssertTrue(prices.waitForExistence(timeout: 10))
+        prices.tap()
         XCTAssertTrue(element(containing: "Приаргунск").waitForExistence(timeout: 10))
-        shot("44-prices")
-
-        app.navigationBars.buttons["Табель"].firstMatch.tap()
-        XCTAssertTrue(app.buttons["Добавить сотрудника"].firstMatch.waitForExistence(timeout: 10),
-                      "«Табель» goes back to the timesheet")
+        shot("43-prices")
+        app.navigationBars.buttons.element(boundBy: 0).tap()
+        app.buttons["Водители"].firstMatch.tap()
+        XCTAssertTrue(element(containing: "Мунгалов Сергей").waitForExistence(timeout: 10))
+        shot("44-drivers")
     }
 
     func testCoalDark() throws {
         launch(dark: true)
-        // «Табель», then the «Продажа угля» card on Главная.
-        let timesheet = app.buttons["chooseTimesheet"]
-        XCTAssertTrue(timesheet.waitForExistence(timeout: 15))
-        timesheet.tap()
-        openModule()
-        tab("Водители")
+        openCoal()
         addDriver("Мунгалов", "Сергей")
-        tab("Продажи")
-        newSale(tons: "2 т", place: "Новоцурухайтуй", driver: "М Мунгалов", own: false, expectTotal: "14",
-                shotName: "50-dark-new-sale")
-        shot("51-dark-coal-today")
-        tab("Итоги дня")
-        XCTAssertTrue(element(containing: "Финансовые итоги").waitForExistence(timeout: 10))
-        shot("52-dark-day-summary")
+        sell(tons: "2 т", place: "Новоцурухайтуй", vehicle: "М Мунгалов", expectTotal: "14", shotName: "50-dark-coal-sale")
+        shot("51-dark-coal")
+        backToMain()
+        shot("52-dark-main")
     }
 
     // MARK: - Steps
@@ -111,16 +98,18 @@ final class CoalWalkthroughTests: XCTestCase {
         app.launch()
     }
 
-    private func openModule() {
-        let entry = app.buttons["openCoalModule"]
-        XCTAssertTrue(entry.waitForExistence(timeout: 15), "Главная offers «Продажа угля»")
-        shot("29-home-coal-entry")
+    private func openCoal() {
+        let entry = app.buttons["openCoal"]
+        XCTAssertTrue(entry.waitForExistence(timeout: 15), "the main screen offers «ПРОДАЖА УГЛЯ»")
         entry.tap()
-        XCTAssertTrue(app.navigationBars["Продажи за сегодня"].waitForExistence(timeout: 10))
+        XCTAssertTrue(app.navigationBars["Продажа угля"].waitForExistence(timeout: 10))
     }
 
+    /// From the «+ Водитель» button among the trucks.
     private func addDriver(_ lastName: String, _ firstName: String) {
-        app.navigationBars.buttons["Добавить водителя"].firstMatch.tap()
+        let add = app.buttons["Добавить водителя"].firstMatch
+        scroll(to: add)
+        add.tap()
         let last = app.textFields["Фамилия"]
         XCTAssertTrue(last.waitForExistence(timeout: 10))
         last.tap()
@@ -129,24 +118,20 @@ final class CoalWalkthroughTests: XCTestCase {
         first.tap()
         first.typeText(firstName)
         app.navigationBars.buttons["Сохранить"].tap()
-        XCTAssertTrue(element(containing: "\(lastName) \(firstName)").waitForExistence(timeout: 10))
+        XCTAssertTrue(app.navigationBars["Новый водитель"].waitForNonExistence(timeout: 10))
     }
 
-    private func newSale(tons: String, place: String, driver: String?, own: Bool, expectTotal: String, shotName: String) {
-        let new = app.buttons.matching(NSPredicate(format: "label CONTAINS %@", "Новая продажа")).firstMatch
-        XCTAssertTrue(new.waitForExistence(timeout: 10))
-        new.tap()
-        XCTAssertTrue(app.navigationBars["Новая продажа"].waitForExistence(timeout: 10))
-        app.buttons[tons].firstMatch.tap()
-        app.buttons.matching(NSPredicate(format: "label CONTAINS %@", place)).firstMatch.tap()
-        if own {
-            app.buttons.matching(NSPredicate(format: "label CONTAINS %@", "Собственная КФХ")).firstMatch.tap()
-        }
-        if let driver {
-            let button = app.buttons[driver].firstMatch
-            scroll(to: button)
-            button.tap()
-        }
+    /// Tons, village, truck, then «СОХРАНИТЬ ПРОДАЖУ» — all on the one screen.
+    private func sell(tons: String, place: String, vehicle: String, expectTotal: String, shotName: String) {
+        let chip = app.buttons[tons].firstMatch
+        scrollBack(to: chip)
+        chip.tap()
+        let location = app.buttons["location-\(place)"]
+        scroll(to: location)
+        location.tap()
+        let truck = app.buttons[vehicle].firstMatch
+        scroll(to: truck)
+        truck.tap()
         let total = app.staticTexts["saleTotal"]
         scroll(to: total)
         XCTAssertTrue(total.label.hasPrefix(expectTotal), "total \(total.label)")
@@ -154,13 +139,15 @@ final class CoalWalkthroughTests: XCTestCase {
         let save = app.buttons["СОХРАНИТЬ ПРОДАЖУ"]
         scroll(to: save)
         save.tap()
-        XCTAssertTrue(app.navigationBars["Продажи за сегодня"].waitForExistence(timeout: 10), "the form closes")
+        XCTAssertTrue(element(containing: "Сохранено:").waitForExistence(timeout: 10), "the sale is saved")
     }
 
-    private func tab(_ title: String) {
-        let button = app.tabBars.buttons[title]
-        XCTAssertTrue(button.waitForExistence(timeout: 10), "tab «\(title)»")
-        button.tap()
+    private func backToMain() {
+        for _ in 0..<5 where !app.buttons["openCoal"].exists {
+            app.navigationBars.buttons.element(boundBy: 0).tap()
+            _ = app.buttons["openCoal"].waitForExistence(timeout: 2)
+        }
+        XCTAssertTrue(app.buttons["openCoal"].exists, "back on the main screen")
     }
 
     private func element(containing text: String) -> XCUIElement {
@@ -171,6 +158,14 @@ final class CoalWalkthroughTests: XCTestCase {
         var tries = 0
         while (!element.exists || !element.isHittable) && tries < 8 {
             app.swipeUp()
+            tries += 1
+        }
+    }
+
+    private func scrollBack(to element: XCUIElement) {
+        var tries = 0
+        while (!element.exists || !element.isHittable) && tries < 8 {
+            app.swipeDown()
             tries += 1
         }
     }

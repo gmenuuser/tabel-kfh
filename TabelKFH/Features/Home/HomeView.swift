@@ -2,10 +2,14 @@ import SwiftUI
 import SwiftData
 import UIKit
 
-/// Главная: the farm's day at a glance and the arrival/departure buttons.
+/// «Табель работников»: everyone who works today with the «Пришёл» / «Ушёл» button right in the list;
+/// employees, the calendar and the monthly timesheet are in «Ещё».
 struct HomeView: View {
+    enum More: Hashable { case employees, calendar, timesheet }
+
     @Environment(\.modelContext) private var context
     @State private var model: HomeViewModel?
+    @State private var more: More?
 
     var body: some View {
         Group {
@@ -15,7 +19,27 @@ struct HomeView: View {
                 Color.clear
             }
         }
-        .navigationTitle("Табель КФХ")
+        .navigationTitle("Табель работников")
+        .navigationBarTitleDisplayMode(.inline)
+        .toolbar {
+            ToolbarItem(placement: .primaryAction) {
+                Menu {
+                    Button { more = .employees } label: { Label("Сотрудники и история", systemImage: "person.2") }
+                    Button { more = .calendar } label: { Label("Календарь", systemImage: "calendar") }
+                    Button { more = .timesheet } label: { Label("Табель за месяц", systemImage: "tablecells") }
+                } label: {
+                    Label("Ещё", systemImage: "ellipsis.circle")
+                }
+                .accessibilityLabel("Ещё")
+            }
+        }
+        .navigationDestination(item: $more) { m in
+            switch m {
+            case .employees: EmployeesView()
+            case .calendar: CalendarView()
+            case .timesheet: TimesheetView()
+            }
+        }
         .onAppear {
             if model == nil { model = HomeViewModel(context: context) }
             model?.reload()
@@ -39,18 +63,13 @@ private struct HomeContent: View {
         ScrollView {
             LazyVStack(spacing: 12) {
                 header
-                CoalEntryCard()
                 if model.rows.isEmpty {
-                    VStack(spacing: 16) {
-                        Text("Сегодня нет работающих сотрудников.")
-                            .font(.body)
-                            .foregroundStyle(.secondary)
-                            .multilineTextAlignment(.center)
-                        Button("Добавить сотрудника") { addingEmployee = true }
-                            .buttonStyle(BigButtonStyle(color: Theme.primary))
-                    }
-                    .padding(.vertical, 32)
-                    .frame(maxWidth: .infinity)
+                    Text("Сегодня нет работающих сотрудников.")
+                        .font(.body)
+                        .foregroundStyle(.secondary)
+                        .multilineTextAlignment(.center)
+                        .padding(.vertical, 24)
+                        .frame(maxWidth: .infinity)
                 }
                 ForEach(model.rows) { row in
                     EmployeeDayCard(
@@ -64,6 +83,14 @@ private struct HomeContent: View {
                             }
                         })
                 }
+                Button {
+                    addingEmployee = true
+                } label: {
+                    Label("Добавить сотрудника", systemImage: "plus")
+                }
+                .buttonStyle(BigButtonStyle(color: Theme.primary))
+                .accessibilityLabel("Добавить сотрудника")
+                .padding(.top, 4)
             }
             .padding(16)
         }

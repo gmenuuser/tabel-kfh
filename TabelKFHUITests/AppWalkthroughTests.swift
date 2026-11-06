@@ -85,12 +85,14 @@ final class AppWalkthroughTests: XCTestCase {
         app.launchArguments = ["-uitest", "-AppleLanguages", "(ru)", "-AppleLocale", "ru_RU"]
         if dark { app.launchArguments.append("-uitest-dark") }
         app.launch()
-        // The start screen asks for the part of the app.
-        let timesheet = app.buttons["chooseTimesheet"]
-        XCTAssertTrue(timesheet.waitForExistence(timeout: 15), "the start screen offers «Табель»")
-        XCTAssertTrue(app.buttons["chooseCoal"].exists, "and «Уголь»")
-        if !dark { shot("00-start") }
+        // The main screen: three large buttons.
+        let timesheet = app.buttons["openTimesheet"]
+        XCTAssertTrue(timesheet.waitForExistence(timeout: 15), "the main screen offers «ТАБЕЛЬ РАБОТНИКОВ»")
+        XCTAssertTrue(app.buttons["openCoal"].exists, "and «ПРОДАЖА УГЛЯ»")
+        XCTAssertTrue(app.buttons["openReports"].exists, "and «ОТЧЁТЫ»")
+        shot(dark ? "20-dark-main" : "00-main")
         timesheet.tap()
+        XCTAssertTrue(app.navigationBars["Табель работников"].waitForExistence(timeout: 10))
     }
 
     private func addEmployee(screenshot: String?) {
@@ -141,10 +143,32 @@ final class AppWalkthroughTests: XCTestCase {
 
     // MARK: - Helpers
 
+    /// The old tabs, now: «Настройки» behind the gear of the main screen; «Сотрудники», «Календарь» and
+    /// «Табель» in «Ещё» of «Табель работников».
     private func tab(_ title: String) {
-        let button = app.tabBars.buttons[title]
-        XCTAssertTrue(button.waitForExistence(timeout: 10), "tab «\(title)»")
+        backToMain()
+        if title == "Настройки" {
+            app.buttons["openSettings"].tap()
+            XCTAssertTrue(app.navigationBars["Настройки"].waitForExistence(timeout: 10))
+            return
+        }
+        app.buttons["openTimesheet"].tap()
+        let more = app.navigationBars["Табель работников"].buttons["Ещё"]
+        XCTAssertTrue(more.waitForExistence(timeout: 10), "«Ещё» on «Табель работников»")
+        more.tap()
+        let item = ["Сотрудники": "Сотрудники и история", "Календарь": "Календарь", "Табель": "Табель за месяц"][title] ?? title
+        let button = app.buttons[item].firstMatch
+        XCTAssertTrue(button.waitForExistence(timeout: 10), "menu item «\(item)»")
         button.tap()
+    }
+
+    /// «Назад» until the main screen shows.
+    private func backToMain() {
+        for _ in 0..<5 where !app.buttons["openTimesheet"].exists {
+            app.navigationBars.buttons.element(boundBy: 0).tap()
+            _ = app.buttons["openTimesheet"].waitForExistence(timeout: 2)
+        }
+        XCTAssertTrue(app.buttons["openTimesheet"].exists, "back on the main screen")
     }
 
     private func type(_ text: String, into field: String) {

@@ -4,7 +4,6 @@ import SwiftData
 /// «Итоги рабочего дня»: the table of the day's sales, the totals А–Е, «Взаиморасчёты с водителями» with
 /// «Выплатить водителю», the export, and closing or reopening the day. Any day can be chosen.
 struct CoalDaySummaryView: View {
-    var onClose: (() -> Void)?
     /// The day shown first; today when nil.
     var initialDay: Date?
 
@@ -46,7 +45,6 @@ struct CoalDaySummaryView: View {
         .background(Theme.background)
         .navigationTitle("Итоги рабочего дня")
         .navigationBarTitleDisplayMode(.inline)
-        .coalCloseButton(onClose)
         .onAppear {
             guard !loaded else { return }
             loaded = true

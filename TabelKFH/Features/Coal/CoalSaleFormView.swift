@@ -60,9 +60,9 @@ struct CoalSaleFormView: View {
                 DriverFormView(driver: nil) { newDriver in draft?.choose(newDriver) }
             }
         }
-        .confirmationDialog("Удалить продажу?", isPresented: $confirmingDelete, titleVisibility: .visible) {
-            Button("Удалить", role: .destructive) { deleteSale() }
-            Button("Отмена", role: .cancel) {}
+        .confirmationDialog("Отменить продажу?", isPresented: $confirmingDelete, titleVisibility: .visible) {
+            Button("Отменить продажу", role: .destructive) { deleteSale() }
+            Button("Не отменять", role: .cancel) {}
         } message: {
             Text("Продажа исчезнет из итогов дня и из расчётов с водителем.")
         }
@@ -104,7 +104,7 @@ struct CoalSaleFormView: View {
                     .disabled(isSaving)
 
                 if sale != nil {
-                    Button("Удалить продажу", role: .destructive) { confirmingDelete = true }
+                    Button("Отменить продажу", role: .destructive) { confirmingDelete = true }
                         .frame(maxWidth: .infinity)
                         .padding(.vertical, 8)
                 }

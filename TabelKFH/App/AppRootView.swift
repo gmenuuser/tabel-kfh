@@ -1,103 +1,143 @@
 import SwiftUI
 import SwiftData
 
-/// The two parts of the app.
-enum AppSection: Hashable {
-    /// «Табель»: employees, attendance, timesheets.
-    case timesheet
-    /// «Уголь»: coal sales, deliveries, drivers.
-    case coal
+/// Where the main screen leads.
+enum MainDestination: Hashable {
+    case timesheet, coal, reports, settings
 }
 
-private struct OpenSectionKey: EnvironmentKey {
-    static let defaultValue: (AppSection) -> Void = { _ in }
-}
-
-extension EnvironmentValues {
-    /// Switches the app to the other part (the «Продажа угля» card on Главная, «Табель» in the coal module).
-    var openSection: (AppSection) -> Void {
-        get { self[OpenSectionKey.self] }
-        set { self[OpenSectionKey.self] = newValue }
-    }
-}
-
-/// On every launch the owner chooses «Табель» or «Уголь» first.
+/// One main screen with three large buttons; every part opens on top of it and «Назад» returns to it.
 struct AppRootView: View {
-    @State private var section: AppSection?
+    @Environment(\.modelContext) private var context
+    /// Every part is opened again from the main screen, so after a restore from a backup it reads the restored data.
+    @State private var path: [MainDestination] = []
 
     var body: some View {
-        Group {
-            switch section {
-            case nil:
-                SectionChooserView { open($0) }
-            case .timesheet:
-                RootTabView()
-            case .coal:
-                CoalModuleView { open(.timesheet) }
-            }
+        NavigationStack(path: $path) {
+            MainScreen { path.append($0) }
+                .navigationDestination(for: MainDestination.self) { destination in
+                    switch destination {
+                    case .timesheet: HomeView()
+                    case .coal: CoalSaleScreen()
+                    case .reports: ReportsView()
+                    case .settings: SettingsView()
+                    }
+                }
         }
-        .environment(\.openSection) { open($0) }
-    }
-
-    private func open(_ s: AppSection) {
-        withAnimation(.easeInOut(duration: 0.2)) { section = s }
+        .tint(Theme.primary)
+        // Date pickers show and set times on the farm's calendar and zone, like every day key.
+        .environment(\.calendar, Calendar.farm)
+        .environment(\.timeZone, Calendar.farm.timeZone)
+        .onAppear {
+            // The store keeps one settings row each; they are made on the first launch.
+            FarmSettingsStore.current(in: context)
+            CoalSettingsService(context: context).current()
+        }
     }
 }
 
-/// The start screen: two large buttons, «Табель» and «Уголь».
-struct SectionChooserView: View {
-    let onChoose: (AppSection) -> Void
+/// Главный экран: the farm, today, a short line about the day, and «ТАБЕЛЬ РАБОТНИКОВ», «ПРОДАЖА УГЛЯ»,
+/// «ОТЧЁТЫ».
+struct MainScreen: View {
+    let open: (MainDestination) -> Void
 
     @Environment(\.modelContext) private var context
+    @Environment(\.scenePhase) private var scenePhase
+    @Query private var sales: [CoalSale]
+    @Query private var workDays: [CoalWorkDay]
+    @State private var today = Calendar.farm.dayStart(AppClock.now())
     @State private var farmName = ""
+    @State private var people: HomeViewModel?
+
+    private var todaySales: [CoalSale] {
+        let end = Calendar.farm.date(byAdding: .day, value: 1, to: today) ?? today
+        return sales.filter { $0.saleDate >= today && $0.saleDate < end }
+    }
+
+    private var dayClosed: Bool { workDays.contains { $0.date == today && $0.isClosed } }
 
     var body: some View {
-        VStack(spacing: 20) {
-            Spacer(minLength: 20)
-            VStack(spacing: 6) {
-                Text(farmName)
-                    .font(.largeTitle.bold())
-                    .foregroundStyle(Theme.primary)
-                    .multilineTextAlignment(.center)
-                Text("Выберите раздел")
-                    .font(.title3)
-                    .foregroundStyle(.secondary)
+        ScrollView {
+            VStack(spacing: 16) {
+                header
+                bigButton("ТАБЕЛЬ РАБОТНИКОВ", subtitle: "Приход и уход, сотрудники, календарь",
+                          icon: "person.2.fill", color: Theme.primary, id: "openTimesheet") { open(.timesheet) }
+                bigButton("ПРОДАЖА УГЛЯ", subtitle: "Новая продажа, продажи за сегодня, итоги дня",
+                          icon: "truck.box.fill", color: Theme.accent, id: "openCoal") { open(.coal) }
+                bigButton("ОТЧЁТЫ", subtitle: "Табель, продажи угля, выплаты водителям — PDF и Excel",
+                          icon: "doc.text.fill", color: Color(uiColor: .systemGray), id: "openReports") { open(.reports) }
             }
-            Spacer(minLength: 10)
-            choice(title: "Табель", subtitle: "Сотрудники, приход и уход, календарь, табель за месяц",
-                   icon: "tablecells", color: Theme.primary, id: "chooseTimesheet") { onChoose(.timesheet) }
-            choice(title: "Уголь", subtitle: "Продажа и доставка угля, водители, итоги дня",
-                   icon: "truck.box.fill", color: Theme.accent, id: "chooseCoal") { onChoose(.coal) }
-            Spacer(minLength: 20)
+            .padding(16)
         }
-        .padding(20)
-        .frame(maxWidth: 600)
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(Theme.background)
-        .onAppear {
-            // The settings row is made here on the very first launch.
-            farmName = FarmSettingsStore.current(in: context).farmName
+        .navigationTitle("Главная")
+        .navigationBarTitleDisplayMode(.inline)
+        .toolbar {
+            ToolbarItem(placement: .primaryAction) {
+                Button { open(.settings) } label: { Image(systemName: "gearshape") }
+                    .accessibilityLabel("Настройки")
+                    .accessibilityIdentifier("openSettings")
+            }
+        }
+        .onAppear(perform: reload)
+        .onChange(of: scenePhase) { _, phase in
+            if phase == .active { reload() }
         }
     }
 
-    private func choice(title: String, subtitle: String, icon: String, color: Color, id: String,
-                        action: @escaping () -> Void) -> some View {
+    private func reload() {
+        today = Calendar.farm.dayStart(AppClock.now())
+        farmName = FarmSettingsStore.current(in: context).farmName
+        if people == nil { people = HomeViewModel(context: context) }
+        people?.reload()
+    }
+
+    private var header: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text(farmName)
+                .font(.largeTitle.bold())
+                .foregroundStyle(Theme.primary)
+                .lineLimit(2)
+                .minimumScaleFactor(0.7)
+            Text(CoalText.longDate(today).capitalizedFirst)
+                .font(.title3.weight(.medium))
+            VStack(alignment: .leading, spacing: 4) {
+                if let people {
+                    Label("\(people.atWorkTitle) из \(people.totalCount)", systemImage: "person.2")
+                }
+                let t = CoalTotals(todaySales)
+                Label(t.salesCount == 0 ? "Продаж угля сегодня нет"
+                      : "Уголь: \(CoalText.sales(t.salesCount)) на \(CoalMath.rubles(t.revenue))",
+                      systemImage: "truck.box")
+                if dayClosed {
+                    Label("Рабочий день по углю завершён", systemImage: "checkmark.seal.fill")
+                        .foregroundStyle(Theme.primary)
+                }
+            }
+            .font(.body)
+            .foregroundStyle(.secondary)
+        }
+        .card()
+    }
+
+    private func bigButton(_ title: String, subtitle: String, icon: String, color: Color, id: String,
+                           action: @escaping () -> Void) -> some View {
         Button(action: action) {
             HStack(spacing: 16) {
                 Image(systemName: icon)
-                    .font(.system(size: 34, weight: .semibold))
-                    .frame(width: 64, height: 64)
+                    .font(.system(size: 30, weight: .semibold))
+                    .frame(width: 60, height: 60)
                     .background(.white.opacity(0.2), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
                 VStack(alignment: .leading, spacing: 4) {
-                    Text(title).font(.title.bold())
+                    Text(title).font(.title3.bold()).lineLimit(1).minimumScaleFactor(0.7)
                     Text(subtitle).font(.subheadline).opacity(0.9).multilineTextAlignment(.leading)
                 }
                 Spacer(minLength: 0)
-                Image(systemName: "chevron.right").font(.title3.bold())
+                Image(systemName: "chevron.right").font(.headline)
             }
             .foregroundStyle(.white)
-            .padding(20)
-            .frame(maxWidth: .infinity, minHeight: 120, alignment: .leading)
+            .padding(18)
+            .frame(maxWidth: .infinity, minHeight: 104, alignment: .leading)
             .background(color, in: RoundedRectangle(cornerRadius: 20, style: .continuous))
         }
         .buttonStyle(.plain)
