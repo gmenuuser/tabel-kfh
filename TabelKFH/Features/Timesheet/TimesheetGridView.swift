@@ -51,7 +51,7 @@ struct TimesheetGridView: View {
                         }
                     }
                     HStack(spacing: 0) {
-                        ForEach(days, id: \.self) { day in
+                        ForEach(days, id: \.self) { _ in
                             cell("", width: Self.dayWidth, height: Self.rowHeight, fill: Self.totalFill)
                         }
                         totals(document.farmTotals, bold: true)
@@ -85,13 +85,12 @@ struct TimesheetGridView: View {
         let fill: Color? = !c.employed ? Color(uiColor: .systemFill) : (weekend ? Self.weekendFill : nil)
         return cell(c.text, width: Self.dayWidth, height: Self.rowHeight, fill: fill,
                     color: c.unfinished ? Theme.accent : .primary)
-            .accessibilityLabel(c.employed ? (c.text.isEmpty ? "нет отметки" : c.text.replacingOccurrences(of: "\n", with: " ")) : "не работал")
+            .accessibilityLabel(Self.spoken(c))
     }
 
     private static func spoken(_ c: TimesheetCell) -> String {
         guard c.employed else { return "не работал" }
-        return c.text.isEmpty ? "нет отметки" : c.text.replacingOccurrences(of: "
-", with: " ")
+        return c.text.isEmpty ? "нет отметки" : c.text.replacingOccurrences(of: "\n", with: " ")
     }
 
     private func totals(_ t: TimesheetTotals, bold: Bool) -> some View {
