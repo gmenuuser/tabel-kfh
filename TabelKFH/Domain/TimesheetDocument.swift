@@ -150,9 +150,10 @@ extension TimesheetDocument {
     static let legend = DayStatus.allCases.map { "\($0.rawValue) — \($0.title.lowercased())" }.joined(separator: ", ")
 }
 
-/// «Табель_Ноябрь_2026_v2.pdf» for ext "pdf".
-func exportFileName(_ d: TimesheetDocument, ext: String) -> String {
-    "Табель_\(Calendar.farm.monthName(d.month))_\(d.year)_v\(d.version).\(ext)"
+/// «Табель_Ноябрь_2026_v2.pdf» for the whole farm; «Табель_Ноябрь_2026_Зубахин_v2.pdf» for one employee's timesheet.
+func exportFileName(_ d: TimesheetDocument, surname: String? = nil, ext: String) -> String {
+    let person = surname.map { "_" + $0.replacingOccurrences(of: "/", with: "-").replacingOccurrences(of: ":", with: "-") }
+    return "Табель_\(Calendar.farm.monthName(d.month))_\(d.year)\(person ?? "")_v\(d.version).\(ext)"
 }
 
 /// Hours as a decimal with a comma, at most two decimals: 480 → «8», 450 → «7,5», 465 → «7,75», 470 → «7,83».

@@ -55,13 +55,16 @@ struct BackupFile: Codable {
 }
 
 enum BackupError: LocalizedError, Equatable {
-    case notABackup, unsupportedVersion(Int), damaged
+    /// damaged: cut, or the checksum does not match; invalidData: readable, but with values the app does not know
+    /// (a status or schedule code, a date) or breaking the store's rules (two records of one person and day).
+    case notABackup, unsupportedVersion(Int), damaged, invalidData
 
     var errorDescription: String? {
         switch self {
         case .notABackup: return "Это не резервная копия Табеля КФХ"
         case .unsupportedVersion(let n): return "Копия сделана более новой версией приложения (схема \(n))"
         case .damaged: return "Файл копии повреждён: контрольная сумма не совпадает"
+        case .invalidData: return "Файл копии содержит неверные данные"
         }
     }
 }
@@ -101,7 +104,7 @@ enum BackupCodec {
             file = try JSONDecoder().decode(BackupFile.self, from: d)
         } catch {
             // A missing field, a wrong type, an unknown status or schedule code.
-            throw BackupError.damaged
+            throw BackupError.invalidData
         }
         guard (try? checksum(file.payload)) == file.payloadSHA256.lowercased() else { throw BackupError.damaged }
         try validate(file.payload)
@@ -125,12 +128,12 @@ enum BackupCodec {
         let employeeIds = Set(p.employees.map(\.id))
         guard employeeIds.count == p.employees.count,
               Set(p.records.map(\.id)).count == p.records.count,
-              Set(p.snapshots.map(\.id)).count == p.snapshots.count else { throw BackupError.damaged }
+              Set(p.snapshots.map(\.id)).count == p.snapshots.count else { throw BackupError.invalidData }
         var days = Set<RecordKey>()
         for r in p.records {
             guard employeeIds.contains(r.employeeId),
                   days.insert(RecordKey(employeeId: r.employeeId, day: calendar.dayStart(r.day))).inserted
-            else { throw BackupError.damaged }
+            else { throw BackupError.invalidData }
         }
     }
 

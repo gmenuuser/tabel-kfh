@@ -111,29 +111,29 @@ final class BackupCodecTests: XCTestCase {
         assertRejected(Data("%PDF-1.7".utf8), .notABackup)
     }
 
-    func testUnknownStatusOrScheduleCodeIsDamaged() throws {
+    func testUnknownStatusOrScheduleCodeIsInvalidData() throws {
         let text = String(decoding: try encoded(), as: UTF8.self)
         XCTAssertTrue(text.contains("\"status\" : \"ОТ\""))
         assertRejected(Data(text.replacingOccurrences(of: "\"status\" : \"ОТ\"", with: "\"status\" : \"Ж\"").utf8),
-                       .damaged)
+                       .invalidData)
         XCTAssertTrue(text.contains("\"workSchedule\" : \"twoTwo\""))
         assertRejected(Data(text.replacingOccurrences(of: "\"workSchedule\" : \"twoTwo\"",
-                                                      with: "\"workSchedule\" : \"threeOne\"").utf8), .damaged)
+                                                      with: "\"workSchedule\" : \"threeOne\"").utf8), .invalidData)
     }
 
-    func testTwoRecordsOfOneEmployeeAndDayAreDamaged() throws {
+    func testTwoRecordsOfOneEmployeeAndDayAreInvalidData() throws {
         var p = payload()
         let first = p.records[0]
         p.records.append(RecordBackup(id: UUID(), employeeId: first.employeeId, day: first.day, arrivalTime: nil,
                                       departureTime: nil, breakMinutes: 0, workedMinutes: nil, manualWorkedMinutes: nil,
                                       status: .sick, comment: "", createdAt: created, updatedAt: created))
-        assertRejected(try encoded(p), .damaged)
+        assertRejected(try encoded(p), .invalidData)
     }
 
-    func testRecordOfAMissingEmployeeIsDamaged() throws {
+    func testRecordOfAMissingEmployeeIsInvalidData() throws {
         var p = payload()
         p.employees.removeFirst()
-        assertRejected(try encoded(p), .damaged)
+        assertRejected(try encoded(p), .invalidData)
     }
 
     func testRussianMessages() {
@@ -141,5 +141,6 @@ final class BackupCodecTests: XCTestCase {
         XCTAssertEqual(BackupError.unsupportedVersion(2).errorDescription,
                        "Копия сделана более новой версией приложения (схема 2)")
         XCTAssertEqual(BackupError.damaged.errorDescription, "Файл копии повреждён: контрольная сумма не совпадает")
+        XCTAssertEqual(BackupError.invalidData.errorDescription, "Файл копии содержит неверные данные")
     }
 }

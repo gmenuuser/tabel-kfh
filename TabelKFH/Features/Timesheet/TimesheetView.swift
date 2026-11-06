@@ -167,7 +167,7 @@ private struct TimesheetContent: View {
                 unfinishedWarning(document.unfinished)
             }
             TimesheetGridView(document: document)
-            ExportActions(document: document)
+            ExportActions(document: document, surname: model.exportSurname)
         }
     }
 

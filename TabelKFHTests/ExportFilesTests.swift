@@ -45,6 +45,12 @@ final class ExportFilesTests: XCTestCase {
         XCTAssertEqual(files.all, [files.pdf, files.xlsx])
     }
 
+    func testOneEmployeeFilesHaveTheSurname() throws {
+        let files = try ExportFiles.write(Self.november(), surname: "Зубахин", in: directory)
+        XCTAssertEqual(files.pdf.lastPathComponent, "Табель_Ноябрь_2026_Зубахин_v2.pdf")
+        XCTAssertEqual(files.xlsx.lastPathComponent, "Табель_Ноябрь_2026_Зубахин_v2.xlsx")
+    }
+
     func testWritingAgainReplacesTheFiles() throws {
         _ = try ExportFiles.write(Self.november(), in: directory)
         let files = try ExportFiles.write(Self.november(), in: directory)

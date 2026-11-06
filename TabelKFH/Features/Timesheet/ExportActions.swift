@@ -17,11 +17,13 @@ enum ExportFiles {
         FileManager.default.temporaryDirectory.appendingPathComponent("Export", isDirectory: true)
     }
 
-    /// Writes «Табель_<Месяц>_<год>_v<N>.pdf» and «….xlsx» into `directory`, replacing older files of the same name.
-    static func write(_ d: TimesheetDocument, in directory: URL = ExportFiles.directory) throws -> ExportedFiles {
+    /// Writes «Табель_<Месяц>_<год>[_<Фамилия>]_v<N>.pdf» and «….xlsx» into `directory`, replacing older files
+    /// of the same name. `surname` is given for one employee's timesheet.
+    static func write(_ d: TimesheetDocument, surname: String? = nil,
+                      in directory: URL = ExportFiles.directory) throws -> ExportedFiles {
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
-        let pdf = directory.appendingPathComponent(exportFileName(d, ext: "pdf"))
-        let xlsx = directory.appendingPathComponent(exportFileName(d, ext: "xlsx"))
+        let pdf = directory.appendingPathComponent(exportFileName(d, surname: surname, ext: "pdf"))
+        let xlsx = directory.appendingPathComponent(exportFileName(d, surname: surname, ext: "xlsx"))
         try TimesheetPDFRenderer.render(d).write(to: pdf, options: .atomic)
         try XLSXWriter.make(d).write(to: xlsx, options: .atomic)
         return ExportedFiles(pdf: pdf, xlsx: xlsx)
@@ -59,6 +61,14 @@ struct ExportedFile: FileDocument {
 /// «Скачать PDF», «Экспорт в Excel», «Распечатать», «Поделиться» for the shown timesheet version.
 struct ExportActions: View {
     let document: TimesheetDocument
+    /// The employee's surname for one employee's timesheet; nil for the whole farm.
+    let surname: String?
+
+    /// What the files are written from; a change writes them again.
+    private struct Source: Equatable {
+        let document: TimesheetDocument
+        let surname: String?
+    }
 
     @State private var files: ExportedFiles?
     @State private var exporting: ExportedFile?
@@ -90,7 +100,7 @@ struct ExportActions: View {
         .lineLimit(1)
         .minimumScaleFactor(0.8)
         .disabled(files == nil)
-        .task(id: document) { prepare() }
+        .task(id: Source(document: document, surname: surname)) { prepare() }
         .fileExporter(isPresented: $isExporting, document: exporting,
                       contentType: exporting?.contentType ?? .pdf, defaultFilename: exportName) { result in
             switch result {
@@ -108,7 +118,7 @@ struct ExportActions: View {
     /// Writes both files of the shown version so «Поделиться» has them ready.
     private func prepare() {
         do {
-            files = try ExportFiles.write(document)
+            files = try ExportFiles.write(document, surname: surname)
         } catch {
             files = nil
             message = "Не удалось подготовить файлы табеля: \(error.localizedDescription)"

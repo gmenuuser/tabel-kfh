@@ -67,6 +67,15 @@ final class PDFRendererTests: XCTestCase {
         XCTAssertEqual(exportFileName(Self.november(employees: 1), ext: "xlsx"), "Табель_Ноябрь_2026_v2.xlsx")
     }
 
+    func testExportFileNameOfOneEmployeeHasTheSurname() {
+        XCTAssertEqual(exportFileName(Self.november(employees: 1), surname: "Зубахин", ext: "pdf"),
+                       "Табель_Ноябрь_2026_Зубахин_v2.pdf")
+        XCTAssertEqual(exportFileName(Self.november(employees: 1), surname: "Иванова-Петрова", ext: "xlsx"),
+                       "Табель_Ноябрь_2026_Иванова-Петрова_v2.xlsx")
+        XCTAssertEqual(exportFileName(Self.november(employees: 1), surname: "А/Б", ext: "pdf"),
+                       "Табель_Ноябрь_2026_А-Б_v2.pdf", "a slash would make a folder")
+    }
+
     // MARK: - Samples for a human look (CI artifact «review-samples»)
 
     private static let surnames = ["Константинопольский", "Зубахин", "Преображенский", "Ковальчук", "Иванов",

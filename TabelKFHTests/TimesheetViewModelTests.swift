@@ -117,6 +117,20 @@ final class TimesheetViewModelTests: XCTestCase {
         XCTAssertEqual(model.document?.rows.count, 2)
     }
 
+    func testExportSurnameOnlyForOneEmployeeTimesheet() {
+        let a = addEmployee("Зубахин")
+        let model = makeModel()
+        XCTAssertNil(model.exportSurname, "nothing selected")
+
+        model.generate()
+        XCTAssertEqual(model.document?.rows.count, 1)
+        XCTAssertNil(model.exportSurname, "whole farm, even with one person")
+
+        model.choose(a)
+        model.generate()
+        XCTAssertEqual(model.exportSurname, "Зубахин")
+    }
+
     func testEmployeeChoicesAreThoseEmployedInTheMonthIncludingArchived() {
         addEmployee("Архипов", dismissal: day(15), archived: true)
         addEmployee("Будущий", hire: day(1, 12))

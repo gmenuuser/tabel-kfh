@@ -39,6 +39,13 @@ final class TimesheetViewModel {
     /// «Ноябрь 2026».
     var title: String { calendar.monthTitle(month: month, year: year) }
 
+    /// The surname in the export file names of one employee's timesheet; nil for the whole farm or no version.
+    var exportSurname: String? {
+        guard let id = selected?.employeeId,
+              let row = document?.rows.first(where: { $0.employee.id == id }) else { return nil }
+        return row.employee.fullName.split(separator: " ").first.map(String.init)
+    }
+
     /// Shown while the chosen month has no version yet.
     var emptyText: String { "Табель за \(title) ещё не сформирован" }
 
