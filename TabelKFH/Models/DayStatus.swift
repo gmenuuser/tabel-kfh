@@ -37,11 +37,11 @@ enum WorkSchedule: String, Codable, CaseIterable {
 }
 
 extension DayStatus {
-    /// Statuses that can be planned ahead: a future day takes only these, never Я or ПР.
-    static let plannedAbsences: [DayStatus] = [.dayOff, .sick, .vacation, .timeOff, .businessTrip]
+    /// Statuses that can be set ahead on a future day: everything but Я (owner: ПР is allowed too).
+    static let futureStatuses: [DayStatus] = [.dayOff, .sick, .vacation, .timeOff, .absent, .businessTrip]
 
-    /// The statuses that may be set on `day`: all of them up to today, planned absences after it.
+    /// The statuses that may be set on `day`: all of them up to today, `futureStatuses` after it.
     static func statuses(on day: Date, today: Date, calendar: Calendar = .farm) -> [DayStatus] {
-        calendar.dayStart(day) > calendar.dayStart(today) ? plannedAbsences : allCases
+        calendar.dayStart(day) > calendar.dayStart(today) ? futureStatuses : allCases
     }
 }

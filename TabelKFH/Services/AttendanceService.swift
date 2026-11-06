@@ -181,7 +181,7 @@ final class AttendanceService {
 
     /// Creates or updates the record of (employee, day) — any day within employment.
     /// Times and the manual total are kept only for Я; other statuses are stored without them.
-    /// A day after today takes no Я and no times: only planned absences can be set ahead.
+    /// A day after today takes no Я and no times; the other statuses can be set ahead.
     @discardableResult
     func save(employee: Employee, day: Date, status: DayStatus, arrival: Date?, departure: Date?,
               breakMinutes: Int, manualMinutes: Int?, comment: String) throws -> AttendanceRecord {

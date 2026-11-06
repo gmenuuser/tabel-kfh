@@ -186,9 +186,9 @@ final class CalendarViewModelTests: XCTestCase {
         XCTAssertEqual(makeModel().employees().map(\.lastName), ["Архипов", "Иванов"])
     }
 
-    func testFutureDaysAllowOnlyPlannedAbsences() {
+    func testFutureDaysAllowEverythingButPresence() {
         XCTAssertEqual(DayStatus.statuses(on: day(7), today: day(6)),
-                       [.dayOff, .sick, .vacation, .timeOff, .businessTrip])
+                       [.dayOff, .sick, .vacation, .timeOff, .absent, .businessTrip])
         XCTAssertEqual(DayStatus.statuses(on: day(6), today: day(6)), DayStatus.allCases)
         XCTAssertEqual(DayStatus.statuses(on: day(5), today: day(6)), DayStatus.allCases)
     }

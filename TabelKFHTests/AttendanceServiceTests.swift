@@ -344,7 +344,7 @@ final class AttendanceServiceTests: XCTestCase {
         }
         XCTAssertEqual(try recordCount(), 0)
 
-        for (offset, status) in DayStatus.plannedAbsences.enumerated() {
+        for (offset, status) in DayStatus.futureStatuses.enumerated() {
             let day = calendar.date(day: 7 + offset, month: 11, year: 2026)
             XCTAssertNoThrow(try service.save(employee: employee, day: day, status: status,
                                               arrival: nil, departure: nil, breakMinutes: 0,
@@ -354,7 +354,7 @@ final class AttendanceServiceTests: XCTestCase {
         XCTAssertNoThrow(try service.save(employee: employee, day: at(6, 0, 0), status: .present,
                                           arrival: at(6, 8, 0), departure: nil, breakMinutes: 60,
                                           manualMinutes: nil, comment: ""))
-        XCTAssertEqual(try recordCount(), DayStatus.plannedAbsences.count + 1)
+        XCTAssertEqual(try recordCount(), DayStatus.futureStatuses.count + 1)
         XCTAssertEqual(AttendanceError.futureTimes.errorDescription,
                        "Время можно отметить только за прошедшие дни и сегодня")
     }

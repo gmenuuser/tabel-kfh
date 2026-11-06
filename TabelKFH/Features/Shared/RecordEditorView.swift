@@ -2,7 +2,7 @@ import SwiftUI
 import SwiftData
 
 /// Edits one employee's mark for one day: status, times, break, manual total, comment.
-/// A future day takes only planned absences (В, Б, О, ОТ, К) and no times.
+/// A future day takes В, Б, О, ОТ, ПР, К and no times.
 /// Used from Home, Calendar and the employee's history. Dismisses itself after saving or deleting.
 struct RecordEditorView: View {
     let employee: Employee
@@ -142,7 +142,7 @@ struct RecordEditorView: View {
 
     private var isFuture: Bool { day > today }
 
-    /// Planned absences only for a future day; the current status stays listed so a stored mark shows.
+    /// No Я for a future day; the current status stays listed so a stored mark shows.
     private var statusOptions: [DayStatus] {
         let allowed = DayStatus.statuses(on: day, today: today)
         return allowed.contains(status) ? allowed : DayStatus.allCases.filter { allowed.contains($0) || $0 == status }
