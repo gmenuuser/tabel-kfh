@@ -1,69 +1,30 @@
 import SwiftUI
 import SwiftData
+import Observation
 import UniformTypeIdentifiers
 
-/// «Резервная копия»: save all the data to a file in «Файлы», or replace the data with a saved copy
-/// after showing what the copy holds.
-struct BackupView: View {
-    let onRestore: () -> Void
-
-    @Environment(\.modelContext) private var context
-    @State private var backup: ExportedFile?
-    @State private var backupName = ""
-    @State private var isExporting = false
-    @State private var isImporting = false
-    @State private var pending: PendingRestore?
-    /// Shown once the confirmation sheet has closed.
-    @State private var restoreResult: String?
-    @State private var message: String?
-
+/// The state of «Резервная копия»: save all the data to a file in «Файлы», or replace the data with a saved copy
+/// after showing what the copy holds. The settings form owns it; the buttons only set flags, and the file dialogs,
+/// the confirmation and the messages are attached to the form (`backupPresenters`), not to the buttons in its rows.
+@MainActor
+@Observable
+final class BackupFlow {
     struct PendingRestore: Identifiable {
         let id = UUID()
         let data: Data
         let summary: String
     }
 
-    var body: some View {
-        Section {
-            Button("Создать резервную копию", action: makeBackup)
-                .fileExporter(isPresented: $isExporting, document: backup, contentType: .json,
-                              defaultFilename: backupName) { result in
-                    if case .failure(let error) = result, !error.isCancellation {
-                        message = "Не удалось сохранить копию: \(error.localizedDescription)"
-                    } else if case .success = result {
-                        message = "Резервная копия сохранена"
-                    }
-                }
-            Button("Восстановить из копии") { isImporting = true }
-                .fileImporter(isPresented: $isImporting, allowedContentTypes: [.json, .data]) { result in
-                    switch result {
-                    case .success(let url): prepareRestore(from: url)
-                    case .failure(let error):
-                        if !error.isCancellation { message = "Не удалось открыть файл: \(error.localizedDescription)" }
-                    }
-                }
-        } header: {
-            Text("Резервная копия")
-        } footer: {
-            Text("Копия содержит сотрудников с архивом, отметки, версии табелей и настройки. Храните её в «Файлах».")
-        }
-        .sheet(item: $pending, onDismiss: {
-            if let restoreResult {
-                message = restoreResult
-                self.restoreResult = nil
-            }
-        }) { p in
-            RestoreConfirmation(summary: p.summary) {
-                restore(p.data)
-            }
-            .presentationDetents([.medium])
-        }
-        .alert(message ?? "", isPresented: Binding(get: { message != nil }, set: { if !$0 { message = nil } })) {
-            Button("OK", role: .cancel) {}
-        }
-    }
+    var backup: ExportedFile?
+    var backupName = ""
+    var isExporting = false
+    var isImporting = false
+    var pending: PendingRestore?
+    /// Shown once the confirmation sheet has closed.
+    var restoreResult: String?
+    var message: String?
 
-    private func makeBackup() {
+    func makeBackup(context: ModelContext) {
         do {
             let data = try BackupService(context: context).makeBackup()
             backup = ExportedFile(data: data, contentType: .json)
@@ -74,8 +35,25 @@ struct BackupView: View {
         }
     }
 
+    func exported(_ result: Result<URL, Error>) {
+        switch result {
+        case .success:
+            message = "Резервная копия сохранена"
+        case .failure(let error):
+            if !error.isCancellation { message = "Не удалось сохранить копию: \(error.localizedDescription)" }
+        }
+    }
+
+    func imported(_ result: Result<URL, Error>, context: ModelContext) {
+        switch result {
+        case .success(let url): prepareRestore(from: url, context: context)
+        case .failure(let error):
+            if !error.isCancellation { message = "Не удалось открыть файл: \(error.localizedDescription)" }
+        }
+    }
+
     /// Reads the chosen file and asks before replacing anything.
-    private func prepareRestore(from url: URL) {
+    private func prepareRestore(from url: URL, context: ModelContext) {
         let scoped = url.startAccessingSecurityScopedResource()
         defer { if scoped { url.stopAccessingSecurityScopedResource() } }
         let data: Data
@@ -95,7 +73,7 @@ struct BackupView: View {
         }
     }
 
-    private func restore(_ data: Data) {
+    func restore(_ data: Data, context: ModelContext, onRestore: () -> Void) {
         do {
             try BackupService(context: context).restore(data)
             restoreResult = "Данные восстановлены из копии"
@@ -104,6 +82,70 @@ struct BackupView: View {
             restoreResult = "Данные не изменены. \(error.localizedDescription)"
         }
         pending = nil
+    }
+
+    func confirmationClosed() {
+        if let restoreResult {
+            message = restoreResult
+            self.restoreResult = nil
+        }
+    }
+}
+
+/// The «Резервная копия» section of the settings form.
+struct BackupView: View {
+    let flow: BackupFlow
+
+    @Environment(\.modelContext) private var context
+
+    var body: some View {
+        Section {
+            Button("Создать резервную копию") { flow.makeBackup(context: context) }
+            Button("Восстановить из копии") { flow.isImporting = true }
+        } header: {
+            Text("Резервная копия")
+        } footer: {
+            Text("Копия содержит сотрудников с архивом, отметки, версии табелей и настройки. Храните её в «Файлах».")
+        }
+    }
+}
+
+extension View {
+    /// The file dialogs, the restore confirmation and the messages of `flow`, attached to the whole form.
+    func backupPresenters(_ flow: BackupFlow, onRestore: @escaping () -> Void) -> some View {
+        modifier(BackupPresenters(flow: flow, onRestore: onRestore))
+    }
+}
+
+private struct BackupPresenters: ViewModifier {
+    @Bindable var flow: BackupFlow
+    let onRestore: () -> Void
+
+    @Environment(\.modelContext) private var context
+
+    func body(content: Content) -> some View {
+        // The importer and the exporter sit on two different views: two file dialogs on one view can block
+        // each other.
+        VStack(spacing: 0) {
+            content
+                .fileImporter(isPresented: $flow.isImporting, allowedContentTypes: [.json, .data]) { result in
+                    flow.imported(result, context: context)
+                }
+        }
+        .fileExporter(isPresented: $flow.isExporting, document: flow.backup, contentType: .json,
+                      defaultFilename: flow.backupName) { result in
+            flow.exported(result)
+        }
+        .sheet(item: $flow.pending, onDismiss: { flow.confirmationClosed() }) { p in
+            RestoreConfirmation(summary: p.summary) {
+                flow.restore(p.data, context: context, onRestore: onRestore)
+            }
+            .presentationDetents([.medium])
+        }
+        .alert(flow.message ?? "", isPresented: Binding(get: { flow.message != nil },
+                                                         set: { if !$0 { flow.message = nil } })) {
+            Button("OK", role: .cancel) {}
+        }
     }
 }
 

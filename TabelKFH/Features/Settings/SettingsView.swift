@@ -33,6 +33,7 @@ private struct SettingsForm: View {
     let onRestore: () -> Void
 
     @Environment(\.modelContext) private var context
+    @State private var backup = BackupFlow()
 
     var body: some View {
         Form {
@@ -53,12 +54,15 @@ private struct SettingsForm: View {
                 Text("Эти данные печатаются в шапке и подписях табеля.")
             }
 
-            BackupView(onRestore: onRestore)
+            BackupView(flow: backup)
 
             Section("О приложении") {
                 LabeledContent("Табель КФХ", value: Self.versionText)
             }
         }
+        .scrollDismissesKeyboard(.interactively)
+        .keyboardDoneButton()
+        .backupPresenters(backup, onRestore: onRestore)
         .onChange(of: settings.info) { _, _ in
             try? context.save()
         }

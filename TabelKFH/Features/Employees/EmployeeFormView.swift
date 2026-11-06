@@ -85,6 +85,8 @@ struct EmployeeFormView: View {
                 }
             }
         }
+        .scrollDismissesKeyboard(.interactively)
+        .keyboardDoneButton()
         .navigationTitle(employee == nil ? "Новый сотрудник" : "Изменить данные")
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
