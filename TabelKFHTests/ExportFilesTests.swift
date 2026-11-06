@@ -51,6 +51,13 @@ final class ExportFilesTests: XCTestCase {
         XCTAssertEqual(files.xlsx.lastPathComponent, "Табель_Ноябрь_2026_Зубахин_v2.xlsx")
     }
 
+    func testWritingAnotherVersionRemovesTheOlderFiles() throws {
+        _ = try ExportFiles.write(Self.november(), in: directory)
+        _ = try ExportFiles.write(Self.november(), surname: "Зубахин", in: directory)
+        let names = try FileManager.default.contentsOfDirectory(atPath: directory.path).sorted()
+        XCTAssertEqual(names, ["Табель_Ноябрь_2026_Зубахин_v2.pdf", "Табель_Ноябрь_2026_Зубахин_v2.xlsx"])
+    }
+
     func testWritingAgainReplacesTheFiles() throws {
         _ = try ExportFiles.write(Self.november(), in: directory)
         let files = try ExportFiles.write(Self.november(), in: directory)
