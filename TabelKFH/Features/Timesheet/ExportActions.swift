@@ -1,0 +1,147 @@
+import SwiftUI
+import UIKit
+import UniformTypeIdentifiers
+
+/// The PDF and the XLSX of a timesheet, written to a temporary folder for sharing.
+struct ExportedFiles: Equatable {
+    let pdf: URL
+    let xlsx: URL
+
+    /// PDF first, then XLSX.
+    var all: [URL] { [pdf, xlsx] }
+}
+
+enum ExportFiles {
+    /// `tmp/Export/`.
+    static var directory: URL {
+        FileManager.default.temporaryDirectory.appendingPathComponent("Export", isDirectory: true)
+    }
+
+    /// Writes «Табель_<Месяц>_<год>_v<N>.pdf» and «….xlsx» into `directory`, replacing older files of the same name.
+    static func write(_ d: TimesheetDocument, in directory: URL = ExportFiles.directory) throws -> ExportedFiles {
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        let pdf = directory.appendingPathComponent(exportFileName(d, ext: "pdf"))
+        let xlsx = directory.appendingPathComponent(exportFileName(d, ext: "xlsx"))
+        try TimesheetPDFRenderer.render(d).write(to: pdf, options: .atomic)
+        try XLSXWriter.make(d).write(to: xlsx, options: .atomic)
+        return ExportedFiles(pdf: pdf, xlsx: xlsx)
+    }
+}
+
+extension UTType {
+    /// Excel workbook (.xlsx).
+    static let xlsxWorkbook = UTType("org.openxmlformats.spreadsheetml.sheet") ?? .spreadsheet
+}
+
+/// Bytes handed to `.fileExporter`; the content type decides the file extension.
+struct ExportedFile: FileDocument {
+    static let readableContentTypes: [UTType] = [.pdf, .xlsxWorkbook, .json]
+
+    let data: Data
+    let contentType: UTType
+
+    init(data: Data, contentType: UTType) {
+        self.data = data
+        self.contentType = contentType
+    }
+
+    init(configuration: ReadConfiguration) throws {
+        guard let data = configuration.file.regularFileContents else { throw CocoaError(.fileReadCorruptFile) }
+        self.data = data
+        self.contentType = configuration.contentType
+    }
+
+    func fileWrapper(configuration: WriteConfiguration) throws -> FileWrapper {
+        FileWrapper(regularFileWithContents: data)
+    }
+}
+
+/// «Скачать PDF», «Экспорт в Excel», «Распечатать», «Поделиться» for the shown timesheet version.
+struct ExportActions: View {
+    let document: TimesheetDocument
+
+    @State private var files: ExportedFiles?
+    @State private var exporting: ExportedFile?
+    @State private var exportName = ""
+    @State private var isExporting = false
+    @State private var message: String?
+
+    var body: some View {
+        VStack(spacing: 10) {
+            HStack(spacing: 10) {
+                Button("Скачать PDF") { export(\.pdf, as: .pdf) }
+                    .buttonStyle(BigButtonStyle())
+                Button("Экспорт в Excel") { export(\.xlsx, as: .xlsxWorkbook) }
+                    .buttonStyle(BigButtonStyle())
+            }
+            HStack(spacing: 10) {
+                Button("Распечатать", action: printPDF)
+                    .buttonStyle(BigButtonStyle(color: Theme.accent))
+                if let files {
+                    ShareLink(items: files.all) { Text("Поделиться") }
+                        .buttonStyle(BigButtonStyle(color: Theme.accent))
+                } else {
+                    // Shown for the moment the files are being written.
+                    Button("Поделиться") {}
+                        .buttonStyle(BigButtonStyle(color: Theme.accent))
+                }
+            }
+        }
+        .lineLimit(1)
+        .minimumScaleFactor(0.8)
+        .disabled(files == nil)
+        .task(id: document) { prepare() }
+        .fileExporter(isPresented: $isExporting, document: exporting,
+                      contentType: exporting?.contentType ?? .pdf, defaultFilename: exportName) { result in
+            switch result {
+            case .success:
+                message = "Файл сохранён"
+            case .failure(let error):
+                message = "Не удалось сохранить файл: \(error.localizedDescription)"
+            }
+        }
+        .alert(message ?? "", isPresented: Binding(get: { message != nil }, set: { if !$0 { message = nil } })) {
+            Button("OK", role: .cancel) {}
+        }
+    }
+
+    /// Writes both files of the shown version so «Поделиться» has them ready.
+    private func prepare() {
+        do {
+            files = try ExportFiles.write(document)
+        } catch {
+            files = nil
+            message = "Не удалось подготовить файлы табеля: \(error.localizedDescription)"
+        }
+    }
+
+    private func export(_ file: KeyPath<ExportedFiles, URL>, as type: UTType) {
+        guard let files else { return }
+        do {
+            let url = files[keyPath: file]
+            exporting = ExportedFile(data: try Data(contentsOf: url), contentType: type)
+            exportName = url.deletingPathExtension().lastPathComponent
+            isExporting = true
+        } catch {
+            message = "Не удалось прочитать файл: \(error.localizedDescription)"
+        }
+    }
+
+    /// AirPrint of the PDF, landscape, job named after the file.
+    private func printPDF() {
+        guard let files, let data = try? Data(contentsOf: files.pdf) else {
+            message = "Не удалось подготовить PDF для печати"
+            return
+        }
+        let info = UIPrintInfo(dictionary: nil)
+        info.outputType = .general
+        info.jobName = files.pdf.lastPathComponent
+        info.orientation = .landscape
+        let controller = UIPrintInteractionController.shared
+        controller.printInfo = info
+        controller.printingItem = data
+        controller.present(animated: true) { _, _, error in
+            if let error { message = "Не удалось распечатать: \(error.localizedDescription)" }
+        }
+    }
+}

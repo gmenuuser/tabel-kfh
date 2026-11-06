@@ -160,13 +160,14 @@ private struct TimesheetContent: View {
         }
     }
 
-    /// The table of the chosen version. Task 10 puts the export actions under it.
+    /// The table of the chosen version and the export actions under it.
     private func selectedVersion(_ document: TimesheetDocument) -> some View {
         VStack(alignment: .leading, spacing: 12) {
             if !document.unfinished.isEmpty {
                 unfinishedWarning(document.unfinished)
             }
             TimesheetGridView(document: document)
+            ExportActions(document: document)
         }
     }
 
