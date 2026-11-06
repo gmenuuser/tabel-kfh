@@ -150,9 +150,14 @@ final class AppWalkthroughTests: XCTestCase {
         app.descendants(matching: .any).matching(NSPredicate(format: "label CONTAINS %@", text)).firstMatch
     }
 
+    /// The card's button stays disabled for a second after a tap (double-tap guard).
     private func waitUntilEnabled(_ element: XCUIElement) {
-        let enabled = expectation(for: NSPredicate(format: "isEnabled == true"), evaluatedWith: element)
-        wait(for: [enabled], timeout: 5)
+        let deadline = Date().addingTimeInterval(15)
+        while !element.isEnabled && Date() < deadline {
+            RunLoop.current.run(until: Date().addingTimeInterval(0.5))
+        }
+        if !element.isEnabled { shot("still-disabled-\(element.label)") }
+        XCTAssertTrue(element.isEnabled, "«\(element.label)» is enabled again")
     }
 
     /// Swipes up until `element` is on screen (at most 6 times).

@@ -38,6 +38,9 @@ jobs:
           print(c[-1][1]['udid'])")
           echo "udid=$UDID" >> "$GITHUB_OUTPUT"
           xcrun simctl list devices | grep "$UDID"
+          # Screenshots of the UI tests: the status bar shows 09:00 like the app's test clock.
+          xcrun simctl boot "$UDID" || true
+          xcrun simctl status_bar "$UDID" override --time "09:00" --batteryState charged --batteryLevel 100 || true
 
       - name: Test
         run: |
