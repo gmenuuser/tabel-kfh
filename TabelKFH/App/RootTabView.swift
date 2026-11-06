@@ -17,7 +17,7 @@ struct RootTabView: View {
             NavigationStack { CalendarView() }
                 .tabItem { Label("Календарь", systemImage: "calendar") }
                 .tag(Tab.calendar)
-            NavigationStack { TabPlaceholder(title: "Табель") }
+            NavigationStack { TimesheetView() }
                 .tabItem { Label("Табель", systemImage: "tablecells") }
                 .tag(Tab.timesheet)
             NavigationStack { TabPlaceholder(title: "Настройки") }

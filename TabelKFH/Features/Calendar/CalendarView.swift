@@ -238,7 +238,8 @@ private struct DayCellView: View {
 }
 
 /// Month and year wheels; «Готово» applies the choice.
-private struct MonthYearPicker: View {
+/// Shared with the Табель screen.
+struct MonthYearPicker: View {
     let onDone: (Int, Int) -> Void
     @Environment(\.dismiss) private var dismiss
     @State private var month: Int
