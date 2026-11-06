@@ -242,7 +242,8 @@ enum AgroEngine {
 
     private static func fertilizer(_ v: [String: Double], _ kind: AgroKind, _ inputs: [String: String],
                                    _ r: inout AgroResult) {
-        let perKg = ["kg": 1.0, "c": 100.0, "t": 1000.0][kind.choice("rateUnit", in: inputs)] ?? 1
+        let factors: [String: Double] = ["kg": 1, "c": 100, "t": 1000]
+        let perKg: Double = factors[kind.choice("rateUnit", in: inputs)] ?? 1
         let kg = v["area"]! * v["rate"]! * perKg
         r.lines = [AgroLine(title: "Нужно удобрения", text: AgroNumber.with(kg, "кг"), main: true),
                    AgroLine(title: "В тоннах", text: AgroNumber.with(kg / 1000, "т", decimals: 3))]
@@ -285,7 +286,8 @@ enum AgroEngine {
     }
 
     private static func yield(_ v: [String: Double], _ kind: AgroKind, _ inputs: [String: String], _ r: inout AgroResult) {
-        let tons = v["weight"]! / (["t": 1.0, "c": 10.0, "kg": 1000.0][kind.choice("weightUnit", in: inputs)] ?? 1)
+        let divisors: [String: Double] = ["t": 1, "c": 10, "kg": 1000]
+        let tons = v["weight"]! / (divisors[kind.choice("weightUnit", in: inputs)] ?? 1)
         let perHa = tons / v["area"]!
         r.lines = [AgroLine(title: "Урожайность", text: AgroNumber.with(perHa * 10, "ц/га"), main: true),
                    AgroLine(title: "Урожайность", text: AgroNumber.with(perHa, "т/га", decimals: 3), main: true),
