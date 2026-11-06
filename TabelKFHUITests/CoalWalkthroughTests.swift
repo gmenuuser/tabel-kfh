@@ -36,8 +36,9 @@ final class CoalWalkthroughTests: XCTestCase {
         pay.tap()
         let amount = app.textFields["paymentAmount"]
         XCTAssertTrue(amount.waitForExistence(timeout: 10))
-        amount.tap()
-        amount.clearAndType("500")
+        // The cursor goes to the end of «1000», then the text is replaced.
+        amount.coordinate(withNormalizedOffset: CGVector(dx: 0.97, dy: 0.5)).tap()
+        amount.typeText(String(repeating: XCUIKeyboardKey.delete.rawValue, count: 10) + "500")
         shot("37-payment")
         app.navigationBars.buttons["Выплатить"].tap()
         XCTAssertTrue(element(containing: "Выплаты водителям").waitForExistence(timeout: 10))
@@ -180,14 +181,5 @@ final class CoalWalkthroughTests: XCTestCase {
         } catch {
             XCTFail("could not write \(name).png into \(directory.path): \(error)")
         }
-    }
-}
-
-private extension XCUIElement {
-    func clearAndType(_ text: String) {
-        if let value = value as? String, !value.isEmpty {
-            typeText(String(repeating: XCUIKeyboardKey.delete.rawValue, count: value.count))
-        }
-        typeText(text)
     }
 }

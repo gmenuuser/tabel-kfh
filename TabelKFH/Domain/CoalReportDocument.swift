@@ -181,7 +181,7 @@ enum CoalReportLayout {
         }
         let t = r.totals
         return ReportTable(columns: columns, rows: rows,
-                           total: [.text("Итого"), .text(""), .tons(t.kilograms), .text(CoalText.sales(t.salesCount)),
+                           total: [.text(""), .text("Итого"), .tons(t.kilograms), .text(CoalText.sales(t.salesCount)),
                                    .text(""), .text(""), .money(t.coalAmount), .money(t.deliveryAmount), .money(t.revenue)])
     }
 

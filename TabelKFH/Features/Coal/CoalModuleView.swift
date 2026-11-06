@@ -46,9 +46,12 @@ struct CoalCloseButton: ToolbarContent {
     var body: some ToolbarContent {
         ToolbarItem(placement: .topBarLeading) {
             Button(action: onClose) {
-                Label("Табель", systemImage: "chevron.backward")
-                    .labelStyle(.titleAndIcon)
+                HStack(spacing: 4) {
+                    Image(systemName: "chevron.backward").fontWeight(.semibold)
+                    Text("Табель")
+                }
             }
+            .accessibilityLabel("Табель")
         }
     }
 }

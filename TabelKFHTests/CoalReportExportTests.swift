@@ -73,7 +73,8 @@ final class CoalReportExportTests: XCTestCase {
                 d.comment = "постоянный покупатель"
             }
             try sales.save(d)
-            clock = clock.addingTimeInterval(20 * 60)
+            // Five minutes apart: 76 sales still end on the same day.
+            clock = clock.addingTimeInterval(5 * 60)
         }
         try DriverPaymentService(context: context, now: now).pay(m, amount: 200_000, comment: "наличными")
     }
@@ -143,7 +144,7 @@ final class CoalReportExportTests: XCTestCase {
         let (pdf, text) = try pdfText(data)
         XCTAssertGreaterThan(pdf.pageCount, 1)
         let second = try XCTUnwrap(pdf.page(at: 1)?.string)
-        XCTAssertTrue(second.contains("Населённый пункт"), "the header is repeated: \(second.prefix(400))")
+        XCTAssertTrue(second.contains("Водитель") && second.contains("Время"), "the header is repeated: \(second.prefix(400))")
         XCTAssertTrue(second.contains("Отчёт за день 06.11.2026"), "running header: \(second.prefix(200))")
         XCTAssertTrue(text.contains("Страница \(pdf.pageCount) из \(pdf.pageCount)"))
     }
@@ -162,7 +163,7 @@ final class CoalReportExportTests: XCTestCase {
         XCTAssertEqual(own[4], "Своя")
         XCTAssertEqual(own[5], "—")
         XCTAssertEqual(own[8], "7200", "the corrected amount, as a number")
-        XCTAssertTrue(rows.contains { $0.first == "Итого" && $0.last == "61350" })
+        XCTAssertTrue(rows.contains { $0.count > 1 && $0[1] == "Итого" && $0.last == "61350" })
         XCTAssertTrue(rows.contains { $0.first?.hasPrefix("Е. Остаток после выплат водителям") == true && $0.last == "55950" })
         let m = try XCTUnwrap(rows.first { $0.first == "Мунгалов Сергей Иванович" && $0.count == 6 })
         XCTAssertEqual(m, ["Мунгалов Сергей Иванович", "3", "0", "3200", "2000", "1200"])
