@@ -71,7 +71,7 @@ enum TimesheetPDFRenderer {
             otherTop = m + 14
             bottom = size.height - m - 14
 
-            let nameWidth = self.nameWidth, dayWidth = self.dayWidth
+            let nameWidth = self.nameWidth
             rowHeights = d.rows.map { row in
                 let name = Text.height(row.employee.fullName, font: Font.body, width: nameWidth - 2 * Text.padX)
                 let lines = row.cells.map { $0.text.isEmpty ? 0 : $0.text.components(separatedBy: "\n").count }.max() ?? 0
