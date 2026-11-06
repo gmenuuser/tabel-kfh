@@ -51,7 +51,12 @@ private struct HomeContent: View {
                         row: row,
                         isBusy: model.isBusy(row.employee),
                         onPrimary: { model.tapPrimary(row.employee) },
-                        onEdit: { editing = EditorTarget(employee: row.employee, day: row.editorDay) })
+                        onEdit: { editing = EditorTarget(employee: row.employee, day: row.editorDay) },
+                        onEditStale: {
+                            if let day = row.staleOpenDay {
+                                editing = EditorTarget(employee: row.employee, day: day)
+                            }
+                        })
                 }
             }
             .padding(16)

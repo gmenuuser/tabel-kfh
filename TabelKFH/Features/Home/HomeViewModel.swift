@@ -15,6 +15,8 @@ final class HomeViewModel {
         let hoursText: String
         /// The day the editor opens: the open record's day (yesterday for a night shift) or today.
         let editorDay: Date
+        /// Yesterday, when its departure was forgotten («Вчера не отмечен уход»).
+        let staleOpenDay: Date?
         var id: UUID { employee.id }
     }
 
@@ -54,6 +56,9 @@ final class HomeViewModel {
     var absentTitle: String { "Отсутствуют: \(absentCount)" }
 
     func isBusy(_ e: Employee) -> Bool { busy.contains(e.id) }
+
+    /// Yesterday's record with a forgotten departure, if any.
+    func staleOpenRecord(for e: Employee) -> AttendanceRecord? { service.staleOpenRecord(for: e) }
 
     func reload() {
         let moment = now()
@@ -169,7 +174,8 @@ final class HomeViewModel {
         return Row(employee: e, action: action, statusText: status,
                    arrivalText: timeText(shown?.arrivalTime, today: today),
                    departureText: timeText(shown?.departureTime, today: today),
-                   hoursText: hours, editorDay: shown?.day ?? today)
+                   hoursText: hours, editorDay: shown?.day ?? today,
+                   staleOpenDay: service.staleOpenRecord(for: e)?.day)
     }
 
     /// «08:02», or «05.11 22:00» for a time on another day.

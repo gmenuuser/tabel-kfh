@@ -34,6 +34,9 @@ final class AttendanceService {
     private let now: () -> Date
     private let calendar = Calendar.farm
 
+    /// An arrival without a departure counts as «на работе» for at most this long.
+    static let maxOpenShift: TimeInterval = 16 * 3600
+
     init(context: ModelContext, now: @escaping () -> Date = Date.init) {
         self.context = context
         self.now = now
@@ -51,16 +54,37 @@ final class AttendanceService {
         return (try? context.fetch(descriptor))?.first
     }
 
-    /// The latest Я record with an arrival and no departure from today or yesterday.
-    /// Yesterday counts so a night shift (or the app left open past midnight) still shows «Ушёл».
+    /// The latest Я record from today or yesterday with an arrival no more than `maxOpenShift` ago
+    /// and no departure. Yesterday counts so a night shift (or the app left open past midnight)
+    /// still shows «Ушёл»; a departure forgotten long ago does not block today's arrival.
     func openRecord(for e: Employee) -> AttendanceRecord? {
+        let moment = now()
+        return unfinishedRecords(for: e).first { r in
+            guard let arrival = r.arrivalTime else { return false }
+            return moment.timeIntervalSince(arrival) <= Self.maxOpenShift
+        }
+    }
+
+    /// Yesterday's Я record whose departure was never marked and that is too old to be open.
+    /// It stays unfinished (0 hours) until the owner fixes it.
+    func staleOpenRecord(for e: Employee) -> AttendanceRecord? {
+        let moment = now()
+        let yesterday = calendar.date(byAdding: .day, value: -1, to: today) ?? today
+        return unfinishedRecords(for: e).first { r in
+            guard r.day == yesterday, let arrival = r.arrivalTime else { return false }
+            return moment.timeIntervalSince(arrival) > Self.maxOpenShift
+        }
+    }
+
+    /// Я records of today and yesterday with an arrival and no departure, latest day first.
+    private func unfinishedRecords(for e: Employee) -> [AttendanceRecord] {
         let id = e.id
         let from = calendar.date(byAdding: .day, value: -1, to: today) ?? today
         let descriptor = FetchDescriptor<AttendanceRecord>(
             predicate: #Predicate { $0.employeeId == id && $0.day >= from },
             sortBy: [SortDescriptor(\.day, order: .reverse)])
         let records = (try? context.fetch(descriptor)) ?? []
-        return records.first { $0.status == .present && $0.arrivalTime != nil && $0.departureTime == nil }
+        return records.filter { $0.status == .present && $0.arrivalTime != nil && $0.departureTime == nil }
     }
 
     func todayAction(for e: Employee) -> TodayAction {

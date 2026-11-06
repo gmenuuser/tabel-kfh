@@ -7,6 +7,8 @@ struct EmployeeDayCard: View {
     let isBusy: Bool
     let onPrimary: () -> Void
     let onEdit: () -> Void
+    /// Opens the editor for the day with a forgotten departure.
+    var onEditStale: () -> Void = {}
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -42,6 +44,15 @@ struct EmployeeDayCard: View {
                 info("Приход", row.arrivalText)
                 info("Уход", row.departureText)
                 info("Часы", row.hoursText)
+            }
+
+            if row.staleOpenDay != nil {
+                Button(action: onEditStale) {
+                    Label("Вчера не отмечен уход", systemImage: "exclamationmark.triangle.fill")
+                        .font(.subheadline.weight(.medium))
+                        .foregroundStyle(Theme.accent)
+                }
+                .buttonStyle(.plain)
             }
 
             primaryButton
