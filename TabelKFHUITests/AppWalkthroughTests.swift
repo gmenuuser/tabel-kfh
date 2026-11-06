@@ -10,7 +10,7 @@ final class AppWalkthroughTests: XCTestCase {
         continueAfterFailure = false
     }
 
-    // Добавление сотрудника, явка одной кнопкой, статус из меню, вчерашний день, табель за месяц.
+    // Добавление сотрудника, часы за день четырьмя кнопками, вчерашний день, табель за месяц.
     func testWalkthroughLight() throws {
         launch(dark: false)
 
@@ -32,7 +32,7 @@ final class AppWalkthroughTests: XCTestCase {
 
         app.buttons.matching(NSPredicate(format: "label CONTAINS %@", "Зубахин Иван Петрович")).firstMatch.tap()
         XCTAssertTrue(app.navigationBars["Зубахин Иван Петрович"].waitForExistence(timeout: 10), "the history opens")
-        XCTAssertTrue(element(containing: "Дней явки").waitForExistence(timeout: 10))
+        XCTAssertTrue(element(containing: "Часов за месяц").waitForExistence(timeout: 10))
         shot("07a-employee-history")
         let archive = app.buttons["В архив"].firstMatch
         scroll(to: archive)
@@ -40,8 +40,8 @@ final class AppWalkthroughTests: XCTestCase {
         shot("07b-employee-history-archive")
 
         tab("Календарь")
-        XCTAssertTrue(app.navigationBars["Календарь"].waitForExistence(timeout: 10))
-        shot("08-calendar")
+        XCTAssertTrue(app.navigationBars["Старые отметки"].waitForExistence(timeout: 10), "the archive of old marks")
+        shot("08-old-marks")
 
         generateTimesheet()
         shot("09-timesheet")
@@ -107,50 +107,49 @@ final class AppWalkthroughTests: XCTestCase {
         XCTAssertTrue(app.navigationBars["Новый сотрудник"].waitForNonExistence(timeout: 10), "the form closes after saving")
     }
 
-    /// «Отметить: Я», a second tap cancels it, a status from the menu, then yesterday.
+    /// 8 ч, then 4 ч replaces it, then 4 ч again removes the mark, then 12 ч; yesterday has no one (hired today).
     private func markPresence(screenshots: Bool) {
-        XCTAssertFalse(app.buttons["Пришёл"].exists, "no arrival button any more")
-        XCTAssertFalse(app.buttons["Ушёл"].exists)
-        let mark = app.buttons["mark-Зубахин"]
-        XCTAssertTrue(mark.waitForExistence(timeout: 10))
-        XCTAssertTrue(element(containing: "Не отмечен").exists)
-        mark.tap()
-        dismissAlertIfShown()
-        XCTAssertTrue(element(containing: "Был на работе").waitForExistence(timeout: 10), "one tap marks Я")
-        if screenshots { shot("04-home-present") }
-        mark.tap()
-        XCTAssertTrue(element(containing: "Не отмечен").waitForExistence(timeout: 10), "a second tap cancels it")
-
-        let menu = app.buttons["Статус Зубахин Иван Петрович"]
-        menu.tap()
-        let sick = app.buttons["Б — Больничный"]
-        XCTAssertTrue(sick.waitForExistence(timeout: 10), "the menu offers the statuses")
-        if screenshots { shot("05-status-menu") }
-        sick.tap()
-        XCTAssertTrue(element(containing: "Больничный").waitForExistence(timeout: 10))
+        for old in ["Пришёл", "Ушёл", "Отметить: Я", "Статус Зубахин Иван Петрович"] {
+            XCTAssertFalse(app.buttons[old].exists, "no «\(old)» any more")
+        }
+        let eight = app.buttons["hours-8-Зубахин"]
+        XCTAssertTrue(eight.waitForExistence(timeout: 10))
+        XCTAssertTrue(element(containing: "Не отмечен").exists, "no hours until a button is pressed")
+        eight.tap()
+        XCTAssertTrue(element(containing: "Отмечено: 8 ч").waitForExistence(timeout: 10))
+        if screenshots { shot("04-home-hours") }
+        let four = app.buttons["hours-4-Зубахин"]
+        four.tap()
+        XCTAssertTrue(element(containing: "Отмечено: 4 ч").waitForExistence(timeout: 10), "4 replaces 8")
+        four.tap()
+        XCTAssertTrue(element(containing: "Не отмечен").waitForExistence(timeout: 10), "the selected one again removes it")
+        app.buttons["hours-12-Зубахин"].tap()
+        XCTAssertTrue(element(containing: "Отмечено: 12 ч").waitForExistence(timeout: 10))
+        if screenshots { shot("05-home-12") }
 
         app.buttons["Вчера"].firstMatch.tap()
         XCTAssertTrue(element(containing: "Четверг, 5 ноября 2026").waitForExistence(timeout: 10), "yesterday is shown")
-        // Hired today: yesterday the person was not in the farm yet.
         XCTAssertTrue(element(containing: "нет работающих сотрудников").waitForExistence(timeout: 10))
         if screenshots { shot("06-home-yesterday") }
         app.buttons["Сегодня"].firstMatch.tap()
-        XCTAssertTrue(element(containing: "Больничный").waitForExistence(timeout: 10), "today kept «Б»")
+        XCTAssertTrue(element(containing: "Отмечено: 12 ч").waitForExistence(timeout: 10), "today kept 12 ч")
     }
 
-    /// The month table: Б on the 6th, then a tap on the 7th makes it a day off.
+    /// The month table: 12 on the 6th, then a tap on the 7th makes it 8 hours.
     private func generateTimesheet() {
         tab("Табель")
         XCTAssertTrue(app.buttons["monthTitle"].waitForExistence(timeout: 10))
         XCTAssertTrue(app.buttons["monthTitle"].label.contains("НОЯБРЬ 2026"))
         XCTAssertTrue(element(containing: "Зубахин И. П.").waitForExistence(timeout: 10), "the grid shows the person")
+        XCTAssertTrue(app.buttons["Зубахин Иван Петрович, 6: 12 ч"].waitForExistence(timeout: 10))
         let cell = app.buttons["Зубахин Иван Петрович, 7: не отмечен"]
         XCTAssertTrue(cell.waitForExistence(timeout: 10))
         cell.tap()
-        let dayOff = app.buttons["В — Выходной"]
-        XCTAssertTrue(dayOff.waitForExistence(timeout: 10))
-        dayOff.tap()
-        XCTAssertTrue(app.buttons["Зубахин Иван Петрович, 7: Выходной"].waitForExistence(timeout: 10), "the cell changed")
+        let eight = app.buttons["8 ч"]
+        XCTAssertTrue(eight.waitForExistence(timeout: 10))
+        eight.tap()
+        XCTAssertTrue(app.buttons["Зубахин Иван Петрович, 7: 8 ч"].waitForExistence(timeout: 10), "the cell changed")
+        XCTAssertTrue(element(containing: "20 ч").waitForExistence(timeout: 10), "the month total")
         XCTAssertTrue(app.buttons["Скачать PDF"].firstMatch.waitForExistence(timeout: 15))
     }
 
@@ -169,7 +168,8 @@ final class AppWalkthroughTests: XCTestCase {
         let more = app.navigationBars["Табель работников"].buttons["Ещё"]
         XCTAssertTrue(more.waitForExistence(timeout: 10), "«Ещё» on «Табель работников»")
         more.tap()
-        let item = ["Сотрудники": "Сотрудники и история", "Календарь": "Календарь", "Табель": "Табель за месяц"][title] ?? title
+        let item = ["Сотрудники": "Сотрудники и история", "Календарь": "Старые отметки (архив)",
+                    "Табель": "Табель за месяц"][title] ?? title
         let button = app.buttons[item].firstMatch
         XCTAssertTrue(button.waitForExistence(timeout: 10), "menu item «\(item)»")
         button.tap()

@@ -98,9 +98,9 @@ struct MainScreen: View {
         today = Calendar.farm.dayStart(AppClock.now())
         farmName = FarmSettingsStore.current(in: context).farmName
         let people = EmployeeService(context: context).active(on: today)
-        let marks = AttendanceService(context: context)
+        let marks = HoursService(context: context)
         staff = people.count
-        atWork = people.filter { marks.status(of: $0, on: today) == .present }.count
+        atWork = people.filter { (marks.hours(of: $0, on: today) ?? 0) > 0 }.count
     }
 
     private var header: some View {

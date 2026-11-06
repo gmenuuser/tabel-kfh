@@ -1,9 +1,9 @@
 import SwiftUI
 import SwiftData
 
-/// «Табель за месяц»: rows are employees, columns the days, each cell the code of the day in its colour.
-/// The names stay on the left while the days scroll sideways; «−» / «+» or two fingers zoom; a tap on a cell
-/// changes that day. Totals of every status at the end of each row and for the whole farm under the table.
+/// «Табель за месяц»: rows are employees, columns the days, each cell the hours of the day (0, 4, 8, 12) in
+/// its colour; an empty cell has no mark. The names stay on the left while the days scroll sideways; «−» / «+»
+/// or two fingers zoom; a tap on a cell changes that day. The chosen month is kept between screens.
 struct MonthTimesheetView: View {
     struct CellTarget: Identifiable {
         let employeeId: UUID
@@ -14,8 +14,8 @@ struct MonthTimesheetView: View {
 
     @Environment(\.modelContext) private var context
     @Query private var employees: [Employee]
-    @State private var month = Calendar.farm.component(.month, from: AppClock.now())
-    @State private var year = Calendar.farm.component(.year, from: AppClock.now())
+    @AppStorage("timesheetMonth") private var month = Calendar.farm.component(.month, from: AppClock.now())
+    @AppStorage("timesheetYear") private var year = Calendar.farm.component(.year, from: AppClock.now())
     @State private var document: TimesheetDocument?
     @State private var scale: CGFloat = 1
     @State private var pinchStart: CGFloat?
@@ -42,7 +42,15 @@ struct MonthTimesheetView: View {
                     }
                     VStack(alignment: .leading, spacing: 8) {
                         Text("Обозначения").font(.headline)
-                        StatusLegend()
+                        HStack(spacing: 8) {
+                            ForEach(WorkHours.options, id: \.self) { h in
+                                Text(HoursStyle.title(h))
+                                    .font(.subheadline.bold())
+                                    .frame(maxWidth: .infinity, minHeight: 30)
+                                    .background(HoursStyle.fill(h), in: RoundedRectangle(cornerRadius: 6, style: .continuous))
+                            }
+                        }
+                        Text("Пустая клетка — отметки нет (это не 0 часов).").font(.footnote).foregroundStyle(.secondary)
                     }
                     .card()
                     ExportActions(document: document, surname: nil)
@@ -66,8 +74,8 @@ struct MonthTimesheetView: View {
         .confirmationDialog(editing.map { "\($0.name), \(CoalText.date($0.day))" } ?? "",
                             isPresented: Binding(get: { editing != nil }, set: { if !$0 { editing = nil } }),
                             titleVisibility: .visible, presenting: editing) { target in
-            ForEach(DayStatus.statuses(on: target.day, today: AppClock.now()), id: \.self) { s in
-                Button("\(s.rawValue) — \(s.title)") { set(s, target) }
+            ForEach(WorkHours.options, id: \.self) { h in
+                Button(HoursStyle.title(h)) { set(h, target) }
             }
             Button("Снять отметку", role: .destructive) { set(nil, target) }
             Button("Отмена", role: .cancel) {}
@@ -147,8 +155,9 @@ struct MonthTimesheetView: View {
                 VStack(spacing: 0) {
                     HStack(spacing: 0) {
                         ForEach(1...max(1, d.daysInMonth), id: \.self) { day in dayHeader(day, d) }
-                        ForEach(TimesheetTotals.columnTitles, id: \.self) { t in
-                            headerCell(t, width: totalWidth, alignment: .center)
+                        ForEach(HoursTotals.columnTitles, id: \.self) { t in
+                            headerCell(t, width: HoursTotals.columnTitles.firstIndex(of: t).map { $0 < 2 } == true
+                                       ? totalWidth * 1.5 : totalWidth, alignment: .center)
                         }
                     }
                     ForEach(d.rows, id: \.employee.id) { row in
@@ -156,20 +165,20 @@ struct MonthTimesheetView: View {
                             ForEach(Array(row.cells.enumerated()), id: \.offset) { index, cell in
                                 dayCell(cell, row: row, day: index + 1, d)
                             }
-                            totalsCells(row.totals, bold: false)
+                            totalsCells(row.hoursTotals ?? HoursTotals(), bold: false)
                         }
                     }
                     HStack(spacing: 0) {
                         ForEach(1...max(1, d.daysInMonth), id: \.self) { day in
-                            let present = d.rows.filter { $0.cells[day - 1].employed && $0.cells[day - 1].status == .present }.count
-                            Text(present == 0 ? "" : "\(present)")
+                            let hours = d.rows.reduce(0) { $0 + ($1.cells[day - 1].employed ? ($1.cells[day - 1].hours ?? 0) : 0) }
+                            Text(hours == 0 ? "" : "\(hours)")
                                 .font(.system(size: 12 * scale, weight: .semibold).monospacedDigit())
                                 .foregroundStyle(.secondary)
                                 .frame(width: cellWidth, height: rowHeight)
                                 .background(Theme.card)
                                 .border(Color(uiColor: .separator), width: 0.5)
                         }
-                        totalsCells(d.farmTotals, bold: true)
+                        totalsCells(d.farmHoursTotals ?? HoursTotals(), bold: true)
                     }
                 }
             }
@@ -222,38 +231,46 @@ struct MonthTimesheetView: View {
                 .foregroundStyle(.primary)
                 .frame(width: cellWidth, height: rowHeight)
                 .background(!cell.employed ? Color(uiColor: .systemGray4)
-                            : cell.status?.fill ?? Theme.background)
+                            : cell.hours.map(HoursStyle.fill) ?? Theme.background)
                 .border(Color(uiColor: .separator), width: 0.5)
         }
         .buttonStyle(.plain)
         .disabled(!cell.employed)
-        .accessibilityLabel("\(row.employee.fullName), \(day): \(cell.status?.title ?? "не отмечен")")
+        .accessibilityLabel("\(row.employee.fullName), \(day): \(cell.hours.map { "\($0) ч" } ?? "не отмечен")")
     }
 
-    private func totalsCells(_ t: TimesheetTotals, bold: Bool) -> some View {
-        ForEach(Array(TimesheetTotals.columnStatuses.enumerated()), id: \.offset) { _, s in
-            Text("\(t.days(s))")
-                .font(.system(size: 13 * scale, weight: bold ? .heavy : .semibold).monospacedDigit())
-                .frame(width: totalWidth, height: rowHeight)
-                .background(s.fill.opacity(0.6))
+    private func totalsCells(_ t: HoursTotals, bold: Bool) -> some View {
+        ForEach(Array(t.columnValues.enumerated()), id: \.offset) { index, value in
+            Text("\(value)")
+                .font(.system(size: 13 * scale, weight: bold || index == 0 ? .heavy : .semibold).monospacedDigit())
+                .lineLimit(1)
+                .minimumScaleFactor(0.6)
+                .frame(width: index < 2 ? totalWidth * 1.5 : totalWidth, height: rowHeight)
+                .background(index < 2 ? Theme.primary.opacity(0.12) : HoursStyle.fill(WorkHours.options[index - 2]))
                 .border(Color(uiColor: .separator), width: 0.5)
         }
     }
 
     private func farmTotals(_ d: TimesheetDocument) -> some View {
-        VStack(alignment: .leading, spacing: 8) {
+        let t = d.farmHoursTotals ?? HoursTotals()
+        return VStack(alignment: .leading, spacing: 8) {
             Text("Итоги по хозяйству").font(.headline)
+            HStack {
+                Text("Всего отработано").font(.subheadline)
+                Spacer()
+                Text("\(t.hours) ч").font(.title3.bold().monospacedDigit()).foregroundStyle(Theme.primary)
+            }
             let columns = [GridItem(.flexible(), spacing: 8), GridItem(.flexible(), spacing: 8)]
             LazyVGrid(columns: columns, alignment: .leading, spacing: 8) {
-                ForEach(TimesheetTotals.columnStatuses, id: \.self) { s in
+                ForEach(WorkHours.options, id: \.self) { h in
                     HStack {
-                        Text(s.title).font(.subheadline)
+                        Text("Отметок \(h) ч").font(.subheadline)
                         Spacer()
-                        Text("\(d.farmTotals.days(s))").font(.headline.monospacedDigit())
+                        Text("\(t.days(h))").font(.headline.monospacedDigit())
                     }
                     .padding(.horizontal, 10)
                     .padding(.vertical, 6)
-                    .background(s.fill, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+                    .background(HoursStyle.fill(h), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
                 }
             }
             Text("Сотрудников в табеле: \(d.rows.count)").font(.subheadline).foregroundStyle(.secondary)
@@ -265,7 +282,7 @@ struct MonthTimesheetView: View {
 
     private func reload() {
         do {
-            document = try TimesheetService(context: context).liveDocument(month: month, year: year)
+            document = try HoursService(context: context).month(month, year)
         } catch {
             message = error.localizedDescription
         }
@@ -285,10 +302,10 @@ struct MonthTimesheetView: View {
         }
     }
 
-    private func set(_ status: DayStatus?, _ target: CellTarget) {
+    private func set(_ hours: Int?, _ target: CellTarget) {
         guard let employee = employees.first(where: { $0.id == target.employeeId }) else { return }
         do {
-            try AttendanceService(context: context).setStatus(status, for: employee, on: target.day)
+            try HoursService(context: context).set(hours, for: employee, on: target.day)
         } catch {
             message = error.localizedDescription
         }

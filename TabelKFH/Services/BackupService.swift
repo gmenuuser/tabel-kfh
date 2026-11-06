@@ -48,7 +48,12 @@ final class BackupService {
                              agro: try context.fetch(FetchDescriptor<AgroCalculation>())
                                  .sorted { $0.id.uuidString < $1.id.uuidString }
                                  .map { AgroBackup(id: $0.id, kind: $0.kind, title: $0.title, inputs: $0.inputs,
-                                                   lines: $0.lines, createdAt: $0.createdAt, updatedAt: $0.updatedAt) })
+                                                   lines: $0.lines, createdAt: $0.createdAt, updatedAt: $0.updatedAt) },
+                             hours: try context.fetch(FetchDescriptor<WorkHoursMark>())
+                                 .filter { ids.contains($0.employeeId) }
+                                 .sorted { $0.id.uuidString < $1.id.uuidString }
+                                 .map { HoursBackup(id: $0.id, employeeId: $0.employeeId, day: $0.day, hours: $0.hours,
+                                                    createdAt: $0.createdAt, updatedAt: $0.updatedAt) })
     }
 
     func makeBackup() throws -> Data {
@@ -126,6 +131,18 @@ final class BackupService {
 
             if let coal = p.coal { try restoreCoal(coal) }
             if let livestock = p.livestock { try restoreLivestock(livestock) }
+            if let hours = p.hours {
+                merge(hours, existing: try context.fetch(FetchDescriptor<WorkHoursMark>()), id: { $0.id },
+                      rowId: { $0.id },
+                      make: { WorkHoursMark(id: $0.id, employeeId: $0.employeeId, day: $0.day, hours: $0.hours,
+                                            createdAt: $0.createdAt, updatedAt: $0.updatedAt) }) { b, m in
+                    m.employeeId = b.employeeId
+                    m.day = b.day
+                    m.hours = b.hours
+                    m.createdAt = b.createdAt
+                    m.updatedAt = b.updatedAt
+                }
+            }
             if let agro = p.agro {
                 let encoder = JSONEncoder()
                 merge(agro, existing: try context.fetch(FetchDescriptor<AgroCalculation>()), id: { $0.id },

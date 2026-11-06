@@ -1,15 +1,15 @@
 import SwiftUI
 import SwiftData
 
-/// One employee's work history by month: each day of employment with status, times, hours and comment.
-/// Tapping a day opens the record editor.
+/// One employee's work history by month: each day of employment with its hours (0, 4, 8, 12) or no mark.
+/// Tapping a day opens the choice of hours.
 struct EmployeeHistoryView: View {
     let employee: Employee
 
     @Environment(\.modelContext) private var context
     @State private var month: Int
     @State private var year: Int
-    @State private var records: [Date: AttendanceRecord] = [:]
+    @State private var records: [Date: Int] = [:]
     @State private var editingProfile = false
     @State private var confirmArchive = false
     @State private var errorMessage: String?
@@ -31,7 +31,8 @@ struct EmployeeHistoryView: View {
 
             Section {
                 monthSwitcher
-                LabeledContent("Дней явки", value: "\(presentDays)")
+                LabeledContent("Часов за месяц", value: "\(totals.hours)")
+                LabeledContent("Рабочих дней", value: "\(totals.workedDays)")
             }
 
             Section {
@@ -41,9 +42,9 @@ struct EmployeeHistoryView: View {
                 }
                 ForEach(days, id: \.self) { day in
                     NavigationLink {
-                        RecordEditorView(employee: employee, day: day)
+                        HoursPickerView(employee: employee, day: day)
                     } label: {
-                        HistoryDayRow(day: day, record: records[day])
+                        HistoryDayRow(day: day, hours: records[day])
                     }
                 }
             } header: {
@@ -147,11 +148,11 @@ struct EmployeeHistoryView: View {
     }
 
     /// Only days within employment count, as in the timesheet.
-    private var totals: (presentDays: Int, minutes: Int) {
-        EmployeeService.monthTotals(Array(records.values), of: employee, calendar: calendar)
+    private var totals: HoursTotals {
+        var t = HoursTotals()
+        for day in days { if let h = records[day] { t.count(h) } }
+        return t
     }
-
-    private var presentDays: Int { totals.presentDays }
 
     private var errorShown: Binding<Bool> {
         Binding(get: { errorMessage != nil }, set: { if !$0 { errorMessage = nil } })
@@ -177,37 +178,30 @@ struct EmployeeHistoryView: View {
         let id = employee.id
         let start = calendar.date(day: 1, month: month, year: year)
         let end = calendar.date(byAdding: .month, value: 1, to: start) ?? start
-        let descriptor = FetchDescriptor<AttendanceRecord>(
+        let descriptor = FetchDescriptor<WorkHoursMark>(
             predicate: #Predicate { $0.employeeId == id && $0.day >= start && $0.day < end })
         let fetched = (try? context.fetch(descriptor)) ?? []
-        records = Dictionary(fetched.map { (calendar.dayStart($0.day), $0) }, uniquingKeysWith: { a, _ in a })
+        records = Dictionary(fetched.map { (calendar.dayStart($0.day), $0.hours) }, uniquingKeysWith: { a, _ in a })
     }
 }
 
 private struct HistoryDayRow: View {
     let day: Date
-    let record: AttendanceRecord?
+    let hours: Int?
 
     var body: some View {
         HStack(alignment: .top, spacing: 12) {
             Text(Self.dayFormatter.string(from: day))
                 .font(.subheadline.monospacedDigit())
                 .frame(width: 56, alignment: .leading)
-            VStack(alignment: .leading, spacing: 2) {
-                if let record {
-                    Text("\(record.status.rawValue) — \(record.status.title)")
-                        .font(.subheadline.weight(.semibold))
-                        .foregroundStyle(record.status == .present ? Theme.primary : Theme.accent)
-                    if !record.comment.isEmpty {
-                        Text(record.comment)
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                    }
-                } else {
-                    Text("Нет отметки")
-                        .font(.subheadline)
-                        .foregroundStyle(.secondary)
-                }
+            if let hours {
+                Text(HoursStyle.title(hours))
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundStyle(HoursStyle.color(hours))
+            } else {
+                Text("Нет отметки")
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
             }
         }
         .padding(.vertical, 2)
@@ -221,5 +215,59 @@ private struct HistoryDayRow: View {
         f.timeZone = Calendar.farm.timeZone
         f.dateFormat = "d, EE"
         return f
+    }
+}
+
+/// The hours of one day for one employee: four large buttons and «Снять отметку».
+struct HoursPickerView: View {
+    let employee: Employee
+    let day: Date
+
+    @Environment(\.modelContext) private var context
+    @Environment(\.dismiss) private var dismiss
+    @State private var current: Int?
+    @State private var loaded = false
+    @State private var message: String?
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            Text(employee.fullName).font(.title3.bold())
+            Text(CoalText.longDate(day).capitalizedFirst).foregroundStyle(.secondary)
+            HStack(spacing: 10) {
+                ForEach(WorkHours.options, id: \.self) { h in
+                    Button(HoursStyle.title(h)) { choose(h) }
+                        .font(.title3.bold())
+                        .frame(maxWidth: .infinity, minHeight: 60)
+                        .foregroundStyle(current == h ? .white : HoursStyle.color(h))
+                        .background(current == h ? HoursStyle.color(h) : Theme.card,
+                                    in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+                        .buttonStyle(.plain)
+                }
+            }
+            if current != nil {
+                Button("Снять отметку", role: .destructive) { choose(nil) }
+            }
+            Spacer()
+        }
+        .padding(16)
+        .navigationTitle("Часы за день")
+        .navigationBarTitleDisplayMode(.inline)
+        .onAppear {
+            guard !loaded else { return }
+            loaded = true
+            current = HoursService(context: context).hours(of: employee, on: day)
+        }
+        .alert("Не получилось", isPresented: Binding(get: { message != nil }, set: { if !$0 { message = nil } })) {
+            Button("OK", role: .cancel) {}
+        } message: { Text(message ?? "") }
+    }
+
+    private func choose(_ h: Int?) {
+        do {
+            try HoursService(context: context).set(h, for: employee, on: day)
+            dismiss()
+        } catch {
+            message = error.localizedDescription
+        }
     }
 }

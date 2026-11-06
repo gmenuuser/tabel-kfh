@@ -35,7 +35,7 @@ enum XLSXWriter {
 
         init(_ d: TimesheetDocument) {
             self.d = d
-            lastColumn = 2 + d.daysInMonth + TimesheetTotals.columnTitles.count
+            lastColumn = 2 + d.daysInMonth + d.totalsTitles.count
             build(contacts: [d.address, d.phone, d.extraInfo].filter { !$0.isEmpty })
         }
 
@@ -79,7 +79,7 @@ enum XLSXWriter {
             for day in 1...max(1, d.daysInMonth) {
                 header.append(text("\(day)", weekends.contains(day) ? .headerWeekend : .header))
             }
-            header += TimesheetTotals.columnTitles.map { text($0, .header) }
+            header += d.totalsTitles.map { text($0, .header) }
             addRow(header, height: 18)
             headerRow = row
 
@@ -90,29 +90,25 @@ enum XLSXWriter {
                         : weekends.contains(index + 1) ? .cellWeekend : .cell
                     cells.append(c.text.isEmpty ? empty(style) : text(c.text, style))
                 }
-                cells += totals(r.totals, count: .count, hours: .hours)
+                cells += d.totalsValues(r).map { number(String($0), .count) }
                 let nameLines = min(3, max(1, (r.employee.fullName.count + 27) / 28))
                 addRow(cells, height: max(Double(nameLines) * 13 + 2, 15))
             }
 
             var farm = [text("Итого по хозяйству", .farmLabel), empty(.farmLabel)]
             farm += Array(repeating: empty(.farmEmpty), count: d.daysInMonth)
-            farm += totals(d.farmTotals, count: .farmCount, hours: .farmHours)
+            farm += d.farmTotalsValues.map { number(String($0), .farmCount) }
             merges.append("A\(row + 1):B\(row + 1)")
             addRow(farm, height: 18)
 
             addRow([])
-            addRow([text("Обозначения: " + TimesheetDocument.legend + ".", .plain)])
+            addRow([text(d.legendText, .plain)])
             addRow([])
             signature("Руководитель КФХ: ___________________", d.managerName)
             addRow([])
             signature("Ответственное лицо: ___________________", d.responsiblePerson)
             addRow([])
             addRow([text("Дата формирования: \(d.createdDateText())", .plain)])
-        }
-
-        private func totals(_ t: TimesheetTotals, count: Style, hours: Style) -> [String] {
-            t.columnValues.map { number(String($0), count) }
         }
 
         /// The label in column A (it runs over the empty cells to the right), the name in the column of day 12.

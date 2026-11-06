@@ -51,6 +51,16 @@ struct BackupPayload: Codable, Equatable {
     var livestock: LivestockBackup? = nil
     /// Saved agronomic calculations. Absent in older files: the restore keeps the current ones.
     var agro: [AgroBackup]? = nil
+    /// The timesheet of hours. Absent in older files: the restore keeps the current marks.
+    var hours: [HoursBackup]? = nil
+}
+
+/// One day's hours of one employee in the backup file.
+struct HoursBackup: Codable, Equatable {
+    let id, employeeId: UUID
+    let day: Date
+    let hours: Int
+    let createdAt, updatedAt: Date
 }
 
 /// A saved agronomic calculation in the backup file.
@@ -93,8 +103,9 @@ enum BackupError: LocalizedError, Equatable {
 /// Dates are kept as the exact number of seconds (`Date`'s own encoding), so a restore gives back the same values.
 enum BackupCodec {
     static let format = "tabel-kfh-backup"
-    /// 2 added the coal module, 3 the livestock module, 4 the agronomic calculations; older files are still restored.
-    static let schemaVersion = 4
+    /// 2 added the coal module, 3 the livestock module, 4 the agronomic calculations, 5 the timesheet of hours;
+    /// older files are still restored.
+    static let schemaVersion = 5
     static let oldestSchemaVersion = 1
 
     static func encode(_ p: BackupPayload, createdAt: Date, appVersion: String) throws -> Data {
@@ -166,6 +177,12 @@ enum BackupCodec {
         if let coal = p.coal, !coal.isValid(calendar: calendar) { throw BackupError.invalidData }
         if let livestock = p.livestock, !livestock.isValid { throw BackupError.invalidData }
         if let agro = p.agro, Set(agro.map(\.id)).count != agro.count { throw BackupError.invalidData }
+        if let hours = p.hours {
+            guard Set(hours.map(\.id)).count == hours.count,
+                  hours.allSatisfy({ WorkHours.isValid($0.hours) && employeeIds.contains($0.employeeId) }),
+                  Set(hours.map { "\($0.employeeId)-\(calendar.dayStart($0.day).timeIntervalSince1970)" }).count == hours.count
+            else { throw BackupError.invalidData }
+        }
     }
 
     /// A cut or broken file of ours still names the format near its start.

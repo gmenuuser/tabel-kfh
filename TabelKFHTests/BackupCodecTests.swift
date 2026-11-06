@@ -66,7 +66,7 @@ final class BackupCodecTests: XCTestCase {
 
         let file = try BackupCodec.decodeFile(data)
         XCTAssertEqual(file.format, "tabel-kfh-backup")
-        XCTAssertEqual(file.schemaVersion, 4)
+        XCTAssertEqual(file.schemaVersion, 5)
         XCTAssertEqual(file.createdAt, created)
         XCTAssertEqual(file.appVersion, "1.0")
         XCTAssertEqual(file.payloadSHA256.count, 64)
@@ -100,7 +100,7 @@ final class BackupCodecTests: XCTestCase {
     }
 
     func testNewerSchemaIsUnsupported() throws {
-        assertRejected(try edited(try encoded()) { $0["schemaVersion"] = 5 }, .unsupportedVersion(5))
+        assertRejected(try edited(try encoded()) { $0["schemaVersion"] = 6 }, .unsupportedVersion(6))
     }
 
     func testRandomBytesAreNotABackup() {

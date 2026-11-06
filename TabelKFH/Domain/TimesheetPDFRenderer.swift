@@ -40,7 +40,7 @@ enum TimesheetPDFRenderer {
         let numberWidth: CGFloat = 18
         let nameWidth: CGFloat = 110
         /// Widths of the totals columns, «Часы» wider.
-        let totalWidths: [CGFloat] = TimesheetTotals.columnTitles.map { _ in 19 }
+        let totalWidths: [CGFloat]
         let dayWidth: CGFloat
         let headerHeight: CGFloat = 20
         let rowHeights: [CGFloat]
@@ -57,6 +57,7 @@ enum TimesheetPDFRenderer {
             self.d = d
             let m = TimesheetPDFRenderer.margin, size = TimesheetPDFRenderer.pageSize
             content = CGRect(x: m, y: m, width: size.width - 2 * m, height: size.height - 2 * m)
+            totalWidths = d.totalsTitles.enumerated().map { index, _ in d.isHours && index < 2 ? 26 : 19 }
             let days = max(1, d.daysInMonth)
             let fixed = numberWidth + nameWidth + totalWidths.reduce(0, +)
             dayWidth = (content.width - fixed) / CGFloat(days)
@@ -167,7 +168,7 @@ enum TimesheetPDFRenderer {
                 Cell.stroke(rect)
                 x += dayWidth
             }
-            for (title, width) in zip(TimesheetTotals.columnTitles, totalWidths) {
+            for (title, width) in zip(d.totalsTitles, totalWidths) {
                 Cell.draw(title, CGRect(x: x, y: y, width: width, height: headerHeight), font: Font.bold, fill: Color.header)
                 x += width
             }
@@ -186,7 +187,7 @@ enum TimesheetPDFRenderer {
                           font: Font.number, fill: fill, color: .black)
                 x += dayWidth
             }
-            for (value, width) in zip(row.totals.columnTexts, totalWidths) {
+            for (value, width) in zip(d.totalsValues(row).map(String.init), totalWidths) {
                 Cell.draw(value, CGRect(x: x, y: y, width: width, height: height), font: Font.number, fill: Color.totals)
                 x += width
             }
@@ -200,7 +201,7 @@ enum TimesheetPDFRenderer {
             let daysWidth = dayWidth * CGFloat(max(1, d.daysInMonth))
             Cell.draw("", CGRect(x: x, y: y, width: daysWidth, height: farmHeight), font: Font.bold, fill: Color.header)
             x += daysWidth
-            for (value, width) in zip(d.farmTotals.columnTexts, totalWidths) {
+            for (value, width) in zip(d.farmTotalsValues.map(String.init), totalWidths) {
                 Cell.draw(value, CGRect(x: x, y: y, width: width, height: farmHeight), font: Font.boldNumber,
                           fill: Color.header)
                 x += width
@@ -208,8 +209,7 @@ enum TimesheetPDFRenderer {
         }
 
         private var legend: String {
-            "Обозначения: " + TimesheetDocument.legend
-                + ". Серые ячейки — дни до приёма или после увольнения."
+            d.legendText + " Серые ячейки — дни до приёма или после увольнения."
         }
 
         private var unfinishedText: String? {

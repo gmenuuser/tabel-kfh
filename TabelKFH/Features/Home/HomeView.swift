@@ -1,14 +1,33 @@
 import SwiftUI
 import SwiftData
+import UIKit
+
+/// Colours of the hours: 0 grey, 4 yellow, 8 green, 12 blue.
+enum HoursStyle {
+    static func color(_ h: Int) -> Color {
+        switch h {
+        case 0: return Color(uiColor: .systemGray)
+        case 4: return Color(uiColor: UIColor { $0.userInterfaceStyle == .dark
+            ? UIColor(red: 0.85, green: 0.70, blue: 0.10, alpha: 1) : UIColor(red: 0.80, green: 0.60, blue: 0.0, alpha: 1) })
+        case 8: return Theme.primary
+        default: return CoalTheme.hired
+        }
+    }
+
+    /// The light fill of a cell of the month table.
+    static func fill(_ h: Int) -> Color { color(h).opacity(0.25) }
+
+    static func title(_ h: Int) -> String { "\(h) ч" }
+}
 
 /// «Табель работников»: the chosen day (Вчера / Сегодня / Завтра or any date) and everyone who works then,
-/// each with one large «Я» button and a small menu of the other statuses. No times, no hours.
+/// each with four buttons: 0 ч, 4 ч, 8 ч, 12 ч. No mark until one is pressed.
 struct HomeView: View {
-    enum More: Hashable { case employees, calendar, timesheet }
+    enum More: Hashable { case timesheet, employees, archive }
 
     struct Row: Identifiable {
         let employee: Employee
-        let status: DayStatus?
+        let hours: Int?
         var id: UUID { employee.id }
     }
 
@@ -16,14 +35,20 @@ struct HomeView: View {
     @Environment(\.scenePhase) private var scenePhase
     @State private var day = Calendar.farm.dayStart(AppClock.now())
     @State private var rows: [Row] = []
+    @State private var search = ""
     @State private var more: More?
     @State private var addingEmployee = false
     @State private var message: String?
 
     private var calendar: Calendar { .farm }
     private var today: Date { calendar.dayStart(AppClock.now()) }
-    private var isFuture: Bool { day > today }
-    private var service: AttendanceService { AttendanceService(context: context) }
+    private var service: HoursService { HoursService(context: context) }
+
+    private var shown: [Row] {
+        let q = search.trimmingCharacters(in: .whitespaces)
+        guard !q.isEmpty else { return rows }
+        return rows.filter { $0.employee.fullName.range(of: q, options: .caseInsensitive, locale: Locale(identifier: "ru_RU")) != nil }
+    }
 
     var body: some View {
         ScrollView {
@@ -37,11 +62,14 @@ struct HomeView: View {
                         .frame(maxWidth: .infinity)
                 } else {
                     summary
+                    if rows.count > 5 {
+                        TextField("Поиск по фамилии", text: $search)
+                            .padding(12)
+                            .background(Theme.card, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+                    }
                 }
-                ForEach(rows) { row in
-                    EmployeeMarkRow(row: row, allowed: DayStatus.statuses(on: day, today: today),
-                                    onToggle: { toggle(row.employee) },
-                                    onSet: { set($0, for: row.employee) })
+                ForEach(shown) { row in
+                    EmployeeHoursRow(row: row) { tap($0, for: row.employee) }
                 }
                 Button {
                     addingEmployee = true
@@ -54,6 +82,7 @@ struct HomeView: View {
             }
             .padding(16)
         }
+        .scrollDismissesKeyboard(.interactively)
         .background(Theme.background)
         .navigationTitle("Табель работников")
         .navigationBarTitleDisplayMode(.inline)
@@ -61,8 +90,8 @@ struct HomeView: View {
             ToolbarItem(placement: .primaryAction) {
                 Menu {
                     Button { more = .timesheet } label: { Label("Табель за месяц", systemImage: "tablecells") }
-                    Button { more = .calendar } label: { Label("Календарь", systemImage: "calendar") }
                     Button { more = .employees } label: { Label("Сотрудники и история", systemImage: "person.2") }
+                    Button { more = .archive } label: { Label("Старые отметки (архив)", systemImage: "archivebox") }
                 } label: {
                     Label("Ещё", systemImage: "ellipsis.circle")
                 }
@@ -71,9 +100,9 @@ struct HomeView: View {
         }
         .navigationDestination(item: $more) { m in
             switch m {
-            case .employees: EmployeesView()
-            case .calendar: CalendarView()
             case .timesheet: MonthTimesheetView()
+            case .employees: EmployeesView()
+            case .archive: OldMarksView()
             }
         }
         .onAppear(perform: reload)
@@ -124,21 +153,20 @@ struct HomeView: View {
     }
 
     private var summary: some View {
-        let present = rows.filter { $0.status == .present }.count
-        let unmarked = rows.filter { $0.status == nil }.count
+        let marked = rows.filter { $0.hours != nil }
+        let hours = marked.reduce(0) { $0 + ($1.hours ?? 0) }
+        let unmarked = rows.count - marked.count
         return VStack(alignment: .leading, spacing: 10) {
             HStack {
-                Text("На работе: \(present) из \(rows.count)").font(.headline)
+                Text("Отмечено: \(marked.count) из \(rows.count)").font(.headline)
                 Spacer()
-                if unmarked > 0 {
-                    Text("Не отмечены: \(unmarked)").font(.subheadline).foregroundStyle(Theme.accent)
-                }
+                Text("Часов: \(hours)").font(.headline.monospacedDigit()).foregroundStyle(Theme.primary)
             }
-            if unmarked > 0 && !isFuture {
+            if unmarked > 0 {
                 Button {
                     markAll()
                 } label: {
-                    Label("Отметить всех неотмеченных: Я", systemImage: "checkmark.circle")
+                    Label("Всем неотмеченным — 8 ч", systemImage: "checkmark.circle")
                         .frame(maxWidth: .infinity, minHeight: 40)
                 }
                 .buttonStyle(.bordered)
@@ -153,89 +181,115 @@ struct HomeView: View {
     private func reload() {
         let people = EmployeeService(context: context).active(on: day)
         let s = service
-        rows = people.map { Row(employee: $0, status: s.status(of: $0, on: day)) }
+        rows = people.map { Row(employee: $0, hours: s.hours(of: $0, on: day)) }
     }
 
-    private func toggle(_ e: Employee) {
-        run { try service.togglePresence(e, on: day) }
-    }
-
-    private func set(_ status: DayStatus?, for e: Employee) {
-        run { try service.setStatus(status, for: e, on: day) }
+    private func tap(_ hours: Int, for e: Employee) {
+        do { try service.tap(hours, for: e, on: day) } catch { message = error.localizedDescription }
+        reload()
     }
 
     private func markAll() {
-        run { try service.markAllPresent(rows.map(\.employee), on: day) }
-    }
-
-    private func run(_ action: () throws -> Any?) {
-        do {
-            _ = try action()
-        } catch {
-            message = error.localizedDescription
-        }
+        do { try service.markUnmarked(rows.map(\.employee), hours: 8, on: day) } catch { message = error.localizedDescription }
         reload()
     }
 }
 
-/// One person: photo, ФИО, the day's status; the large «Я» button; «Статус» opens the other statuses.
-struct EmployeeMarkRow: View {
+/// One person: photo, ФИО, the day's hours and the four buttons. Tapping the selected button again removes the mark.
+struct EmployeeHoursRow: View {
     let row: HomeView.Row
-    let allowed: [DayStatus]
-    let onToggle: () -> Void
-    let onSet: (DayStatus?) -> Void
-
-    private var isPresent: Bool { row.status == .present }
+    let onTap: (Int) -> Void
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
+        VStack(alignment: .leading, spacing: 10) {
             HStack(spacing: 12) {
-                EmployeeAvatar(employee: row.employee, size: 44)
-                VStack(alignment: .leading, spacing: 4) {
-                    Text(row.employee.fullName)
-                        .font(.headline)
-                        .lineLimit(2)
-                    StatusChip(status: row.status)
+                EmployeeAvatar(employee: row.employee, size: 40)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(row.employee.fullName).font(.headline).lineLimit(2)
+                    Text(row.hours.map { "Отмечено: \($0) ч" } ?? "Не отмечен")
+                        .font(.subheadline)
+                        .foregroundStyle(row.hours == nil ? Color.secondary : HoursStyle.color(row.hours ?? 0))
                 }
                 Spacer(minLength: 0)
             }
-            HStack(spacing: 10) {
-                if allowed.contains(.present) {
-                    Button(action: onToggle) {
-                        HStack(spacing: 8) {
-                            Image(systemName: isPresent ? "checkmark.circle.fill" : "circle")
-                            Text(isPresent ? "Я — был на работе" : "Отметить: Я")
-                        }
-                        .font(.headline)
-                        .frame(maxWidth: .infinity, minHeight: 54)
-                        .foregroundStyle(isPresent ? .white : Theme.primary)
-                        .background(isPresent ? Theme.primary : DayStatus.present.fill,
-                                    in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+            HStack(spacing: 8) {
+                ForEach(WorkHours.options, id: \.self) { h in
+                    let selected = row.hours == h
+                    Button { onTap(h) } label: {
+                        Text(HoursStyle.title(h))
+                            .font(.headline.monospacedDigit())
+                            .frame(maxWidth: .infinity, minHeight: 50)
+                            .foregroundStyle(selected ? .white : HoursStyle.color(h))
+                            .background(selected ? HoursStyle.color(h) : Theme.background,
+                                        in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+                            .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous)
+                                .stroke(HoursStyle.color(h).opacity(selected ? 0 : 0.5), lineWidth: 1.5))
                     }
                     .buttonStyle(.plain)
-                    .accessibilityLabel(isPresent ? "Снять явку \(row.employee.fullName)" : "Явка \(row.employee.fullName)")
-                    .accessibilityIdentifier("mark-\(row.employee.lastName)")
+                    .accessibilityLabel("\(h) ч \(row.employee.lastName)")
+                    .accessibilityAddTraits(selected ? .isSelected : [])
+                    .accessibilityIdentifier("hours-\(h)-\(row.employee.lastName)")
                 }
-                Menu {
-                    ForEach(allowed, id: \.self) { s in
-                        Button("\(s.rawValue) — \(s.title)") { onSet(s) }
-                    }
-                    if row.status != nil {
-                        Button("Снять отметку", role: .destructive) { onSet(nil) }
-                    }
-                } label: {
-                    VStack(spacing: 2) {
-                        Image(systemName: "list.bullet")
-                        Text("Статус").font(.caption.weight(.semibold))
-                    }
-                    .frame(width: allowed.contains(.present) ? 76 : nil, height: 54)
-                    .frame(maxWidth: allowed.contains(.present) ? nil : .infinity)
-                    .foregroundStyle(Theme.primary)
-                    .background(Theme.background, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
-                }
-                .accessibilityLabel("Статус \(row.employee.fullName)")
             }
         }
         .card()
+    }
+}
+
+/// «Старые отметки (архив)»: the status codes kept from before the timesheet of hours, read only.
+struct OldMarksView: View {
+    @Environment(\.modelContext) private var context
+    @State private var month = Calendar.farm.component(.month, from: AppClock.now())
+    @State private var year = Calendar.farm.component(.year, from: AppClock.now())
+    @State private var pickingMonth = false
+    @State private var lines: [(name: String, days: String)] = []
+    @State private var total = 0
+
+    var body: some View {
+        List {
+            Section {
+                Button { pickingMonth = true } label: {
+                    LabeledContent("Месяц", value: Calendar.farm.monthTitle(month: month, year: year))
+                }
+                Text("Здесь видны отметки старого формата (Я, В, Б…). Они сохранены как история и в табель часов не входят.")
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+            }
+            Section("Отметки (\(total))") {
+                if lines.isEmpty { Text("В этом месяце старых отметок нет").foregroundStyle(.secondary) }
+                ForEach(Array(lines.enumerated()), id: \.offset) { _, l in
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text(l.name).font(.headline)
+                        Text(l.days).font(.subheadline.monospacedDigit()).foregroundStyle(.secondary)
+                    }
+                }
+            }
+        }
+        .navigationTitle("Старые отметки")
+        .navigationBarTitleDisplayMode(.inline)
+        .onAppear(perform: reload)
+        .onChange(of: month) { _, _ in reload() }
+        .onChange(of: year) { _, _ in reload() }
+        .sheet(isPresented: $pickingMonth) {
+            MonthYearPicker(month: month, year: year) { m, y in month = m; year = y }
+                .presentationDetents([.medium])
+        }
+    }
+
+    private func reload() {
+        let calendar = Calendar.farm
+        let start = calendar.date(day: 1, month: month, year: year)
+        let end = calendar.date(byAdding: .month, value: 1, to: start) ?? start
+        let records = (try? context.fetch(FetchDescriptor<AttendanceRecord>(
+            predicate: #Predicate { $0.day >= start && $0.day < end }, sortBy: [SortDescriptor(\.day)]))) ?? []
+        let employees = (try? context.fetch(FetchDescriptor<Employee>())) ?? []
+        let names = Dictionary(employees.map { ($0.id, $0.fullName) }, uniquingKeysWith: { a, _ in a })
+        let grouped = Dictionary(grouping: records, by: \.employeeId)
+        let built: [(name: String, days: String)] = grouped.map { id, rs in
+            (name: names[id] ?? "Сотрудник удалён",
+             days: rs.map { "\(calendar.component(.day, from: $0.day)) — \($0.status.rawValue)" }.joined(separator: ", "))
+        }
+        lines = built.sorted { $0.name < $1.name }
+        total = records.count
     }
 }

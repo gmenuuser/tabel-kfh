@@ -48,12 +48,15 @@ struct TimesheetCell: Codable, Equatable {
     /// false before the hire date and after the dismissal date: blank, not counted.
     let employed: Bool
     let format: CellFormat
+    /// The hours of the day (0, 4, 8, 12) in the timesheet of hours; nil = no mark (or a timesheet of codes).
+    var hours: Int? = nil
 
     /// "" | "Я" | "В" | "Б" … — only the code of the day: the timesheet keeps no times or hours.
     /// (`minutes`, `unfinished` and `format` stay in the stored JSON of older versions and are ignored.)
     var text: String {
-        guard employed, let status else { return "" }
-        return status.rawValue
+        guard employed else { return "" }
+        if let hours { return "\(hours)" }
+        return status?.rawValue ?? ""
     }
 }
 
@@ -127,6 +130,8 @@ struct TimesheetRow: Codable, Equatable {
     /// One cell per day of the month, cells[0] is day 1.
     let cells: [TimesheetCell]
     let totals: TimesheetTotals
+    /// The totals of the timesheet of hours; nil in a timesheet of codes.
+    var hoursTotals: HoursTotals? = nil
 }
 
 /// A generated timesheet. Stored as JSON in TimesheetSnapshot; never recomputed from live data.
@@ -140,6 +145,8 @@ struct TimesheetDocument: Codable, Equatable {
     let farmTotals: TimesheetTotals
     /// «Зубахин И. П. — 5 ноября», in row order, then by day.
     let unfinished: [String]
+    /// The farm's totals of the timesheet of hours; nil in a timesheet of codes (older stored versions).
+    var farmHoursTotals: HoursTotals? = nil
 }
 
 extension TimesheetDocument {
