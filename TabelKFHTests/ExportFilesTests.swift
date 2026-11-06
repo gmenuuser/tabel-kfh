@@ -33,8 +33,8 @@ final class ExportFilesTests: XCTestCase {
 
     func testWritesPDFAndXLSXWithExportNames() throws {
         let files = try ExportFiles.write(Self.november(), in: directory)
-        XCTAssertEqual(files.pdf.lastPathComponent, "Табель_Ноябрь_2026_v2.pdf")
-        XCTAssertEqual(files.xlsx.lastPathComponent, "Табель_Ноябрь_2026_v2.xlsx")
+        XCTAssertEqual(files.pdf.lastPathComponent, "Табель_Ноябрь_2026.pdf")
+        XCTAssertEqual(files.xlsx.lastPathComponent, "Табель_Ноябрь_2026.xlsx")
         XCTAssertEqual(files.pdf.deletingLastPathComponent().standardizedFileURL, directory.standardizedFileURL)
         XCTAssertGreaterThan(try size(files.pdf), 0)
         XCTAssertGreaterThan(try size(files.xlsx), 0)
@@ -47,15 +47,15 @@ final class ExportFilesTests: XCTestCase {
 
     func testOneEmployeeFilesHaveTheSurname() throws {
         let files = try ExportFiles.write(Self.november(), surname: "Зубахин", in: directory)
-        XCTAssertEqual(files.pdf.lastPathComponent, "Табель_Ноябрь_2026_Зубахин_v2.pdf")
-        XCTAssertEqual(files.xlsx.lastPathComponent, "Табель_Ноябрь_2026_Зубахин_v2.xlsx")
+        XCTAssertEqual(files.pdf.lastPathComponent, "Табель_Ноябрь_2026_Зубахин.pdf")
+        XCTAssertEqual(files.xlsx.lastPathComponent, "Табель_Ноябрь_2026_Зубахин.xlsx")
     }
 
     func testWritingAnotherVersionRemovesTheOlderFiles() throws {
         _ = try ExportFiles.write(Self.november(), in: directory)
         _ = try ExportFiles.write(Self.november(), surname: "Зубахин", in: directory)
         let names = try FileManager.default.contentsOfDirectory(atPath: directory.path).sorted()
-        XCTAssertEqual(names, ["Табель_Ноябрь_2026_Зубахин_v2.pdf", "Табель_Ноябрь_2026_Зубахин_v2.xlsx"])
+        XCTAssertEqual(names, ["Табель_Ноябрь_2026_Зубахин.pdf", "Табель_Ноябрь_2026_Зубахин.xlsx"])
     }
 
     func testWritingAgainReplacesTheFiles() throws {
@@ -63,7 +63,7 @@ final class ExportFilesTests: XCTestCase {
         let files = try ExportFiles.write(Self.november(), in: directory)
         XCTAssertGreaterThan(try size(files.pdf), 0)
         let names = try FileManager.default.contentsOfDirectory(atPath: directory.path).sorted()
-        XCTAssertEqual(names, ["Табель_Ноябрь_2026_v2.pdf", "Табель_Ноябрь_2026_v2.xlsx"])
+        XCTAssertEqual(names, ["Табель_Ноябрь_2026.pdf", "Табель_Ноябрь_2026.xlsx"])
     }
 
     func testDefaultDirectoryIsExportInTemporaryDirectory() {

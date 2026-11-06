@@ -1,87 +1,47 @@
 import SwiftUI
 import SwiftData
-import UIKit
 
-/// «Табель работников»: everyone who works today with the «Пришёл» / «Ушёл» button right in the list;
-/// employees, the calendar and the monthly timesheet are in «Ещё».
+/// «Табель работников»: the chosen day (Вчера / Сегодня / Завтра or any date) and everyone who works then,
+/// each with one large «Я» button and a small menu of the other statuses. No times, no hours.
 struct HomeView: View {
     enum More: Hashable { case employees, calendar, timesheet }
 
-    @Environment(\.modelContext) private var context
-    @State private var model: HomeViewModel?
-    @State private var more: More?
-
-    var body: some View {
-        Group {
-            if let model {
-                HomeContent(model: model)
-            } else {
-                Color.clear
-            }
-        }
-        .navigationTitle("Табель работников")
-        .navigationBarTitleDisplayMode(.inline)
-        .toolbar {
-            ToolbarItem(placement: .primaryAction) {
-                Menu {
-                    Button { more = .employees } label: { Label("Сотрудники и история", systemImage: "person.2") }
-                    Button { more = .calendar } label: { Label("Календарь", systemImage: "calendar") }
-                    Button { more = .timesheet } label: { Label("Табель за месяц", systemImage: "tablecells") }
-                } label: {
-                    Label("Ещё", systemImage: "ellipsis.circle")
-                }
-                .accessibilityLabel("Ещё")
-            }
-        }
-        .navigationDestination(item: $more) { m in
-            switch m {
-            case .employees: EmployeesView()
-            case .calendar: CalendarView()
-            case .timesheet: TimesheetView()
-            }
-        }
-        .onAppear {
-            if model == nil { model = HomeViewModel(context: context) }
-            model?.reload()
-        }
+    struct Row: Identifiable {
+        let employee: Employee
+        let status: DayStatus?
+        var id: UUID { employee.id }
     }
-}
 
-private struct EditorTarget: Identifiable {
-    let employee: Employee
-    let day: Date
-    var id: UUID { employee.id }
-}
-
-private struct HomeContent: View {
-    @Bindable var model: HomeViewModel
+    @Environment(\.modelContext) private var context
     @Environment(\.scenePhase) private var scenePhase
-    @State private var editing: EditorTarget?
+    @State private var day = Calendar.farm.dayStart(AppClock.now())
+    @State private var rows: [Row] = []
+    @State private var more: More?
     @State private var addingEmployee = false
+    @State private var message: String?
+
+    private var calendar: Calendar { .farm }
+    private var today: Date { calendar.dayStart(AppClock.now()) }
+    private var isFuture: Bool { day > today }
+    private var service: AttendanceService { AttendanceService(context: context) }
 
     var body: some View {
         ScrollView {
             LazyVStack(spacing: 12) {
-                header
-                if model.rows.isEmpty {
-                    Text("Сегодня нет работающих сотрудников.")
-                        .font(.body)
+                dateCard
+                if rows.isEmpty {
+                    Text("В этот день нет работающих сотрудников.")
                         .foregroundStyle(.secondary)
                         .multilineTextAlignment(.center)
                         .padding(.vertical, 24)
                         .frame(maxWidth: .infinity)
+                } else {
+                    summary
                 }
-                ForEach(model.rows) { row in
-                    EmployeeDayCard(
-                        row: row,
-                        isBusy: model.isBusy(row.employee),
-                        onPrimary: { model.tapPrimary(row.employee) },
-                        onEdit: { editing = EditorTarget(employee: row.employee, day: row.editorDay) },
-                        onEditStale: {
-                            if let day = row.staleOpenDay {
-                                editing = EditorTarget(employee: row.employee, day: day)
-                            }
-                        })
+                ForEach(rows) { row in
+                    EmployeeMarkRow(row: row, allowed: DayStatus.statuses(on: day, today: today),
+                                    onToggle: { toggle(row.employee) },
+                                    onSet: { set($0, for: row.employee) })
                 }
                 Button {
                     addingEmployee = true
@@ -95,70 +55,187 @@ private struct HomeContent: View {
             .padding(16)
         }
         .background(Theme.background)
-        .refreshable { model.reload() }
+        .navigationTitle("Табель работников")
+        .navigationBarTitleDisplayMode(.inline)
+        .toolbar {
+            ToolbarItem(placement: .primaryAction) {
+                Menu {
+                    Button { more = .timesheet } label: { Label("Табель за месяц", systemImage: "tablecells") }
+                    Button { more = .calendar } label: { Label("Календарь", systemImage: "calendar") }
+                    Button { more = .employees } label: { Label("Сотрудники и история", systemImage: "person.2") }
+                } label: {
+                    Label("Ещё", systemImage: "ellipsis.circle")
+                }
+                .accessibilityLabel("Ещё")
+            }
+        }
+        .navigationDestination(item: $more) { m in
+            switch m {
+            case .employees: EmployeesView()
+            case .calendar: CalendarView()
+            case .timesheet: MonthTimesheetView()
+            }
+        }
+        .onAppear(perform: reload)
+        .onChange(of: day) { _, _ in reload() }
         .onChange(of: scenePhase) { _, phase in
-            if phase == .active { model.reload() }
+            if phase == .active { reload() }
         }
-        .onReceive(NotificationCenter.default.publisher(for: UIApplication.significantTimeChangeNotification)) { _ in
-            model.reload()
-        }
-        .confirmationDialog(model.confirmation?.message ?? "",
-                            isPresented: confirmationShown,
-                            titleVisibility: .visible,
-                            presenting: model.confirmation) { c in
-            Button(c.confirmTitle) { model.confirm(c) }
-            Button("Отмена", role: .cancel) {}
-        }
-        .alert("Не получилось", isPresented: errorShown) {
-            Button("OK", role: .cancel) {}
-        } message: {
-            Text(model.errorMessage ?? "")
-        }
-        .sheet(isPresented: $addingEmployee, onDismiss: { model.reload() }) {
+        .sheet(isPresented: $addingEmployee, onDismiss: reload) {
             NavigationStack { EmployeeFormView(employee: nil) }
         }
-        .sheet(item: $editing, onDismiss: { model.reload() }) { target in
-            NavigationStack {
-                RecordEditorView(employee: target.employee, day: target.day)
-                    .toolbar {
-                        ToolbarItem(placement: .cancellationAction) {
-                            Button("Отмена") { editing = nil }
-                        }
-                    }
-            }
+        .alert("Не получилось", isPresented: Binding(get: { message != nil }, set: { if !$0 { message = nil } })) {
+            Button("OK", role: .cancel) {}
+        } message: {
+            Text(message ?? "")
         }
     }
 
-    private var header: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Text(model.farmName)
+    // MARK: Parts
+
+    private var dateCard: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text(CoalText.longDate(day).capitalizedFirst)
                 .font(.title2.bold())
                 .foregroundStyle(Theme.primary)
-            Text(model.dateTitle)
-                .font(.headline)
-            ViewThatFits(in: .horizontal) {
-                HStack(spacing: 16) { counters }
-                VStack(alignment: .leading, spacing: 4) { counters }
+            HStack(spacing: 8) {
+                dayButton("Вчера", offset: -1)
+                dayButton("Сегодня", offset: 0)
+                dayButton("Завтра", offset: 1)
             }
-            .font(.subheadline.weight(.medium))
+            DatePicker("Другая дата", selection: Binding(get: { day }, set: { day = calendar.dayStart($0) }),
+                       displayedComponents: .date)
+                .font(.subheadline)
         }
         .card()
     }
 
-    @ViewBuilder
-    private var counters: some View {
-        Text(model.employeesTitle).foregroundStyle(.primary)
-        Text(model.atWorkTitle).foregroundStyle(Theme.primary)
-        Text(model.absentTitle).foregroundStyle(Theme.accent)
+    private func dayButton(_ title: String, offset: Int) -> some View {
+        let target = calendar.date(byAdding: .day, value: offset, to: today) ?? today
+        let selected = day == target
+        return Button(title) { day = target }
+            .font(.headline)
+            .frame(maxWidth: .infinity, minHeight: 44)
+            .foregroundStyle(selected ? .white : Theme.primary)
+            .background(selected ? Theme.primary : Theme.background,
+                        in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+            .buttonStyle(.plain)
+            .accessibilityAddTraits(selected ? .isSelected : [])
     }
 
-    private var confirmationShown: Binding<Bool> {
-        Binding(get: { model.confirmation != nil },
-                set: { if !$0 { model.confirmation = nil } })
+    private var summary: some View {
+        let present = rows.filter { $0.status == .present }.count
+        let unmarked = rows.filter { $0.status == nil }.count
+        return VStack(alignment: .leading, spacing: 10) {
+            HStack {
+                Text("На работе: \(present) из \(rows.count)").font(.headline)
+                Spacer()
+                if unmarked > 0 {
+                    Text("Не отмечены: \(unmarked)").font(.subheadline).foregroundStyle(Theme.accent)
+                }
+            }
+            if unmarked > 0 && !isFuture {
+                Button {
+                    markAll()
+                } label: {
+                    Label("Отметить всех неотмеченных: Я", systemImage: "checkmark.circle")
+                        .frame(maxWidth: .infinity, minHeight: 40)
+                }
+                .buttonStyle(.bordered)
+                .tint(Theme.primary)
+            }
+        }
+        .card()
     }
 
-    private var errorShown: Binding<Bool> {
-        Binding(get: { model.errorMessage != nil },
-                set: { if !$0 { model.errorMessage = nil } })
+    // MARK: Actions
+
+    private func reload() {
+        let people = EmployeeService(context: context).active(on: day)
+        let s = service
+        rows = people.map { Row(employee: $0, status: s.status(of: $0, on: day)) }
+    }
+
+    private func toggle(_ e: Employee) {
+        run { try service.togglePresence(e, on: day) }
+    }
+
+    private func set(_ status: DayStatus?, for e: Employee) {
+        run { try service.setStatus(status, for: e, on: day) }
+    }
+
+    private func markAll() {
+        run { try service.markAllPresent(rows.map(\.employee), on: day) }
+    }
+
+    private func run(_ action: () throws -> Any?) {
+        do {
+            _ = try action()
+        } catch {
+            message = error.localizedDescription
+        }
+        reload()
+    }
+}
+
+/// One person: photo, ФИО, the day's status; the large «Я» button; «Статус» opens the other statuses.
+struct EmployeeMarkRow: View {
+    let row: HomeView.Row
+    let allowed: [DayStatus]
+    let onToggle: () -> Void
+    let onSet: (DayStatus?) -> Void
+
+    private var isPresent: Bool { row.status == .present }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack(spacing: 12) {
+                EmployeeAvatar(employee: row.employee, size: 44)
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(row.employee.fullName)
+                        .font(.headline)
+                        .lineLimit(2)
+                    StatusChip(status: row.status)
+                }
+                Spacer(minLength: 0)
+            }
+            HStack(spacing: 10) {
+                if allowed.contains(.present) {
+                    Button(action: onToggle) {
+                        HStack(spacing: 8) {
+                            Image(systemName: isPresent ? "checkmark.circle.fill" : "circle")
+                            Text(isPresent ? "Я — был на работе" : "Отметить: Я")
+                        }
+                        .font(.headline)
+                        .frame(maxWidth: .infinity, minHeight: 54)
+                        .foregroundStyle(isPresent ? .white : Theme.primary)
+                        .background(isPresent ? Theme.primary : DayStatus.present.fill,
+                                    in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel(isPresent ? "Снять явку \(row.employee.fullName)" : "Явка \(row.employee.fullName)")
+                    .accessibilityIdentifier("mark-\(row.employee.lastName)")
+                }
+                Menu {
+                    ForEach(allowed, id: \.self) { s in
+                        Button("\(s.rawValue) — \(s.title)") { onSet(s) }
+                    }
+                    if row.status != nil {
+                        Button("Снять отметку", role: .destructive) { onSet(nil) }
+                    }
+                } label: {
+                    VStack(spacing: 2) {
+                        Image(systemName: "list.bullet")
+                        Text("Статус").font(.caption.weight(.semibold))
+                    }
+                    .frame(width: allowed.contains(.present) ? 76 : nil, height: 54)
+                    .frame(maxWidth: allowed.contains(.present) ? nil : .infinity)
+                    .foregroundStyle(Theme.primary)
+                    .background(Theme.background, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+                }
+                .accessibilityLabel("Статус \(row.employee.fullName)")
+            }
+        }
+        .card()
     }
 }

@@ -70,6 +70,26 @@ final class TimesheetService {
         return snapshot
     }
 
+    /// The timesheet of the whole farm as it is now (not saved as a version): the screen and the export use it.
+    func liveDocument(month: Int, year: Int) throws -> TimesheetDocument {
+        guard (1...12).contains(month), year > 0 else { throw TimesheetError.invalidMonth }
+        let first = calendar.date(day: 1, month: month, year: year)
+        let last = calendar.date(day: calendar.daysInMonth(month: month, year: year), month: month, year: year)
+        let next = calendar.date(byAdding: .month, value: 1, to: first) ?? last
+        let employees = EmployeeService(context: context, calendar: calendar).employed(from: first, through: last).map { e in
+            EmployeeSnapshot(id: e.id, fullName: e.fullName, position: e.position,
+                             hireDate: e.hireDate, dismissalDate: e.dismissalDate)
+        }
+        let ids = Set(employees.map(\.id))
+        let records = try context.fetch(FetchDescriptor<AttendanceRecord>(
+            predicate: #Predicate { $0.day >= first && $0.day < next }))
+            .filter { ids.contains($0.employeeId) }
+            .map { Self.snapshot($0) }
+        return TimesheetBuilder.build(month: month, year: year, employees: employees, records: records,
+                                      settings: farmInfo(), format: .codes, version: 0, createdAt: now(),
+                                      calendar: calendar)
+    }
+
     /// Versions of (month, year, employee), newest first. `employee == nil` = всё хозяйство.
     func versions(month: Int, year: Int, employee: Employee?) -> [TimesheetSnapshot] {
         (try? snapshots(month: month, year: year, employeeId: employee?.id)) ?? []

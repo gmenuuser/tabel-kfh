@@ -16,6 +16,7 @@ enum AttendanceError: LocalizedError, Equatable {
     case notArrived
     case outsideEmployment
     case futureTimes
+    case futurePresence
 
     var errorDescription: String? {
         switch self {
@@ -25,6 +26,7 @@ enum AttendanceError: LocalizedError, Equatable {
         case .notArrived: return "Сначала отметьте приход"
         case .outsideEmployment: return "В этот день сотрудник не работал в хозяйстве (до приёма или после увольнения)"
         case .futureTimes: return "Время можно отметить только за прошедшие дни и сегодня"
+        case .futurePresence: return "Явку можно отметить только за прошедшие дни и сегодня. На будущие дни — выходной, отпуск, больничный и другие статусы."
         }
     }
 }
@@ -218,6 +220,65 @@ final class AttendanceService {
     func delete(_ r: AttendanceRecord) throws {
         context.delete(r)
         try context.save()
+    }
+
+    // MARK: - Marks without times (the timesheet of statuses)
+
+    /// The status of (employee, day); nil = не отмечен.
+    func status(of e: Employee, on day: Date) -> DayStatus? {
+        record(for: e, day: day)?.status
+    }
+
+    /// Sets the day's status; nil removes the mark. Only this one day changes. An old Я record keeps its
+    /// arrival and departure (history) while it stays Я; another status is stored without times.
+    @discardableResult
+    func setStatus(_ status: DayStatus?, for e: Employee, on day: Date) throws -> AttendanceRecord? {
+        guard isEmployed(e, on: day) else { throw AttendanceError.outsideEmployment }
+        if status == .present, calendar.dayStart(day) > today { throw AttendanceError.futurePresence }
+        let existing = try fetchRecord(for: e, day: day)
+        guard let status else {
+            if let existing {
+                context.delete(existing)
+                try context.save()
+            }
+            return nil
+        }
+        let r = existing ?? insertRecord(for: e, day: day)
+        if r.status != status || existing == nil {
+            r.status = status
+            if status != .present {
+                r.arrivalTime = nil
+                r.departureTime = nil
+                r.workedMinutes = nil
+                r.manualWorkedMinutes = nil
+            }
+            r.updatedAt = now()
+        }
+        try context.save()
+        return r
+    }
+
+    /// The big button: не отмечен → Я, Я → не отмечен, any other status → Я. Returns the new status.
+    @discardableResult
+    func togglePresence(_ e: Employee, on day: Date) throws -> DayStatus? {
+        let new: DayStatus? = status(of: e, on: day) == .present ? nil : .present
+        try setStatus(new, for: e, on: day)
+        return new
+    }
+
+    /// «Отметить всех»: Я for everyone in `employees` who has no mark that day; returns how many were marked.
+    @discardableResult
+    func markAllPresent(_ employees: [Employee], on day: Date) throws -> Int {
+        if calendar.dayStart(day) > today { throw AttendanceError.futurePresence }
+        var marked = 0
+        for e in employees where isEmployed(e, on: day) {
+            guard try fetchRecord(for: e, day: day) == nil else { continue }
+            let r = insertRecord(for: e, day: day)
+            r.status = .present
+            marked += 1
+        }
+        if marked > 0 { try context.save() }
+        return marked
     }
 
     private func insertRecord(for e: Employee, day: Date) -> AttendanceRecord {

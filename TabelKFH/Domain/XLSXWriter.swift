@@ -72,7 +72,7 @@ enum XLSXWriter {
             mergedLine("ТАБЕЛЬ УЧЁТА РАБОЧЕГО ВРЕМЕНИ", style: .title, height: 22)
             mergedLine(d.farmName, style: .bold)
             if !contacts.isEmpty { mergedLine(contacts.joined(separator: " · "), style: .plain) }
-            mergedLine("Месяц: \(calendar.monthName(d.month))    Год: \(d.year)    Версия \(d.version)", style: .plain)
+            mergedLine("Месяц: \(calendar.monthName(d.month))    Год: \(d.year)", style: .plain)
             addRow([])
 
             var header = [text("№", .header), text("ФИО", .header)]
@@ -83,18 +83,16 @@ enum XLSXWriter {
             addRow(header, height: 18)
             headerRow = row
 
-            let hoursFormat = d.format == .codesAndHours
             for r in d.rows {
                 var cells = [number(String(r.number), .cell), text(r.employee.fullName, .name)]
                 for (index, c) in r.cells.enumerated() {
                     let style: Style = !c.employed ? .notEmployed
-                        : c.unfinished ? .unfinished
                         : weekends.contains(index + 1) ? .cellWeekend : .cell
                     cells.append(c.text.isEmpty ? empty(style) : text(c.text, style))
                 }
                 cells += totals(r.totals, count: .count, hours: .hours)
                 let nameLines = min(3, max(1, (r.employee.fullName.count + 27) / 28))
-                addRow(cells, height: max(Double(nameLines) * 13 + 2, hoursFormat ? 28 : 15))
+                addRow(cells, height: max(Double(nameLines) * 13 + 2, 15))
             }
 
             var farm = [text("Итого по хозяйству", .farmLabel), empty(.farmLabel)]
@@ -104,10 +102,7 @@ enum XLSXWriter {
             addRow(farm, height: 18)
 
             addRow([])
-            addRow([text("Обозначения: " + TimesheetDocument.legend + ". «Я?» — уход не отмечен, часы не учтены.", .plain)])
-            if !d.unfinished.isEmpty {
-                addRow([text("Незавершённые дни: " + d.unfinished.joined(separator: ", "), .plain)])
-            }
+            addRow([text("Обозначения: " + TimesheetDocument.legend + ".", .plain)])
             addRow([])
             signature("Руководитель КФХ: ___________________", d.managerName)
             addRow([])
@@ -117,11 +112,7 @@ enum XLSXWriter {
         }
 
         private func totals(_ t: TimesheetTotals, count: Style, hours: Style) -> [String] {
-            t.columnValues.enumerated().map { index, value in
-                index == TimesheetTotals.minutesColumn
-                    ? number(decimalHoursText(minutes: value).replacingOccurrences(of: ",", with: "."), hours)
-                    : number(String(value), count)
-            }
+            t.columnValues.map { number(String($0), count) }
         }
 
         /// The label in column A (it runs over the empty cells to the right), the name in the column of day 12.

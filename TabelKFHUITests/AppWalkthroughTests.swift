@@ -10,20 +10,20 @@ final class AppWalkthroughTests: XCTestCase {
         continueAfterFailure = false
     }
 
-    // Spec 13: 1 добавление сотрудника, 4 приход, 5 уход, табель.
+    // Добавление сотрудника, явка одной кнопкой, статус из меню, вчерашний день, табель за месяц.
     func testWalkthroughLight() throws {
         launch(dark: false)
 
         let add = app.buttons["Добавить сотрудника"].firstMatch
         XCTAssertTrue(add.waitForExistence(timeout: 15), "empty Home offers «Добавить сотрудника»")
-        XCTAssertTrue(app.staticTexts["Сегодня нет работающих сотрудников."].exists)
+        XCTAssertTrue(app.staticTexts["В этот день нет работающих сотрудников."].exists)
         shot("01-home-empty")
 
         addEmployee(screenshot: "02-employee-form")
         XCTAssertTrue(element(containing: "Зубахин Иван Петрович").waitForExistence(timeout: 10))
         shot("03-home-employee")
 
-        markArrivalAndDeparture(screenshots: true)
+        markPresence(screenshots: true)
 
         tab("Сотрудники")
         XCTAssertTrue(element(containing: "Зубахин Иван Петрович").waitForExistence(timeout: 10))
@@ -69,7 +69,7 @@ final class AppWalkthroughTests: XCTestCase {
         shot("21-dark-home-empty")
         addEmployee(screenshot: nil)
         XCTAssertTrue(element(containing: "Зубахин Иван Петрович").waitForExistence(timeout: 10))
-        markArrivalAndDeparture(screenshots: false)
+        markPresence(screenshots: false)
         shot("22-dark-home")
 
         generateTimesheet()
@@ -107,38 +107,51 @@ final class AppWalkthroughTests: XCTestCase {
         XCTAssertTrue(app.navigationBars["Новый сотрудник"].waitForNonExistence(timeout: 10), "the form closes after saving")
     }
 
-    /// «Пришёл», then «Ушёл» a few seconds later: the app asks to confirm such a short shift.
-    private func markArrivalAndDeparture(screenshots: Bool) {
-        let arrived = app.buttons["Пришёл"].firstMatch
-        XCTAssertTrue(arrived.waitForExistence(timeout: 10))
-        arrived.tap()
-        dismissAlertIfShown()
-
-        let left = app.buttons["Ушёл"].firstMatch
-        XCTAssertTrue(left.waitForExistence(timeout: 10), "after «Пришёл» the card offers «Ушёл»")
-        waitUntilEnabled(left)
-        if screenshots { shot("04-home-at-work") }
-        left.tap()
-
-        let confirm = app.buttons["Отметить уход"].firstMatch
-        XCTAssertTrue(confirm.waitForExistence(timeout: 10), "a departure right after the arrival is confirmed first")
-        if screenshots { shot("05-short-shift-confirmation") }
-        confirm.tap()
-        dismissAlertIfShown()
-
-        XCTAssertTrue(element(containing: "Изменить").waitForExistence(timeout: 10), "the day is closed")
+    /// «Отметить: Я», a second tap cancels it, a status from the menu, then yesterday.
+    private func markPresence(screenshots: Bool) {
+        XCTAssertFalse(app.buttons["Пришёл"].exists, "no arrival button any more")
         XCTAssertFalse(app.buttons["Ушёл"].exists)
-        if screenshots { shot("06-home-left") }
+        let mark = app.buttons["mark-Зубахин"]
+        XCTAssertTrue(mark.waitForExistence(timeout: 10))
+        XCTAssertTrue(element(containing: "Не отмечен").exists)
+        mark.tap()
+        dismissAlertIfShown()
+        XCTAssertTrue(element(containing: "Был на работе").waitForExistence(timeout: 10), "one tap marks Я")
+        if screenshots { shot("04-home-present") }
+        mark.tap()
+        XCTAssertTrue(element(containing: "Не отмечен").waitForExistence(timeout: 10), "a second tap cancels it")
+
+        let menu = app.buttons["Статус Зубахин Иван Петрович"]
+        menu.tap()
+        let sick = app.buttons["Б — Больничный"]
+        XCTAssertTrue(sick.waitForExistence(timeout: 10), "the menu offers the statuses")
+        if screenshots { shot("05-status-menu") }
+        sick.tap()
+        XCTAssertTrue(element(containing: "Больничный").waitForExistence(timeout: 10))
+
+        app.buttons["Вчера"].firstMatch.tap()
+        XCTAssertTrue(element(containing: "Четверг, 5 ноября 2026").waitForExistence(timeout: 10), "yesterday is shown")
+        // Hired today: yesterday the person was not in the farm yet.
+        XCTAssertTrue(element(containing: "нет работающих сотрудников").waitForExistence(timeout: 10))
+        if screenshots { shot("06-home-yesterday") }
+        app.buttons["Сегодня"].firstMatch.tap()
+        XCTAssertTrue(element(containing: "Больничный").waitForExistence(timeout: 10), "today kept «Б»")
     }
 
+    /// The month table: Б on the 6th, then a tap on the 7th makes it a day off.
     private func generateTimesheet() {
         tab("Табель")
-        let generate = app.buttons["Сформировать табель"].firstMatch
-        XCTAssertTrue(generate.waitForExistence(timeout: 10))
-        generate.tap()
-        dismissAlertIfShown()
-        XCTAssertTrue(app.buttons["Скачать PDF"].firstMatch.waitForExistence(timeout: 15), "a version is shown")
-        XCTAssertTrue(element(containing: "Зубахин").waitForExistence(timeout: 10), "the grid shows the person")
+        XCTAssertTrue(app.buttons["monthTitle"].waitForExistence(timeout: 10))
+        XCTAssertTrue(app.buttons["monthTitle"].label.contains("НОЯБРЬ 2026"))
+        XCTAssertTrue(element(containing: "Зубахин И. П.").waitForExistence(timeout: 10), "the grid shows the person")
+        let cell = app.buttons["Зубахин Иван Петрович, 7: не отмечен"]
+        XCTAssertTrue(cell.waitForExistence(timeout: 10))
+        cell.tap()
+        let dayOff = app.buttons["В — Выходной"]
+        XCTAssertTrue(dayOff.waitForExistence(timeout: 10))
+        dayOff.tap()
+        XCTAssertTrue(app.buttons["Зубахин Иван Петрович, 7: Выходной"].waitForExistence(timeout: 10), "the cell changed")
+        XCTAssertTrue(app.buttons["Скачать PDF"].firstMatch.waitForExistence(timeout: 15))
     }
 
     // MARK: - Helpers

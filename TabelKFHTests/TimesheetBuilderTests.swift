@@ -128,13 +128,13 @@ final class TimesheetBuilderTests: XCTestCase {
                         format: .codesAndHours)
         let cell = doc.rows[0].cells[4]
 
-        XCTAssertEqual(cell.text, "Я?")
+        XCTAssertEqual(cell.text, "Я")
         XCTAssertTrue(cell.unfinished)
         XCTAssertNil(cell.minutes)
         XCTAssertEqual(doc.rows[0].totals, TimesheetTotals(presentDays: 2, minutes: 450))
         XCTAssertEqual(doc.unfinished, ["Зубахин И. П. — 5 ноября"])
         XCTAssertEqual(build([e], [mark(e, 5, .present, unfinished: true)], format: .codes).rows[0].cells[4].text,
-                       "Я?")
+                       "Я")
     }
 
     func testFarmTotalsAreTheSumOfRows() {
@@ -165,8 +165,8 @@ final class TimesheetBuilderTests: XCTestCase {
                        mark(e, 3, .sick), mark(e, 4, .present, minutes: 0)]
 
         let withHours = build([e], records, format: .codesAndHours).rows[0].cells
-        XCTAssertEqual(withHours[0].text, "Я\n7,5")
-        XCTAssertEqual(withHours[1].text, "Я\n8")
+        XCTAssertEqual(withHours[0].text, "Я")
+        XCTAssertEqual(withHours[1].text, "Я")
         XCTAssertEqual(withHours[2].text, "Б")
         XCTAssertEqual(withHours[3].text, "Я")
 

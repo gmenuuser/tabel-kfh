@@ -47,7 +47,9 @@ struct MainScreen: View {
     @Query private var workDays: [CoalWorkDay]
     @State private var today = Calendar.farm.dayStart(AppClock.now())
     @State private var farmName = ""
-    @State private var people: HomeViewModel?
+    /// People working today and those marked Я.
+    @State private var staff = 0
+    @State private var atWork = 0
 
     private var todaySales: [CoalSale] {
         let end = Calendar.farm.date(byAdding: .day, value: 1, to: today) ?? today
@@ -60,7 +62,7 @@ struct MainScreen: View {
         ScrollView {
             VStack(spacing: 16) {
                 header
-                bigButton("ТАБЕЛЬ РАБОТНИКОВ", subtitle: "Приход и уход, сотрудники, календарь",
+                bigButton("ТАБЕЛЬ РАБОТНИКОВ", subtitle: "Отметки за день, табель за месяц, сотрудники",
                           icon: "person.2.fill", color: Theme.primary, id: "openTimesheet") { open(.timesheet) }
                 bigButton("ПРОДАЖА УГЛЯ", subtitle: "Новая продажа, продажи за сегодня, итоги дня",
                           icon: "truck.box.fill", color: Theme.accent, id: "openCoal") { open(.coal) }
@@ -88,8 +90,10 @@ struct MainScreen: View {
     private func reload() {
         today = Calendar.farm.dayStart(AppClock.now())
         farmName = FarmSettingsStore.current(in: context).farmName
-        if people == nil { people = HomeViewModel(context: context) }
-        people?.reload()
+        let people = EmployeeService(context: context).active(on: today)
+        let marks = AttendanceService(context: context)
+        staff = people.count
+        atWork = people.filter { marks.status(of: $0, on: today) == .present }.count
     }
 
     private var header: some View {
@@ -102,9 +106,8 @@ struct MainScreen: View {
             Text(CoalText.longDate(today).capitalizedFirst)
                 .font(.title3.weight(.medium))
             VStack(alignment: .leading, spacing: 4) {
-                if let people {
-                    Label("\(people.atWorkTitle) из \(people.totalCount)", systemImage: "person.2")
-                }
+                Label(staff == 0 ? "Сотрудников пока нет" : "На работе: \(atWork) из \(staff)",
+                      systemImage: "person.2")
                 let t = CoalTotals(todaySales)
                 Label(t.salesCount == 0 ? "Продаж угля сегодня нет"
                       : "Уголь: \(CoalText.sales(t.salesCount)) на \(CoalMath.rubles(t.revenue))",

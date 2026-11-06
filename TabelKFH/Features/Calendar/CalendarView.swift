@@ -185,7 +185,7 @@ private struct DayCellView: View {
     private var detail: some View {
         if filtered {
             if let status = cell.status {
-                Text(cell.minutes.map { Self.hours($0) } ?? status.rawValue)
+                Text(status.rawValue)
                     .font(.caption2.weight(.semibold))
                     .lineLimit(1)
                     .minimumScaleFactor(0.7)
@@ -209,13 +209,6 @@ private struct DayCellView: View {
         }
     }
 
-    /// «8», «7,5» — hours for the small cell.
-    private static func hours(_ minutes: Int) -> String {
-        let value = Double(minutes) / 60
-        let text = value.formatted(.number.precision(.fractionLength(0...1)).locale(Locale(identifier: "ru_RU")))
-        return "\(text) ч"
-    }
-
     private var accessibilityText: String {
         var parts = ["\(cell.number)"]
         if filtered {
@@ -223,7 +216,6 @@ private struct DayCellView: View {
                 parts.append("не работал в хозяйстве")
             } else if let status = cell.status {
                 parts.append(status.title)
-                if let minutes = cell.minutes { parts.append(durationText(minutes: minutes)) }
             } else {
                 parts.append("нет отметки")
             }

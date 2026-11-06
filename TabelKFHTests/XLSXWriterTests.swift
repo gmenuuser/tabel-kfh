@@ -93,15 +93,15 @@ final class XLSXWriterTests: XCTestCase {
         let all = rows.flatMap { $0 }
         XCTAssertTrue(all.contains("ООО \"Тест\" & Ко"))
         let header = try XCTUnwrap(rows.first { $0.contains("ФИО") })
-        XCTAssertEqual(header.count, 2 + 31 + 8)
+        XCTAssertEqual(header.count, 2 + 31 + 7)
         XCTAssertEqual(Array(header[2..<33]), (1...31).map(String.init), "31 day header cells for December")
-        XCTAssertEqual(Array(header[33...]), ["Явки", "Часы", "В", "Б", "О", "ОТ", "ПР", "К"])
+        XCTAssertEqual(Array(header[33...]), ["Я", "В", "Б", "О", "ОТ", "ПР", "К"])
 
         let row = try XCTUnwrap(rows.first { $0.contains("Зубахин Иван Петрович") })
         XCTAssertEqual(row[0], "1")
-        XCTAssertEqual(row[2], "Я\n7,5")
+        XCTAssertEqual(row[2], "Я")
         XCTAssertEqual(row[3], "Б")
-        XCTAssertEqual(Array(row[(row.count - 8)...]), ["1", "7.5", "0", "1", "0", "0", "0", "0"])
+        XCTAssertEqual(Array(row[(row.count - 7)...]), ["1", "0", "1", "0", "0", "0", "0"], "days, no hours")
 
         XCTAssertTrue(all.contains("Руководитель КФХ: ___________________"))
         XCTAssertTrue(all.contains("Ответственное лицо: ___________________"))

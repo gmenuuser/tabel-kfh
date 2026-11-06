@@ -94,7 +94,7 @@ final class FarmTimeZoneTests: XCTestCase {
         let document = try timesheets.document(
             timesheets.generate(month: 11, year: 2026, employee: nil, format: .codesAndHours))
         XCTAssertEqual(document.rows.count, 1)
-        XCTAssertEqual(document.rows[0].cells[5].text, "Я\n8")
+        XCTAssertEqual(document.rows[0].cells[5].text, "Я")
         XCTAssertEqual(document.rows[0].cells[4].text, "")
         XCTAssertEqual(document.rows[0].totals.minutes, 480)
     }

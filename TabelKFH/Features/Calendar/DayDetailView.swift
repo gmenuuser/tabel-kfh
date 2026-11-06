@@ -1,7 +1,7 @@
 import SwiftUI
 import SwiftData
 
-/// The people employed on one day (archived ones too) with their status, times and hours.
+/// The people employed on one day (archived ones too) with their status.
 /// Tapping a row opens the record editor.
 struct DayDetailView: View {
     let model: CalendarViewModel
@@ -68,11 +68,6 @@ private struct DayEntryRow: View {
                     Text("\(r.status.rawValue) — \(r.status.title)")
                         .font(.subheadline.weight(.semibold))
                         .foregroundStyle(r.status.color)
-                    if r.status == .present {
-                        Text(timesText(r))
-                            .font(.caption.monospacedDigit())
-                            .foregroundStyle(.secondary)
-                    }
                 } else {
                     Text("Нет отметки")
                         .font(.subheadline)
@@ -83,14 +78,4 @@ private struct DayEntryRow: View {
         .padding(.vertical, 2)
     }
 
-    /// «08:00–17:00 · 8 ч», «22:00–? · не закрыт».
-    private func timesText(_ r: AttendanceRecord) -> String {
-        let hasTotal = r.manualWorkedMinutes != nil || r.workedMinutes != nil
-        let hours = hasTotal ? durationText(minutes: WorkTimeCalculator.effectiveMinutes(r)) : "не закрыт"
-        guard let arrival = r.arrivalTime else {
-            return hasTotal ? hours : "Время не указано"
-        }
-        let departure = r.departureTime.map { HomeViewModel.time($0) } ?? "?"
-        return "\(HomeViewModel.time(arrival))–\(departure) · \(hours)"
-    }
 }

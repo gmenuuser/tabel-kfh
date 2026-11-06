@@ -49,15 +49,10 @@ struct TimesheetCell: Codable, Equatable {
     let employed: Bool
     let format: CellFormat
 
-    /// "" | "Я" | "Я\n8" | "Я\n7,5" | "Я?" | "Б" …
+    /// "" | "Я" | "В" | "Б" … — only the code of the day: the timesheet keeps no times or hours.
+    /// (`minutes`, `unfinished` and `format` stay in the stored JSON of older versions and are ignored.)
     var text: String {
         guard employed, let status else { return "" }
-        if status == .present {
-            if unfinished { return "Я?" }
-            if format == .codesAndHours, let minutes, minutes > 0 {
-                return "Я\n" + decimalHoursText(minutes: minutes)
-            }
-        }
         return status.rawValue
     }
 }
@@ -101,18 +96,26 @@ struct TimesheetTotals: Codable, Equatable {
 }
 
 extension TimesheetTotals {
-    /// Titles of the totals columns of the screen, the PDF and the XLSX.
-    static let columnTitles = ["Явки", "Часы", "В", "Б", "О", "ОТ", "ПР", "К"]
-    /// Index of «Часы» in `columnTitles`.
-    static let minutesColumn = 1
+    /// Titles of the totals columns of the screen, the PDF and the XLSX: days of each status.
+    static let columnTitles = ["Я", "В", "Б", "О", "ОТ", "ПР", "К"]
+    /// The statuses of `columnTitles`, in order.
+    static let columnStatuses: [DayStatus] = [.present, .dayOff, .sick, .vacation, .timeOff, .absent, .businessTrip]
 
-    /// Values in `columnTitles` order; «Часы» as minutes.
-    var columnValues: [Int] { [presentDays, minutes, dayOff, sick, vacation, timeOff, absent, businessTrip] }
+    /// Days in `columnTitles` order.
+    var columnValues: [Int] { [presentDays, dayOff, sick, vacation, timeOff, absent, businessTrip] }
 
-    /// Values in `columnTitles` order as text; hours as a decimal with a comma.
-    var columnTexts: [String] {
-        columnValues.enumerated().map { index, value in
-            index == Self.minutesColumn ? decimalHoursText(minutes: value) : String(value)
+    var columnTexts: [String] { columnValues.map(String.init) }
+
+    /// Days of one status.
+    func days(_ status: DayStatus) -> Int {
+        switch status {
+        case .present: return presentDays
+        case .dayOff: return dayOff
+        case .sick: return sick
+        case .vacation: return vacation
+        case .timeOff: return timeOff
+        case .absent: return absent
+        case .businessTrip: return businessTrip
         }
     }
 }
@@ -150,10 +153,10 @@ extension TimesheetDocument {
     static let legend = DayStatus.allCases.map { "\($0.rawValue) — \($0.title.lowercased())" }.joined(separator: ", ")
 }
 
-/// «Табель_Ноябрь_2026_v2.pdf» for the whole farm; «Табель_Ноябрь_2026_Зубахин_v2.pdf» for one employee's timesheet.
+/// «Табель_Ноябрь_2026.pdf» for the whole farm; «Табель_Ноябрь_2026_Зубахин.pdf» for one employee's timesheet.
 func exportFileName(_ d: TimesheetDocument, surname: String? = nil, ext: String) -> String {
     let person = surname.map { "_" + $0.replacingOccurrences(of: "/", with: "-").replacingOccurrences(of: ":", with: "-") }
-    return "Табель_\(Calendar.farm.monthName(d.month))_\(d.year)\(person ?? "")_v\(d.version).\(ext)"
+    return "Табель_\(Calendar.farm.monthName(d.month))_\(d.year)\(person ?? "").\(ext)"
 }
 
 /// Hours as a decimal with a comma, at most two decimals: 480 → «8», 450 → «7,5», 465 → «7,75», 470 → «7,83».

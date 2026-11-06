@@ -40,8 +40,8 @@ final class PDFRendererTests: XCTestCase {
                                 address: "х. Зубахин, ул. Степная, 12", phone: "+7 928 123-45-67", extraInfo: "")
         let pdf = try XCTUnwrap(PDFDocument(data: TimesheetPDFRenderer.render(Self.november(employees: 3, settings: settings))))
         let page = text(pdf.page(at: 0))
-        for expected in ["ТАБЕЛЬ УЧЁТА РАБОЧЕГО ВРЕМЕНИ", "КФХ Зубахин", "Ноябрь", "2026", "Версия 2",
-                         "ул. Степная", "123-45-67", "ФИО", "Явки", "Сотрудник 1 Иванович",
+        for expected in ["ТАБЕЛЬ УЧЁТА РАБОЧЕГО ВРЕМЕНИ", "КФХ Зубахин", "Ноябрь", "2026",
+                         "ул. Степная", "123-45-67", "ФИО", "ОТ", "Сотрудник 1 Иванович",
                          "Итого по хозяйству", "Страница 1 из 1",
                          "Руководитель КФХ: ___________________", "Ответственное лицо: ___________________",
                          "Дата формирования: 06.11.2026"] {
@@ -63,17 +63,17 @@ final class PDFRendererTests: XCTestCase {
     }
 
     func testExportFileName() {
-        XCTAssertEqual(exportFileName(Self.november(employees: 1), ext: "pdf"), "Табель_Ноябрь_2026_v2.pdf")
-        XCTAssertEqual(exportFileName(Self.november(employees: 1), ext: "xlsx"), "Табель_Ноябрь_2026_v2.xlsx")
+        XCTAssertEqual(exportFileName(Self.november(employees: 1), ext: "pdf"), "Табель_Ноябрь_2026.pdf")
+        XCTAssertEqual(exportFileName(Self.november(employees: 1), ext: "xlsx"), "Табель_Ноябрь_2026.xlsx")
     }
 
     func testExportFileNameOfOneEmployeeHasTheSurname() {
         XCTAssertEqual(exportFileName(Self.november(employees: 1), surname: "Зубахин", ext: "pdf"),
-                       "Табель_Ноябрь_2026_Зубахин_v2.pdf")
+                       "Табель_Ноябрь_2026_Зубахин.pdf")
         XCTAssertEqual(exportFileName(Self.november(employees: 1), surname: "Иванова-Петрова", ext: "xlsx"),
-                       "Табель_Ноябрь_2026_Иванова-Петрова_v2.xlsx")
+                       "Табель_Ноябрь_2026_Иванова-Петрова.xlsx")
         XCTAssertEqual(exportFileName(Self.november(employees: 1), surname: "А/Б", ext: "pdf"),
-                       "Табель_Ноябрь_2026_А-Б_v2.pdf", "a slash would make a folder")
+                       "Табель_Ноябрь_2026_А-Б.pdf", "a slash would make a folder")
     }
 
     // MARK: - Samples for a human look (CI artifact «review-samples»)

@@ -40,7 +40,7 @@ enum TimesheetPDFRenderer {
         let numberWidth: CGFloat = 18
         let nameWidth: CGFloat = 110
         /// Widths of the totals columns, «Часы» wider.
-        let totalWidths: [CGFloat] = TimesheetTotals.columnTitles.indices.map { $0 == TimesheetTotals.minutesColumn ? 30 : 20 }
+        let totalWidths: [CGFloat] = TimesheetTotals.columnTitles.map { _ in 19 }
         let dayWidth: CGFloat
         let headerHeight: CGFloat = 20
         let rowHeights: [CGFloat]
@@ -66,7 +66,7 @@ enum TimesheetPDFRenderer {
             })
 
             leftInfo = [d.farmName, d.address, d.phone.isEmpty ? "" : "Тел.: \(d.phone)", d.extraInfo].filter { !$0.isEmpty }
-            rightInfo = ["Месяц: \(calendar.monthName(d.month))", "Год: \(d.year)", "Версия \(d.version)"]
+            rightInfo = ["Месяц: \(calendar.monthName(d.month))", "Год: \(d.year)"]
             firstTop = m + 22 + CGFloat(max(leftInfo.count, rightInfo.count)) * Font.infoLine + 8
             otherTop = m + 14
             bottom = size.height - m - 14
@@ -142,7 +142,7 @@ enum TimesheetPDFRenderer {
 
         private func drawRunningHeader() {
             let line = ["ТАБЕЛЬ УЧЁТА РАБОЧЕГО ВРЕМЕНИ", d.farmName, calendar.monthTitle(month: d.month, year: d.year),
-                        "Версия \(d.version)"].filter { !$0.isEmpty }.joined(separator: " · ")
+                        ].filter { !$0.isEmpty }.joined(separator: " · ")
             Text.draw(line, in: CGRect(x: content.minX, y: content.minY, width: content.width, height: 10),
                       font: Font.small, color: Color.secondary, align: .left, inset: false)
         }
@@ -183,8 +183,7 @@ enum TimesheetPDFRenderer {
             for (index, cell) in row.cells.enumerated() {
                 let fill: UIColor? = !cell.employed ? Color.notEmployed : (weekends.contains(index + 1) ? Color.weekend : nil)
                 Cell.draw(cell.text, CGRect(x: x, y: y, width: dayWidth, height: height),
-                          font: cell.unfinished ? Font.bold : Font.number, fill: fill,
-                          color: cell.unfinished ? Color.unfinished : .black)
+                          font: Font.number, fill: fill, color: .black)
                 x += dayWidth
             }
             for (value, width) in zip(row.totals.columnTexts, totalWidths) {
@@ -210,11 +209,11 @@ enum TimesheetPDFRenderer {
 
         private var legend: String {
             "Обозначения: " + TimesheetDocument.legend
-                + ". «Я?» — уход не отмечен, часы не учтены. Серые ячейки — дни до приёма или после увольнения."
+                + ". Серые ячейки — дни до приёма или после увольнения."
         }
 
         private var unfinishedText: String? {
-            d.unfinished.isEmpty ? nil : "Незавершённые дни: " + d.unfinished.joined(separator: ", ") + "."
+            nil
         }
 
         private var signatures: [(String, String)] {

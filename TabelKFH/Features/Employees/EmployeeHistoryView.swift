@@ -32,7 +32,6 @@ struct EmployeeHistoryView: View {
             Section {
                 monthSwitcher
                 LabeledContent("Дней явки", value: "\(presentDays)")
-                LabeledContent("Отработано", value: durationText(minutes: workedMinutes))
             }
 
             Section {
@@ -154,8 +153,6 @@ struct EmployeeHistoryView: View {
 
     private var presentDays: Int { totals.presentDays }
 
-    private var workedMinutes: Int { totals.minutes }
-
     private var errorShown: Binding<Bool> {
         Binding(get: { errorMessage != nil }, set: { if !$0 { errorMessage = nil } })
     }
@@ -201,10 +198,6 @@ private struct HistoryDayRow: View {
                     Text("\(record.status.rawValue) — \(record.status.title)")
                         .font(.subheadline.weight(.semibold))
                         .foregroundStyle(record.status == .present ? Theme.primary : Theme.accent)
-                    if record.status == .present {
-                        Text(timesText(record))
-                            .font(.subheadline.monospacedDigit())
-                    }
                     if !record.comment.isEmpty {
                         Text(record.comment)
                             .font(.caption)
@@ -218,17 +211,6 @@ private struct HistoryDayRow: View {
             }
         }
         .padding(.vertical, 2)
-    }
-
-    /// «08:00–17:00 · 8 ч», «22:00–? · не закрыт», «7 ч 30 мин» (manual total without times).
-    private func timesText(_ r: AttendanceRecord) -> String {
-        let hasTotal = r.manualWorkedMinutes != nil || r.workedMinutes != nil
-        let hours = hasTotal ? durationText(minutes: WorkTimeCalculator.effectiveMinutes(r)) : "не закрыт"
-        guard let arrival = r.arrivalTime else {
-            return hasTotal ? hours : "Время не указано"
-        }
-        let departure = r.departureTime.map { HomeViewModel.time($0) } ?? "?"
-        return "\(HomeViewModel.time(arrival))–\(departure) · \(hours)"
     }
 
     /// «6, пт».

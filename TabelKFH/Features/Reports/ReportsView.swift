@@ -7,7 +7,7 @@ struct ReportsView: View {
         ScrollView {
             VStack(spacing: 14) {
                 row("Табель работников", subtitle: "Табель за месяц по всему хозяйству или по сотруднику",
-                    icon: "tablecells", color: Theme.primary) { TimesheetView() }
+                    icon: "tablecells", color: Theme.primary) { MonthTimesheetView() }
                 row("Продажи угля", subtitle: "За день или за месяц: продажи, выручка, итоги",
                     icon: "truck.box.fill", color: Theme.accent) { CoalSalesReportView() }
                 row("Выплаты водителям", subtitle: "Сколько заработал, получил и кому сколько ещё выплатить",
