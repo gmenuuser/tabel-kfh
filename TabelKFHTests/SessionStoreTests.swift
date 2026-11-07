@@ -55,6 +55,8 @@ private final class FakeServer {
             return (200, Data(#"{"changes":[],"next":\#(since),"more":false}"#.utf8))
         case "/conflicts":
             return (200, Data(#"{"conflicts":[]}"#.utf8))
+        case "/members":
+            return (200, Data(#"[{"id":"u1","login":"ivan","email":null,"name":"ivan","role":"owner"},{"id":"u2","login":"anna","email":null,"name":"anna","role":"timesheet"}]"#.utf8))
         default:
             return (404, Data(#"{"error":"Не найдено"}"#.utf8))
         }
@@ -81,6 +83,7 @@ final class SessionStoreTests: XCTestCase {
         SyncedSave.isApplyingRemote = false
         SyncedSave.onQueued = nil
         StubURLProtocol.reset()
+        SyncedSave.allowed = nil
         tokens = MemoryTokens()
         suiteName = "SessionStoreTests-\(UUID().uuidString)"
         defaults = UserDefaults(suiteName: suiteName)
@@ -88,6 +91,7 @@ final class SessionStoreTests: XCTestCase {
     }
 
     override func tearDown() {
+        SyncedSave.allowed = nil
         StubURLProtocol.reset()
         SyncedSave.isApplyingRemote = false
         SyncedSave.onQueued = nil
@@ -270,12 +274,19 @@ final class SessionStoreTests: XCTestCase {
         try localEmployee("Остался")
         SyncState.current(in: context).cursor = 7
         try context.save()
+        for directory in SessionStore.exportDirectories {
+            try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+            try Data("табель".utf8).write(to: directory.appendingPathComponent("Табель.pdf"))
+        }
 
         let session = makeSession(FakeServer())
 
         XCTAssertEqual(session.state, .signedOut)
         XCTAssertEqual(try employees().count, 0)
         XCTAssertEqual(try context.fetchCount(FetchDescriptor<SyncState>()), 0)
+        for directory in SessionStore.exportDirectories {
+            XCTAssertFalse(FileManager.default.fileExists(atPath: directory.path), directory.path)
+        }
     }
 
     func testTokenNotSavedShowsMessage() async throws {
@@ -320,5 +331,134 @@ final class SessionStoreTests: XCTestCase {
                        [.coalSettings, .deliveryLocation, .driver, .coalSale, .driverPayment, .coalWorkDay])
         XCTAssertEqual(Set(all.filter { SessionStore.canEdit(role: "livestock", $0) }),
                        [.livestockCategory, .livestockOperation, .slaughterRecord, .livestockSettings])
+    }
+
+    // MARK: Task 9
+
+    func testSignOutDuringSyncAsksNoMe() async throws {
+        let session = makeSession(FakeServer())
+        try await session.signIn(login: "ivan", password: "secret-pass")
+        let meBefore = requests("/me").count
+        let pullRelease = DispatchSemaphore(value: 0)
+        let logoutRelease = DispatchSemaphore(value: 0)
+        let pullAsked = expectation(description: "pull asked")
+        pullAsked.assertForOverFulfill = false
+        let logoutAsked = expectation(description: "logout asked")
+        logoutAsked.assertForOverFulfill = false
+        StubURLProtocol.hold = { r in
+            switch r.path {
+            case "/sync/pull": pullAsked.fulfill(); return pullRelease
+            case "/auth/logout": logoutAsked.fulfill(); return logoutRelease
+            default: return nil
+            }
+        }
+        let sync = Task { await session.syncNow() }
+        await fulfillment(of: [pullAsked], timeout: 10)
+        let signOut = Task { await session.signOut(force: false) }
+        await fulfillment(of: [logoutAsked], timeout: 10)
+        // The pull comes back while the logout is still on its way: the stopped run asks nothing more.
+        pullRelease.signal()
+        await sync.value
+        XCTAssertEqual(requests("/me").count, meBefore, "no /me after the sign-out began")
+        StubURLProtocol.hold = nil
+        logoutRelease.signal()
+        await signOut.value
+
+        XCTAssertEqual(session.state, .signedOut)
+        XCTAssertNil(session.signOutNotice)
+        XCTAssertEqual(try context.fetchCount(FetchDescriptor<FarmSettings>()), 0)
+    }
+
+    func testLateMeOfAnEarlierSignInIsIgnored() async throws {
+        let server = FakeServer()
+        let session = makeSession(server)
+        try await session.signIn(login: "ivan", password: "secret-pass")
+        // The /me of the sync below is answered (401) only after a sign-out and a new sign-in.
+        let lock = NSLock()
+        var meSeen = 0
+        var refuseMe = false
+        let release = DispatchSemaphore(value: 0)
+        let asked = expectation(description: "me asked")
+        StubURLProtocol.hold = { r in
+            guard r.path == "/me" else { return nil }
+            lock.lock(); defer { lock.unlock() }
+            meSeen += 1
+            guard meSeen == 1 else { return nil }
+            asked.fulfill()
+            return release
+        }
+        StubURLProtocol.handler = { r in
+            lock.lock()
+            let refuse = r.path == "/me" && refuseMe
+            if refuse { refuseMe = false }
+            lock.unlock()
+            if refuse { return (401, Data(#"{"error":"Нужно войти заново"}"#.utf8)) }
+            return try server.handle(r)
+        }
+        let sync = Task { await session.syncNow() }
+        await fulfillment(of: [asked], timeout: 10)
+        await session.signOut(force: false)
+        try await session.signIn(login: "ivan", password: "secret-pass")
+        lock.lock(); refuseMe = true; lock.unlock()
+        release.signal()
+        await sync.value
+
+        XCTAssertEqual(session.state, .signedIn(role: "owner"))
+        XCTAssertEqual(tokens.stored, "tok-1")
+        XCTAssertNil(session.signOutNotice)
+        XCTAssertNotNil(session.engine)
+    }
+
+    func testViewerSessionCannotQueue() throws {
+        tokens.stored = "tok-1"
+        SyncState.current(in: context).role = "viewer"
+        try context.save()
+        let session = makeSession(FakeServer())
+        XCTAssertEqual(session.state, .signedIn(role: "viewer"))
+
+        withExtendedLifetime(session) {
+            context.insert(Employee(lastName: "Петров", firstName: "Пётр", hireDate: Date(timeIntervalSince1970: 1_700_000_000)))
+            XCTAssertThrowsError(try context.syncedSave())
+            XCTAssertEqual(try? context.fetchCount(FetchDescriptor<SyncOp>()), 0)
+            XCTAssertEqual(try? employees().count, 0)
+        }
+    }
+
+    func testDeleteRefusedChangePullsFromStart() async throws {
+        let session = makeSession(FakeServer(pulls: [FakeServer.employeePage(UUID(), lastName: "С сервера", next: 3)]))
+        try await session.signIn(login: "ivan", password: "secret-pass")
+        try localEmployee("Не принят")
+        let op = try XCTUnwrap(context.fetch(FetchDescriptor<SyncOp>()).first)
+        op.state = "error"
+        op.errorText = "Нет прав"
+        try context.save()
+
+        try await session.deleteRefused(op)
+
+        XCTAssertEqual(try context.fetchCount(FetchDescriptor<SyncOp>()), 0)
+        XCTAssertEqual(try employees().map(\.lastName), ["С сервера"])
+        XCTAssertEqual(requests("/sync/pull").last?.query, "since=0")
+        XCTAssertEqual(requests("/sync/push").count, 0)
+    }
+
+    func testResyncFromStartAfterServerRestore() async throws {
+        let session = makeSession(FakeServer(pulls: [FakeServer.employeePage(UUID(), lastName: "Первый", next: 3)]))
+        try await session.signIn(login: "ivan", password: "secret-pass")
+        XCTAssertEqual(SyncState.current(in: context).cursor, 3)
+
+        await session.resyncFromStart()
+
+        XCTAssertEqual(requests("/sync/pull").last?.query, "since=0")
+    }
+
+    func testOwnerRequestsGoWithTheToken() async throws {
+        let session = makeSession(FakeServer())
+        try await session.signIn(login: "ivan", password: "secret-pass")
+
+        let members: [MemberDTO] = try await session.send("GET", "/members")
+
+        XCTAssertEqual(members.map(\.login), ["ivan", "anna"])
+        XCTAssertEqual(members.last?.role, "timesheet")
+        XCTAssertEqual(requests("/members").first?.authorization, "Bearer tok-1")
     }
 }
