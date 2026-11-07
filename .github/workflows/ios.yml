@@ -2,7 +2,7 @@ name: iOS
 
 on:
   push:
-    branches: [main]
+    branches: [main, ios-sync]
     # The server, the site and the Android app do not need the macOS build.
     paths-ignore: ['server/**', 'web/**', 'android/**', 'docs/**', '*.md']
   pull_request:
