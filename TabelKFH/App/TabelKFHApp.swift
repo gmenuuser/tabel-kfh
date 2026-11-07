@@ -4,6 +4,8 @@ import SwiftData
 @main
 struct TabelKFHApp: App {
     private let container: ModelContainer
+    /// The device's sign-in (`-uitest`: the owner, offline, no sync).
+    @State private var session: SessionStore
     /// Only under `-uitest -uitest-dark`: the UI tests take dark-mode screenshots.
     private let forcedScheme: ColorScheme?
 
@@ -29,12 +31,17 @@ struct TabelKFHApp: App {
         // Every write goes through `syncedSave()` (store and send queue in one save); an autosave would store a
         // change without queueing it.
         let mainContainer = container
-        MainActor.assumeIsolated { mainContainer.mainContext.autosaveEnabled = false }
+        let store = MainActor.assumeIsolated {
+            mainContainer.mainContext.autosaveEnabled = false
+            return uiTest ? SessionStore.uiTest(container: mainContainer) : SessionStore(container: mainContainer)
+        }
+        _session = State(initialValue: store)
     }
 
     var body: some Scene {
         WindowGroup {
             AppRootView()
+                .environment(session)
                 .environment(\.locale, Locale(identifier: "ru_RU"))
                 .preferredColorScheme(forcedScheme)
         }

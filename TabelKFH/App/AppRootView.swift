@@ -6,9 +6,29 @@ enum MainDestination: Hashable {
     case timesheet, coal, livestock, agro, reports, settings
 }
 
-/// One main screen with three large buttons; every part opens on top of it and «Назад» returns to it.
+/// Signed out: the sign-in screen; signing in: «Загрузка данных…»; signed in: the farm. Starts the sync on
+/// launch, when the app becomes active (and every minute while it is) and when the network comes back.
 struct AppRootView: View {
+    @Environment(SessionStore.self) private var session
+    @Environment(\.scenePhase) private var scenePhase
+
+    var body: some View {
+        Group {
+            switch session.state {
+            case .signedOut: SignInView()
+            case .loading: LoadingDataView()
+            case .signedIn: FarmRootView()
+            }
+        }
+        .task { session.startTriggers() }
+        .onChange(of: scenePhase, initial: true) { _, phase in session.scenePhaseChanged(phase) }
+    }
+}
+
+/// One main screen with three large buttons; every part opens on top of it and «Назад» returns to it.
+struct FarmRootView: View {
     @Environment(\.modelContext) private var context
+    @Environment(SessionStore.self) private var session
     /// Every part is opened again from the main screen, so after a restore from a backup it reads the restored data.
     @State private var path: [MainDestination] = []
 
@@ -26,14 +46,28 @@ struct AppRootView: View {
                     }
                 }
         }
+        .safeAreaInset(edge: .top, spacing: 0) {
+            // The first download did not finish (no network): the data comes with a later sync.
+            if let engine = session.engine, engine.status.lastSyncAt == nil, let problem = engine.status.lastError {
+                Label("Данные хозяйства ещё не загружены: \(problem)", systemImage: "icloud.slash")
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.horizontal, 16)
+                    .padding(.vertical, 8)
+                    .background(Theme.card)
+            }
+        }
         .tint(Theme.primary)
         // Date pickers show and set times on the farm's calendar and zone, like every day key.
         .environment(\.calendar, Calendar.farm)
         .environment(\.timeZone, Calendar.farm.timeZone)
         .onAppear {
             // The store keeps one settings row each; they are made on the first launch.
+            // Signed in, `FarmSettings` comes with `/me`; a role that may not change the coal settings never
+            // makes them (the server would refuse the change).
             FarmSettingsStore.current(in: context)
-            CoalSettingsService(context: context).current()
+            if session.canEdit(.coalSettings) { CoalSettingsService(context: context).current() }
         }
     }
 }

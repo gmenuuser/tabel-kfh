@@ -38,4 +38,11 @@ struct FarmTimeZone {
         FarmTimeZone().adopt(zone)
         Calendar.useFarmTimeZone(zone)
     }
+
+    /// The farm's zone from the server (`GET /me`, every sign-in and sync): stored in `defaults` and used by
+    /// `Calendar.farm`, so day keys and stable ids are the farm's.
+    static func adoptFromServer(_ zone: TimeZone, defaults: UserDefaults) {
+        FarmTimeZone(defaults: defaults).adopt(zone)
+        if Calendar.farm.timeZone.identifier != zone.identifier { Calendar.useFarmTimeZone(zone) }
+    }
 }
