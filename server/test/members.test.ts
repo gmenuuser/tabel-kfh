@@ -76,7 +76,9 @@ test('смена роли отключает устройства, новый в
   const owner = await register(h.app);
   const id = (await createHelper(owner, { login: 'role-helper', password: 'помощник-123', role: 'timesheet' })).json().id;
   const old = await login(h.app, 'role-helper', 'помощник-123');
-  await pushOps(h.app, old, [upsert('hoursMark', randomUUID(), { employeeId: randomUUID(), day: '2026-11-06', hours: 8 })]);
+  const pushed = await pushOps(h.app, old, [upsert('hoursMark', randomUUID(), { employeeId: randomUUID(), day: '2026-11-06', hours: 8 })]);
+  assert.equal(pushed[0].status, 'applied');
+  assert.ok((await pullAll(h.app, old, 0)).changes.some((c) => c.entity === 'hoursMark'), 'до смены роли отметка видна');
   assert.equal((await h.app.inject({ method: 'PATCH', url: `/members/${id}`, headers: auth(owner), payload: { role: 'coal' } })).statusCode, 200);
   assert.equal((await h.app.inject({ method: 'GET', url: '/me', headers: auth(old) })).statusCode, 401);
   const fresh = await login(h.app, 'role-helper', 'помощник-123');
@@ -103,4 +105,24 @@ test('частые неверные попытки входа по логину 
   } finally {
     await limited.close();
   }
+});
+
+test('пароль нельзя менять у учётной записи с почтой или с другим хозяйством', async () => {
+  const owner = await register(h.app);
+  const other = await register(h.app);
+  // The owner of another farm is also a member of this one.
+  await h.db.query("INSERT INTO memberships (farm_id, user_id, role) VALUES ($1, $2, 'viewer')", [owner.farmId, other.userId]);
+  const before = (await h.db.query('SELECT password_hash FROM users WHERE id = $1', [other.userId])).rows[0].password_hash;
+  const r = await h.app.inject({ method: 'POST', url: `/members/${other.userId}/password`, headers: auth(owner), payload: { password: 'взлом-пароль-1' } });
+  assert.equal(r.statusCode, 404);
+  assert.equal(r.json().error, 'Помощник не найден');
+  const after = (await h.db.query('SELECT password_hash FROM users WHERE id = $1', [other.userId])).rows[0].password_hash;
+  assert.equal(after, before);
+  assert.equal((await h.app.inject({ method: 'GET', url: '/me', headers: auth(other) })).statusCode, 200, 'устройства не отключены');
+
+  // An e-mail account that belongs to this farm only.
+  const mail = await h.db.query("INSERT INTO users (email, name, password_hash) VALUES ($1, 'Почта', 'x') RETURNING id", [`m${Date.now()}@example.com`]);
+  await h.db.query("INSERT INTO memberships (farm_id, user_id, role) VALUES ($1, $2, 'viewer')", [owner.farmId, mail.rows[0].id]);
+  const r2 = await h.app.inject({ method: 'POST', url: `/members/${mail.rows[0].id}/password`, headers: auth(owner), payload: { password: 'взлом-пароль-1' } });
+  assert.equal(r2.statusCode, 404);
 });

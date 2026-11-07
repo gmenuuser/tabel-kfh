@@ -31,6 +31,7 @@ services:
       DATABASE_URL: postgres://kfh:${POSTGRES_PASSWORD}@db:5432/kfh
       DATA_DIR: /data
       PORT: "8080"
+      REGISTRATION_OPEN: ${REGISTRATION_OPEN:-false}
     volumes:
       - apidata:/data
     ports:

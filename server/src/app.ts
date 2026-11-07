@@ -254,7 +254,12 @@ export function buildApp(o: AppOptions): FastifyInstance {
     if (userId === req.session.userId) return fail(reply, 400, 'Свой пароль владелец меняет через восстановление доступа');
     const hash = await hashPassword(password);
     const found = await inTransaction(db, async (tx) => {
-      const m = await tx.query('SELECT 1 FROM memberships WHERE farm_id = $1 AND user_id = $2', [req.session.farmId, userId]);
+      // Only a login-only helper of this farm: an account with an e-mail or another farm has a password of its own.
+      const m = await tx.query(
+        `SELECT 1 FROM memberships m JOIN users u ON u.id = m.user_id
+          WHERE m.farm_id = $1 AND m.user_id = $2 AND u.email IS NULL
+            AND NOT EXISTS (SELECT 1 FROM memberships o WHERE o.user_id = m.user_id AND o.farm_id <> m.farm_id)`,
+        [req.session.farmId, userId]);
       if (!m.rowCount) return false;
       await tx.query('UPDATE users SET password_hash = $2 WHERE id = $1', [userId, hash]);
       await tx.query('UPDATE devices SET revoked_at = now() WHERE user_id = $1 AND revoked_at IS NULL', [userId]);
