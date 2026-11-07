@@ -31,13 +31,15 @@ extension View {
 /// Large full-width button for one-handed use.
 struct BigButtonStyle: ButtonStyle {
     var color: Color = Theme.primary
+    /// An inactive button (the viewer's forms) looks inactive.
+    @Environment(\.isEnabled) private var isEnabled
 
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
             .font(.headline)
-            .foregroundStyle(.white)
+            .foregroundStyle(.white.opacity(isEnabled ? 1 : 0.7))
             .frame(maxWidth: .infinity, minHeight: 50)
-            .background(color.opacity(configuration.isPressed ? 0.75 : 1),
+            .background(color.opacity(!isEnabled ? 0.45 : (configuration.isPressed ? 0.75 : 1)),
                         in: RoundedRectangle(cornerRadius: 12, style: .continuous))
             .contentShape(Rectangle())
     }
