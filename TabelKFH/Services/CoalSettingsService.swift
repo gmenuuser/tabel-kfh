@@ -25,7 +25,7 @@ final class CoalSettingsService {
         context.insert(settings)
         if ((try? context.fetchCount(FetchDescriptor<DeliveryLocation>())) ?? 0) == 0 {
             for (index, d) in CoalDefaults.locations.enumerated() {
-                context.insert(DeliveryLocation(name: d.name, deliveryPriceKopecks: d.deliveryKopecks,
+                context.insert(DeliveryLocation(id: StableId.deliveryLocation(d.name), name: d.name, deliveryPriceKopecks: d.deliveryKopecks,
                                                 createdAt: moment.addingTimeInterval(Double(index))))
             }
         }
@@ -74,7 +74,8 @@ final class CoalSettingsService {
             location.name = trimmed
             location.isActive = true
         } else {
-            location = DeliveryLocation(name: trimmed, deliveryPriceKopecks: deliveryKopecks, createdAt: now())
+            location = DeliveryLocation(id: StableId.deliveryLocation(trimmed), name: trimmed, deliveryPriceKopecks: deliveryKopecks,
+                                        createdAt: now())
             context.insert(location)
         }
         location.deliveryPriceKopecks = deliveryKopecks

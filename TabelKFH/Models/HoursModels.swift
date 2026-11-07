@@ -78,7 +78,7 @@ final class HoursService {
                     mark.updatedAt = moment
                 }
             } else {
-                context.insert(WorkHoursMark(employeeId: e.id, day: d, hours: hours, createdAt: moment, updatedAt: moment))
+                context.insert(WorkHoursMark(id: StableId.hoursMark(employeeId: e.id, day: d, calendar: calendar), employeeId: e.id, day: d, hours: hours, createdAt: moment, updatedAt: moment))
             }
         } else {
             existing.first.map { context.delete($0) }

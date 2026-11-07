@@ -97,7 +97,7 @@ final class CoalDayService {
         if existing?.isClosed == true { throw CoalError.dayAlreadyClosed }
         let report = try dayReport(start)
         let moment = now()
-        let day = existing ?? CoalWorkDay(date: start, createdAt: moment)
+        let day = existing ?? CoalWorkDay(id: StableId.coalWorkDay(start, calendar: calendar), date: start, createdAt: moment)
         if existing == nil { context.insert(day) }
         day.isClosed = true
         day.closedAt = moment

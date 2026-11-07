@@ -113,11 +113,12 @@ final class LivestockService {
     func ensureDefaults() {
         guard ((try? context.fetchCount(FetchDescriptor<LivestockSettings>())) ?? 0) == 0 else { return }
         let moment = now()
-        context.insert(LivestockSettings(createdAt: moment))
+        context.insert(LivestockSettings(id: StableId.livestockSettings, createdAt: moment))
         if ((try? context.fetchCount(FetchDescriptor<LivestockCategory>())) ?? 0) == 0 {
             for species in Species.allCases {
                 for (index, name) in species.defaultCategories.enumerated() {
-                    context.insert(LivestockCategory(species: species, name: name, sortOrder: index, isBuiltIn: true,
+                    context.insert(LivestockCategory(id: StableId.livestockCategory(species: species.rawValue, name: name),
+                                                     species: species, name: name, sortOrder: index, isBuiltIn: true,
                                                      createdAt: moment))
                 }
             }
@@ -144,7 +145,8 @@ final class LivestockService {
         if existing.contains(where: { $0.name.compare(trimmed, options: .caseInsensitive) == .orderedSame }) {
             throw LivestockError.duplicateCategory(trimmed)
         }
-        let c = LivestockCategory(species: species, name: trimmed, sortOrder: (existing.map(\.sortOrder).max() ?? 0) + 1,
+        let c = LivestockCategory(id: StableId.livestockCategory(species: species.rawValue, name: trimmed),
+                                  species: species, name: trimmed, sortOrder: (existing.map(\.sortOrder).max() ?? 0) + 1,
                                   createdAt: now())
         context.insert(c)
         try context.save()
