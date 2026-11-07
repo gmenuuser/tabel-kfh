@@ -100,6 +100,8 @@ final class SyncEngine {
         } catch APIError.offline {
             status.online = false
             SyncState.current(in: context).lastError = APIError.offline.localizedDescription
+        } catch is CancellationError {
+            // Stopped from outside: nothing to report.
         } catch {
             status.online = true
             SyncState.current(in: context).lastError = error.localizedDescription
@@ -156,6 +158,7 @@ final class SyncEngine {
             }
 
             var settled = Set<UUID>()
+            var refusedHere = false
             for r in response.results {
                 guard let opId = UUID(uuidString: r.opId), !settled.contains(opId),
                       let op = batch.first(where: { $0.opId == opId }) else { continue }
@@ -164,6 +167,7 @@ final class SyncEngine {
                     op.state = "error"
                     op.attempts += 1
                     op.errorText = (r.errors ?? []).joined(separator: ", ")
+                    refusedHere = true
                 case "applied", "partial", "conflict":
                     if let version = r.version {
                         let entityName = op.entityName
@@ -171,7 +175,7 @@ final class SyncEngine {
                         let base = op.baseVersion
                         if let entity = SyncEntity(rawValue: entityName),
                            let shadow = try self.shadow(SyncShadow.makeKey(entity, recordId)) {
-                            shadow.version = version
+                            shadow.version = max(shadow.version, version)
                         }
                         if r.status != "conflict" {
                             // Later changes of this record were made on top of this one.
@@ -192,6 +196,9 @@ final class SyncEngine {
                 op.state = "pending"
                 op.attempts += 1
             }
+            // A refused change may already show here (and in the shadow): the next pull starts over, so every record
+            // takes the server's version again. The refused op stays listed under «failed».
+            if refusedHere { SyncState.current(in: context).cursor = 0 }
             try context.syncedSave()
             if settled.count < batch.count { return }
         }
@@ -204,7 +211,8 @@ final class SyncEngine {
             let since = SyncState.current(in: context).cursor
             let page: PullPage = try await api.send("GET", "/sync/pull?since=\(since)", body: nil)
             try apply(page)
-            if !page.more { return }
+            // A page that does not move on would be asked for forever.
+            if !page.more || page.next <= since { return }
         }
     }
 
@@ -215,11 +223,15 @@ final class SyncEngine {
         SyncedSave.isApplyingRemote = true
         defer { SyncedSave.isApplyingRemote = false }
         do {
-            let queue = try context.fetch(FetchDescriptor<SyncOp>(sortBy: [SortDescriptor(\.seq)]))
+            // Only changes still on their way stay on top; a refused one never hides the server's data.
+            let refused = "error"
+            let queue = try context.fetch(FetchDescriptor<SyncOp>(predicate: #Predicate { $0.state != refused },
+                                                                   sortBy: [SortDescriptor(\.seq)]))
             // Employees first: an attendance record links to its employee when it is inserted.
             let changes = page.changes.filter { $0.entity == SyncEntity.employee.rawValue }
                 + page.changes.filter { $0.entity != SyncEntity.employee.rawValue }
             for change in changes { try apply(change, queue: queue) }
+            try linkAttendance()
             SyncState.current(in: context).cursor = page.next
             try context.save()
         } catch {
@@ -264,6 +276,18 @@ final class SyncEngine {
         try SyncCodec.insert(entity, id: id, fields: fields, into: context)
         if let model = try SyncCodec.find(entity, id: id, in: context) {
             shadow.fieldsJSON = SyncJSON.encode(model.syncFields())
+        }
+    }
+
+    /// Attendance records pulled before their employee (the employee changed later, so came on a later page)
+    /// are linked once the employee is here.
+    private func linkAttendance() throws {
+        let unlinked = try context.fetch(FetchDescriptor<AttendanceRecord>(predicate: #Predicate { $0.employee == nil }))
+        guard !unlinked.isEmpty else { return }
+        let employees = try context.fetch(FetchDescriptor<Employee>())
+        let byId = Dictionary(employees.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
+        for record in unlinked {
+            if let employee = byId[record.employeeId] { record.employee = employee }
         }
     }
 

@@ -4,7 +4,7 @@ import Foundation
 enum APIError: Error, LocalizedError, Equatable {
     /// 401: the device is not signed in or its access was revoked.
     case unauthorized
-    /// No answer: no network, no server, timeout (any `URLError`).
+    /// No answer: no network, no server, timeout (`APIClient.offlineCodes`).
     case offline
     /// Any other non-2xx answer; `message` is the server's `{error}` (server/src/app.ts `fail()`).
     case server(status: Int, message: String)
@@ -48,8 +48,11 @@ struct APIClient {
         let response: URLResponse
         do {
             (data, response) = try await session.data(for: request)
-        } catch is URLError {
-            throw APIError.offline
+        } catch let error as URLError {
+            if error.code == .cancelled { throw CancellationError() }
+            if Self.offlineCodes.contains(error.code) { throw APIError.offline }
+            // TLS, certificate, bad address…: the network is there, the connection is wrong.
+            throw APIError.server(status: 0, message: "Ошибка соединения с сервером")
         }
         let status = (response as? HTTPURLResponse)?.statusCode ?? 0
         if status == 401 { throw APIError.unauthorized }
@@ -63,6 +66,12 @@ struct APIClient {
             throw APIError.server(status: status, message: "Непонятный ответ сервера")
         }
     }
+
+    /// The `URLError`s that mean «no connection now»: the queue waits and goes later.
+    static let offlineCodes: Set<URLError.Code> = [
+        .notConnectedToInternet, .networkConnectionLost, .timedOut, .cannotFindHost, .cannotConnectToHost,
+        .dnsLookupFailed, .internationalRoamingOff, .dataNotAllowed,
+    ]
 
     private struct ServerError: Decodable { let error: String }
 }

@@ -451,4 +451,70 @@ final class SyncEngineTests: XCTestCase {
         XCTAssertEqual(op.fields, ["phone": .string("2")])
         XCTAssertEqual(op.baseVersion, 4)
     }
+
+    /// A refused change does not stay on the phone: the next pull starts over and brings the server's value back.
+    func testRejectedChangeShowsServerValueAgain() async throws {
+        let d = try await sentDriver()
+        let state = SyncState.current(in: context)
+        state.cursor = 5
+        try context.save()
+        var server = d.syncFields()
+        server["phone"] = .string("1")
+        d.phone = "refused"
+        try context.syncedSave()
+        serve(push: { ops in ops.map { ["opId": $0["opId"] ?? "", "status": "rejected", "errors": ["Нет прав"]] } },
+              pulls: [Fake.page([Fake.change(.driver, d.id, version: 1, server)], next: 6)])
+        await engine.syncNow()
+
+        XCTAssertEqual(StubURLProtocol.requests.filter { $0.path == "/sync/pull" }.first?.query, "since=0")
+        let driver = try XCTUnwrap(try drivers().first)
+        XCTAssertEqual(driver.phone, "1")
+        XCTAssertEqual(try shadow(.driver, d.id)?.fields, driver.syncFields())
+        let op = try XCTUnwrap(try ops().first)
+        XCTAssertEqual(op.state, "error")
+        XCTAssertEqual(engine.status.failed, 1)
+        XCTAssertEqual(SyncState.current(in: context).cursor, 6)
+    }
+
+    /// The server pages by change order: an employee edited after their records comes on a later page.
+    func testAttendancePulledBeforeEmployeeIsLinked() async throws {
+        let employeeId = UUID(), recordId = UUID()
+        let day = "2026-11-05T00:00:00.000Z"
+        serve(pulls: [
+            Fake.page([Fake.change(.attendanceRecord, recordId, version: 1,
+                                   ["employeeId": .string(employeeId.uuidString.lowercased()), "day": .string(day),
+                                    "status": .string("Я"), "createdAt": .string(day), "updatedAt": .string(day)])],
+                      next: 3, more: true),
+            Fake.page([Fake.change(.employee, employeeId, version: 2, ["lastName": .string("Зубахин"),
+                                                                       "firstName": .string("Иван"),
+                                                                       "hireDate": .string("2025-03-01T00:00:00.000Z")])],
+                      next: 5),
+        ])
+        await engine.syncNow()
+
+        let record = try XCTUnwrap(try context.fetch(FetchDescriptor<AttendanceRecord>()).first)
+        XCTAssertEqual(record.employee?.id, employeeId)
+        let employee = try XCTUnwrap(try context.fetch(FetchDescriptor<Employee>()).first)
+        XCTAssertEqual(employee.records.map { $0.id }, [recordId])
+        XCTAssertEqual(try ops().count, 0)
+    }
+
+    /// A broken connection (certificate, TLS) is not «offline»: it is shown as an error.
+    func testConnectionErrorIsNotOffline() async throws {
+        _ = try localDriver()
+        StubURLProtocol.handler = { _ in throw URLError(.serverCertificateUntrusted) }
+        await engine.syncNow()
+
+        XCTAssertTrue(engine.status.online)
+        XCTAssertEqual(engine.status.lastError, "Ошибка соединения с сервером")
+        XCTAssertEqual(try ops().count, 1)
+        XCTAssertEqual(try ops().first?.state, "pending")
+    }
+
+    func testPullStopsWhenPageDoesNotMoveOn() async throws {
+        serve(pulls: [Fake.page([], next: 0, more: true), Fake.page([], next: 0, more: true)])
+        await engine.syncNow()
+
+        XCTAssertEqual(StubURLProtocol.requests.filter { $0.path == "/sync/pull" }.count, 1)
+    }
 }
