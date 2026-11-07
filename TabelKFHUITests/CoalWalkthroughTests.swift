@@ -69,7 +69,10 @@ final class CoalWalkthroughTests: XCTestCase {
 
         backToMain()
         app.buttons["openSettings"].tap()
+        XCTAssertTrue(app.navigationBars["Настройки"].waitForExistence(timeout: 10))
+        // Below the farm and the sync sections.
         let prices = app.buttons["Цена угля и населённые пункты"].firstMatch
+        scroll(to: prices)
         XCTAssertTrue(prices.waitForExistence(timeout: 10))
         prices.tap()
         XCTAssertTrue(element(containing: "Приаргунск").waitForExistence(timeout: 10))
