@@ -14,12 +14,12 @@ export function SettingsPage() {
   const status = useStatus();
   const owner = session.role === 'owner';
   const [form, setForm] = useState(farm);
-  const [members, setMembers] = useState<{ id: string; email: string; name: string; role: string }[]>([]);
-  const [devices, setDevices] = useState<{ id: string; name: string; platform: string; email: string; lastSeenAt: string | null; revoked: boolean; current: boolean }[]>([]);
+  const [members, setMembers] = useState<{ id: string; login: string; email: string | null; name: string; role: string }[]>([]);
+  const [devices, setDevices] = useState<{ id: string; name: string; platform: string; login: string; email: string | null; lastSeenAt: string | null; revoked: boolean; current: boolean }[]>([]);
   const [conflicts, setConflicts] = useState<Awaited<ReturnType<typeof engine.conflicts>>>([]);
   const [failed, setFailed] = useState<QueuedOp[]>([]);
   const [backups, setBackups] = useState<{ id: string; records: number; created_at: string }[]>([]);
-  const [invite, setInvite] = useState('');
+  const [helper, setHelper] = useState({ login: '', password: '', role: 'timesheet' });
   const [note, setNote] = useState('');
 
   async function load() {
@@ -85,27 +85,45 @@ export function SettingsPage() {
         </section>
       )}
 
-      <section className="card">
-        <h3>Пользователи</h3>
-        {members.map((m) => <div key={m.id} className="line">{m.name || m.email} · {m.email} · {ROLES[m.role] ?? m.role}</div>)}
-        {owner && (
-          <div className="row">
-            <select id="invite-role" defaultValue="timesheet">{Object.entries(ROLES).filter(([k]) => k !== 'owner').map(([k, v]) => <option key={k} value={k}>{v}</option>)}</select>
-            <button onClick={() => act(async () => {
-              const role = (document.getElementById('invite-role') as HTMLSelectElement).value;
-              const r = await engine.call('/invites', { method: 'POST', body: JSON.stringify({ role }) });
-              setInvite(r.code);
-            })}>Пригласить помощника</button>
-            {invite && <strong>Код приглашения: {invite} (действует 7 дней)</strong>}
-          </div>
-        )}
-      </section>
+      {owner && (
+        <section className="card">
+          <h3>Помощники</h3>
+          {members.filter((m) => m.role !== 'owner').map((m) => (
+            <div key={m.id} className="row between line">
+              <span>{m.login || m.email}</span>
+              <select value={m.role} onChange={(e) => act(() => engine.call(`/members/${m.id}`, { method: 'PATCH', body: JSON.stringify({ role: e.target.value }) }), 'Роль изменена')}>
+                {Object.entries(ROLES).filter(([k]) => k !== 'owner').map(([k, v]) => <option key={k} value={k}>{v}</option>)}
+              </select>
+              <button onClick={() => {
+                const password = prompt(`Новый пароль для ${m.login || m.email} (не короче 8 символов)`);
+                if (password) act(() => engine.call(`/members/${m.id}/password`, { method: 'POST', body: JSON.stringify({ password }) }), 'Пароль изменён');
+              }}>Новый пароль</button>
+              <button className="danger" onClick={() => { if (confirm(`Отключить ${m.login || m.email}?`)) act(() => engine.call(`/members/${m.id}`, { method: 'DELETE' }), 'Помощник отключён'); }}>Отключить</button>
+            </div>
+          ))}
+          <form className="row" onSubmit={(e) => {
+            e.preventDefault();
+            act(async () => {
+              await engine.call('/members', { method: 'POST', body: JSON.stringify(helper) });
+              setHelper({ login: '', password: '', role: 'timesheet' });
+            }, 'Помощник добавлен');
+          }}>
+            <input placeholder="Логин" autoCapitalize="none" value={helper.login} onChange={(e) => setHelper({ ...helper, login: e.target.value })} required />
+            <input type="password" placeholder="Пароль" autoComplete="new-password" minLength={8} value={helper.password} onChange={(e) => setHelper({ ...helper, password: e.target.value })} required />
+            <select value={helper.role} onChange={(e) => setHelper({ ...helper, role: e.target.value })}>
+              {Object.entries(ROLES).filter(([k]) => k !== 'owner').map(([k, v]) => <option key={k} value={k}>{v}</option>)}
+            </select>
+            <button>Добавить помощника</button>
+          </form>
+          <p className="muted">Помощник войдёт на iPhone или здесь по логину и паролю. После смены роли или пароля ему нужно войти заново.</p>
+        </section>
+      )}
 
       <section className="card">
         <h3>Подключённые устройства</h3>
         {devices.map((d) => (
           <div key={d.id} className="row between line">
-            <span>{d.name || d.platform} · {d.email} {d.current ? '(это устройство)' : ''} {d.revoked ? '— отключено' : ''}</span>
+            <span>{d.name || d.platform} · {d.login || d.email} {d.current ? '(это устройство)' : ''} {d.revoked ? '— отключено' : ''}</span>
             <span className="muted">{d.lastSeenAt ? new Date(d.lastSeenAt).toLocaleString('ru-RU') : ''}</span>
             {!d.revoked && !d.current && <button className="danger" onClick={() => { if (confirm('Отозвать доступ этого устройства?')) act(() => engine.call(`/devices/${d.id}/revoke`, { method: 'POST' }), 'Доступ отозван'); }}>Отозвать доступ</button>}
           </div>
