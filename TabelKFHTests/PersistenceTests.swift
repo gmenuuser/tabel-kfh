@@ -191,6 +191,6 @@ final class PersistenceTests: XCTestCase {
         // The new tables work in the migrated store.
         d.phone = "456"
         try context.syncedSave()
-        XCTAssertEqual(try context.fetch(FetchDescriptor<SyncOp>()).map(\.entity), ["driver"])
+        XCTAssertEqual(try context.fetch(FetchDescriptor<SyncOp>()).map { $0.entityName }, ["driver"])
     }
 }

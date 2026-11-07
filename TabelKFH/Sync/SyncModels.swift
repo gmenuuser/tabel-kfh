@@ -8,7 +8,8 @@ import SwiftData
 @Model
 final class SyncOp {
     @Attribute(.unique) var opId: UUID
-    var entity: String
+    /// The `SyncEntity` raw value (`entity` and `deleted` are taken by Core Data's NSManagedObject).
+    var entityName: String
     var recordId: UUID
     var kind: String
     var baseVersion: Int
@@ -18,10 +19,10 @@ final class SyncOp {
     var attempts: Int
     var errorText: String
 
-    init(opId: UUID = UUID(), entity: String, recordId: UUID, kind: String, baseVersion: Int, fieldsJSON: Data,
+    init(opId: UUID = UUID(), entityName: String, recordId: UUID, kind: String, baseVersion: Int, fieldsJSON: Data,
          createdAt: Date, state: String = "pending", attempts: Int = 0, errorText: String = "") {
         self.opId = opId
-        self.entity = entity
+        self.entityName = entityName
         self.recordId = recordId
         self.kind = kind
         self.baseVersion = baseVersion
@@ -43,13 +44,14 @@ final class SyncShadow {
     @Attribute(.unique) var key: String
     var version: Int
     var fieldsJSON: Data
-    var deleted: Bool
+    /// The record is deleted (the server's `deleted`).
+    var wasDeleted: Bool
 
-    init(key: String, version: Int = 0, fieldsJSON: Data, deleted: Bool = false) {
+    init(key: String, version: Int = 0, fieldsJSON: Data, wasDeleted: Bool = false) {
         self.key = key
         self.version = version
         self.fieldsJSON = fieldsJSON
-        self.deleted = deleted
+        self.wasDeleted = wasDeleted
     }
 
     var fields: SyncFields { SyncJSON.decode(fieldsJSON) }

@@ -21,8 +21,8 @@ enum SyncedSave {
 extension ModelContext {
     /// `save()` that also queues every inserted, changed or deleted synced record, in the same save.
     /// Only fields that differ from the record's shadow go into the op; the record's last op, when it is an upsert
-    /// not yet sent, takes later changes instead of a new op. A deleted hours mark is sent as `hours: null` (the server keeps the record); any other deleted
-    /// record as `delete`.
+    /// not yet sent, takes later changes instead of a new op. A deleted hours mark is sent as `hours: null` (the
+    /// server keeps the record); any other deleted record as `delete`.
     func syncedSave() throws {
         if SyncedSave.isApplyingRemote {
             try save()
@@ -62,28 +62,28 @@ extension ModelContext {
             sd.fetchLimit = 1
             let shadow = try fetch(sd).first
             if c.delete {
-                insert(SyncOp(entity: c.entity.rawValue, recordId: c.id, kind: "delete",
+                insert(SyncOp(entityName: c.entity.rawValue, recordId: c.id, kind: "delete",
                               baseVersion: shadow?.version ?? 0, fieldsJSON: SyncJSON.encode([:]),
                               createdAt: SyncedSave.nextStamp()))
                 if let shadow {
-                    shadow.deleted = true
+                    shadow.wasDeleted = true
                 } else {
-                    insert(SyncShadow(key: key, fieldsJSON: SyncJSON.encode([:]), deleted: true))
+                    insert(SyncShadow(key: key, fieldsJSON: SyncJSON.encode([:]), wasDeleted: true))
                 }
                 queued = true
                 continue
             }
-            let known: SyncFields = shadow.map { $0.deleted ? [:] : $0.fields } ?? [:]
+            let known: SyncFields = shadow.map { $0.wasDeleted ? [:] : $0.fields } ?? [:]
             let changed = c.fields.filter { known[$0.key] != $0.value }
             guard !changed.isEmpty else { continue }
-            if try !mergeIntoUnsentOp(changed, entity: c.entity.rawValue, recordId: c.id) {
-                insert(SyncOp(entity: c.entity.rawValue, recordId: c.id, kind: "upsert",
+            if try !mergeIntoUnsentOp(changed, entityName: c.entity.rawValue, recordId: c.id) {
+                insert(SyncOp(entityName: c.entity.rawValue, recordId: c.id, kind: "upsert",
                               baseVersion: shadow?.version ?? 0, fieldsJSON: SyncJSON.encode(changed),
                               createdAt: SyncedSave.nextStamp()))
             }
             if let shadow {
                 shadow.fieldsJSON = SyncJSON.encode(c.fields)
-                shadow.deleted = false
+                shadow.wasDeleted = false
             } else {
                 insert(SyncShadow(key: key, fieldsJSON: SyncJSON.encode(c.fields)))
             }
@@ -94,8 +94,8 @@ extension ModelContext {
     }
 
     /// Adds the fields to the record's last op when that op is an upsert never sent; false otherwise.
-    private func mergeIntoUnsentOp(_ fields: SyncFields, entity: String, recordId: UUID) throws -> Bool {
-        var d = FetchDescriptor<SyncOp>(predicate: #Predicate { $0.entity == entity && $0.recordId == recordId },
+    private func mergeIntoUnsentOp(_ fields: SyncFields, entityName: String, recordId: UUID) throws -> Bool {
+        var d = FetchDescriptor<SyncOp>(predicate: #Predicate { $0.entityName == entityName && $0.recordId == recordId },
                                         sortBy: [SortDescriptor(\.createdAt, order: .reverse)])
         d.fetchLimit = 1
         guard let op = try fetch(d).first, op.state == "pending", op.attempts == 0, op.kind == "upsert" else {

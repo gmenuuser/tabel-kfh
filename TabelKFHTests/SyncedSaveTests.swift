@@ -55,7 +55,7 @@ final class SyncedSaveTests: XCTestCase {
         let all = try ops()
         XCTAssertEqual(all.count, 1)
         let op = try XCTUnwrap(all.first)
-        XCTAssertEqual(op.entity, "driver")
+        XCTAssertEqual(op.entityName, "driver")
         XCTAssertEqual(op.recordId, d.id)
         XCTAssertEqual(op.kind, "upsert")
         XCTAssertEqual(op.baseVersion, 0)
@@ -64,7 +64,7 @@ final class SyncedSaveTests: XCTestCase {
         XCTAssertEqual(try fields(op), d.syncFields())
         let s = try XCTUnwrap(try shadow(.driver, d.id))
         XCTAssertEqual(s.version, 0)
-        XCTAssertFalse(s.deleted)
+        XCTAssertFalse(s.wasDeleted)
         XCTAssertEqual(try JSONDecoder().decode(SyncFields.self, from: s.fieldsJSON), d.syncFields())
         XCTAssertEqual(queued, 1)
     }
@@ -112,11 +112,11 @@ final class SyncedSaveTests: XCTestCase {
         let op = try XCTUnwrap(try ops().last)
         XCTAssertEqual(try ops().count, 2)
         XCTAssertEqual(op.kind, "delete")
-        XCTAssertEqual(op.entity, "driver")
+        XCTAssertEqual(op.entityName, "driver")
         XCTAssertEqual(op.recordId, id)
         XCTAssertEqual(op.state, "pending")
         XCTAssertEqual(try context.fetchCount(FetchDescriptor<Driver>()), 0)
-        XCTAssertEqual(try shadow(.driver, id)?.deleted, true)
+        XCTAssertEqual(try shadow(.driver, id)?.wasDeleted, true)
     }
 
     func testRemovedHoursMarkQueuesNull() throws {
@@ -129,7 +129,7 @@ final class SyncedSaveTests: XCTestCase {
         try markSent()
         try hours.set(nil, for: e, on: day)
         let op = try XCTUnwrap(try ops().last)
-        XCTAssertEqual(op.entity, "hoursMark")
+        XCTAssertEqual(op.entityName, "hoursMark")
         XCTAssertEqual(op.recordId, StableId.hoursMark(employeeId: e.id, day: day, calendar: calendar))
         XCTAssertEqual(op.kind, "upsert")
         XCTAssertEqual(try fields(op), ["hours": .null])
@@ -157,7 +157,7 @@ final class SyncedSaveTests: XCTestCase {
         d.choose(place)
         d.vehicle = .own
         let sale = try sales.save(d)
-        let saleOps = try ops().filter { $0.entity == "coalSale" }
+        let saleOps = try ops().filter { $0.entityName == "coalSale" }
         XCTAssertEqual(saleOps.count, 1)
         XCTAssertEqual(saleOps.first?.recordId, sale.id)
         XCTAssertEqual(try fields(try XCTUnwrap(saleOps.first)), sale.syncFields())
