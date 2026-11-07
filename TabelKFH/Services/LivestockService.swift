@@ -147,8 +147,9 @@ final class LivestockService {
         if existing.contains(where: { $0.name.compare(trimmed, options: .caseInsensitive) == .orderedSame }) {
             throw LivestockError.duplicateCategory(trimmed)
         }
-        let c = LivestockCategory(id: StableId.livestockCategory(species: species.rawValue, name: trimmed),
-                                  species: species, name: trimmed, sortOrder: (existing.map(\.sortOrder).max() ?? 0) + 1,
+        // An own category gets a random id, as on the site: one deleted and added again with the same name is a new
+        // record, not the server's deleted one. Only the default categories have stable ids. Duplicates are found by name.
+        let c = LivestockCategory(id: UUID(), species: species, name: trimmed, sortOrder: (existing.map(\.sortOrder).max() ?? 0) + 1,
                                   createdAt: now())
         context.insert(c)
         try context.syncedSave()

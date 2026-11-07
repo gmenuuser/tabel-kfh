@@ -48,6 +48,20 @@ final class LivestockTests: XCTestCase {
         XCTAssertThrowsError(try service.deleteCategory(try category(.cattle, "Коровы")), "default categories stay")
     }
 
+    /// Own categories get random ids (as the site), so deleting one and adding it again makes a new record instead
+    /// of reviving the server's deleted one; default categories keep their stable ids.
+    func testOwnCategoryGetsANewIdWhenAddedAgain() throws {
+        let first = try service.addCategory("Нетели", species: .cattle)
+        let firstId = first.id
+        XCTAssertNotEqual(firstId, StableId.livestockCategory(species: "cattle", name: "Нетели"))
+        try service.deleteCategory(first)
+        let again = try service.addCategory("Нетели", species: .cattle)
+        XCTAssertNotEqual(again.id, firstId)
+        XCTAssertEqual(try service.categories(.cattle).filter { $0.name == "Нетели" }.count, 1)
+        XCTAssertThrowsError(try service.addCategory(" нетели", species: .cattle), "the name still finds the duplicate")
+        XCTAssertEqual(try category(.cattle, "Коровы").id, StableId.livestockCategory(species: "cattle", name: "Коровы"))
+    }
+
     // Сценарий 1.
     func testScenario1() throws {
         let cows = try category(.cattle, "Коровы")
