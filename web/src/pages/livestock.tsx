@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useApp, useRecords, useStatus } from '../app.tsx';
 import type { LocalRecord } from '../lib/db.ts';
+import { canWrite } from '../lib/roles.ts';
 import { ADDITIONS, DECREASES, OPERATION_KINDS, SPECIES, herdBalances, herdShortage, heads, parseTons, tons } from '../lib/domain.ts';
 import { stableId } from '../lib/ids.ts';
 import { dayKey, shortDate, todayKey, dayStartISO } from '../lib/time.ts';
@@ -9,14 +10,15 @@ const REASONS: [string, string][] = [['meat', 'На мясо'], ['forced', 'Вы
 
 /** The default categories, made once with stable ids (the same rows on every device). */
 function useCategories() {
-  const { engine } = useApp();
+  const { engine, session } = useApp();
   const status = useStatus();
   const categories = useRecords('livestockCategory');
   useEffect(() => {
     if (categories.length || (!status.lastSyncAt && status.online)) return;
+    if (!canWrite(session.role, 'livestockCategory')) return; // a viewer's would be refused by the server
     for (const s of SPECIES) s.categories.forEach((name, i) => engine.save('livestockCategory', stableId(`livestockCategory:${s.id}:${name}`),
       { species: s.id, name, sortOrder: i, isBuiltIn: true, createdAt: new Date().toISOString() }));
-  }, [categories.length, status.lastSyncAt, status.online, engine]);
+  }, [categories.length, status.lastSyncAt, status.online, engine, session.role]);
   return [...categories].sort((a, b) => Number(a.data.sortOrder) - Number(b.data.sortOrder));
 }
 
