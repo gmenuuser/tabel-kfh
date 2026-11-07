@@ -21,21 +21,32 @@ for a in "$@"; do
     *) HOST="$a" ;;
   esac
 done
+HERE="$(cd "$(dirname "$0")" && pwd)"
 WIN_SSH="/c/Windows/System32/OpenSSH/ssh.exe"
 if [ -x "$WIN_SSH" ]; then ssh() { "$WIN_SSH" "$@"; }; fi
 
 if [ "$PRE" = 1 ]; then
   echo "==> Preflight on $HOST (read-only)"
-  ssh -o BatchMode=yes "$HOST" bash -s <<'REMOTE'
+  # the read-only helpers first, then the look itself
+  { cat "$HERE/restic-repo.sh"; cat <<'REMOTE'
+echo "--- restic"
+restic version || echo "restic NOT installed"
 echo "--- Cubely backup: forget / group-by / prune / retry-lock lines"
 grep -nE 'forget|group-by|prune|retry-lock|RESTIC_REPOSITORY|(^|[[:space:]])(-r|--repo)[ =]' /usr/local/sbin/cubely-system-backup
+echo "--- restic repository found (in /root/.cubely-restic.env, then in Cubely's script)"
+REPO="$(kfh_find_restic_repo)"
+if [ -n "$REPO" ]; then echo "$REPO" | kfh_mask_repo; else echo "NOT FOUND - --first-time will stop"; fi
+echo "--- secret files the KFH backup relies on (existence only)"
+for s in /root/.cubely-restic.env /root/.cubely-restic-pass /root/.cubely-s3.env; do
+  if [ -r "$s" ]; then echo "present: $s"; else echo "MISSING: $s"; fi
+done
 echo "--- Cubely monitor: unit and restic lines"
 systemctl cat cubely-monitor.service --no-pager
 for s in $(systemctl cat cubely-monitor.service --no-pager | sed -nE 's/^ExecStart=(-|@|\+)?([^ ]+).*/\2/p'); do
   echo "--- restic lines in $s"; grep -n restic "$s" || echo "(none)"
 done
 echo "--- nginx listen lines"
-grep -rn listen /etc/nginx/sites-enabled
+grep -Rn listen /etc/nginx/sites-enabled   # -R: the entries there are symlinks
 echo "--- docker compose projects"
 docker compose ls
 echo "--- memory"
@@ -43,6 +54,7 @@ free -m
 echo "--- port 8090 in use?"
 (ss -ltn | grep -E ':8090\b') || echo "free"
 REMOTE
+  } | ssh -o BatchMode=yes "$HOST" bash -s
   exit 0
 fi
 
@@ -96,14 +108,11 @@ nginx_reload_or_rollback() {
 if [ "$FIRST" = 1 ]; then
   echo "==> restic environment /etc/kfh/restic.env"
   mkdir -p /etc/kfh /var/backups/kfh
+  # shellcheck disable=SC1091
+  . deploy/restic-repo.sh
   if [ ! -e /etc/kfh/restic.env ]; then
-    # Cubely's script is only READ, to learn the repository address.
-    CS=/usr/local/sbin/cubely-system-backup
-    REPO="$(grep -m1 -E 'RESTIC_REPOSITORY=' "$CS" | sed -E 's/^.*RESTIC_REPOSITORY=//; s/^["'"'"']//; s/["'"'"'; ].*$//' || true)"
-    if [ -z "$REPO" ]; then
-      REPO="$(grep -m1 -E '(^|[[:space:]])(-r|--repo)[ =]' "$CS" | sed -E 's/^.*(-r|--repo)[ =]+//; s/^["'"'"']//; s/["'"'"' ;].*$//' || true)"
-    fi
-    case "$REPO" in *'$'*) REPO="" ;; esac     # a variable reference is not an address
+    # Cubely's files are only READ, to learn the repository address: /root/.cubely-restic.env, then its script.
+    REPO="$(kfh_find_restic_repo)"
     (umask 077
      {
        [ -n "$REPO" ] && echo "RESTIC_REPOSITORY=$REPO"
@@ -113,12 +122,18 @@ if [ "$FIRST" = 1 ]; then
   fi
   chmod 600 /etc/kfh/restic.env
   if ! grep -q '^RESTIC_REPOSITORY=' /etc/kfh/restic.env; then
-    echo "Could not find the restic repository in Cubely's script. Put the line" >&2
+    echo "Could not find the restic repository in /root/.cubely-restic.env or Cubely's script. Put the line" >&2
     echo "  RESTIC_REPOSITORY=<address>" >&2
     echo "into /etc/kfh/restic.env (top of the file) and run --first-time again." >&2
     exit 1
   fi
-  echo "repository: $(grep '^RESTIC_REPOSITORY=' /etc/kfh/restic.env | sed -E 's#(s3:https?://[^/]+/[^/]+).*#\1/...#')"
+  MISSING="$(kfh_restic_env_missing_files /etc/kfh/restic.env)"
+  if [ -n "$MISSING" ]; then
+    echo "/etc/kfh/restic.env relies on files that are not there:" >&2
+    echo "$MISSING" | sed 's/^/  /' >&2
+    exit 1
+  fi
+  echo "repository: $(grep '^RESTIC_REPOSITORY=' /etc/kfh/restic.env | kfh_mask_repo)"
 
   echo "==> nginx site"
   # certbot edits this file later; do not overwrite it if it is already there
