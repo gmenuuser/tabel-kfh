@@ -103,6 +103,63 @@ final class SyncedSaveTests: XCTestCase {
                                                                                       "comment": .string("")]) { $1 })
     }
 
+    func testEditMergesIntoUnsentInsert() throws {
+        let d = try driver()
+        d.phone = "123"
+        try context.syncedSave()
+        let all = try ops()
+        XCTAssertEqual(all.count, 1, "the insert not sent yet takes the edit")
+        XCTAssertEqual(try fields(try XCTUnwrap(all.first)), d.syncFields())
+        XCTAssertEqual(try fields(try XCTUnwrap(all.first))["phone"], .string("123"))
+    }
+
+    func testNoMergeIntoAnOpSentBefore() throws {
+        let d = try driver()
+        // A push that failed: the op is waiting again, but the server may have it under its opId.
+        let first = try XCTUnwrap(try ops().first)
+        first.attempts = 1
+        try context.save()
+        d.phone = "123"
+        try context.syncedSave()
+        let all = try ops()
+        XCTAssertEqual(all.count, 2)
+        XCTAssertEqual(try fields(try XCTUnwrap(all.last)), ["phone": .string("123")])
+        XCTAssertEqual(try fields(first)["phone"], .string(""), "the op sent before is unchanged")
+    }
+
+    func testDeleteAfterUnsentInsertQueuesDeleteAfterIt() throws {
+        let d = try driver()
+        let id = d.id
+        context.delete(d)
+        try context.syncedSave()
+        let all = try context.fetch(FetchDescriptor<SyncOp>(sortBy: [SortDescriptor(\.seq)]))
+        // The rule: a delete is never merged; the server gets the insert, then the delete (a tombstone).
+        XCTAssertEqual(all.map(\.kind), ["upsert", "delete"])
+        XCTAssertEqual(all.map(\.recordId), [id, id])
+        XCTAssertEqual(all.last?.baseVersion, 0)
+        XCTAssertLessThan(all[0].seq, all[1].seq)
+        XCTAssertEqual(try shadow(.driver, id)?.wasDeleted, true)
+    }
+
+    func testRemarkAfterRemovalSendsTheNewHours() throws {
+        let e = Employee(lastName: "Зубахин", firstName: "Иван", hireDate: calendar.date(day: 1, month: 1, year: 2026))
+        context.insert(e)
+        try context.syncedSave()
+        let day = calendar.date(day: 5, month: 11, year: 2026)
+        let hours = HoursService(context: context, calendar: calendar, now: { day.addingTimeInterval(3600) })
+        try hours.set(8, for: e, on: day)
+        try markSent()
+        try hours.set(nil, for: e, on: day)
+        try hours.set(6, for: e, on: day)
+        let markId = StableId.hoursMark(employeeId: e.id, day: day, calendar: calendar)
+        let markOps = try ops().filter { $0.recordId == markId }
+        XCTAssertEqual(markOps.count, 2, "the removal not sent yet takes the new mark")
+        XCTAssertEqual(try fields(try XCTUnwrap(markOps.last))["hours"], .int(6))
+        XCTAssertEqual(markOps.last?.kind, "upsert")
+        XCTAssertEqual(try context.fetch(FetchDescriptor<WorkHoursMark>()).map(\.hours), [6])
+        XCTAssertEqual(try shadow(.hoursMark, markId)?.wasDeleted, false)
+    }
+
     func testDeleteQueuesDelete() throws {
         let d = try driver()
         let id = d.id
