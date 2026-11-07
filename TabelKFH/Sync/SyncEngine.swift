@@ -154,7 +154,8 @@ final class SyncEngine {
     // MARK: Push
 
     /// Sends the queue in order, at most one op per record in a push: a later op of a record goes after the answer
-    /// to the earlier one, with the version that answer gave.
+    /// to the earlier one, with the version that answer gave. A push ends before the first op of a record already in
+    /// it, so no op of another record overtakes it (the server checks the herd against the operations it has).
     private func pushAll() async throws {
         while true {
             try checkStopped()
@@ -164,7 +165,8 @@ final class SyncEngine {
             var records = Set<String>()
             var batch: [SyncOp] = []
             for op in queue where batch.count < Self.batchSize {
-                if records.insert("\(op.entityName):\(op.recordId)").inserted { batch.append(op) }
+                guard records.insert("\(op.entityName):\(op.recordId)").inserted else { break }
+                batch.append(op)
             }
             if batch.isEmpty { return }
             // Saved as «sending» before the request: a change made meanwhile is never merged into these.
@@ -201,17 +203,19 @@ final class SyncEngine {
                     if let version = r.version {
                         let entityName = op.entityName
                         let recordId = op.recordId
-                        let base = op.baseVersion
+                        let seq = op.seq
                         if let entity = SyncEntity(rawValue: entityName),
                            let shadow = try self.shadow(SyncShadow.makeKey(entity, recordId)) {
                             shadow.version = max(shadow.version, version)
                         }
                         if r.status != "conflict" {
-                            // Later changes of this record were made on top of this one.
+                            // Later changes of this record were made on top of this one, whatever base they got.
+                            let pending = "pending"
                             let later = try context.fetch(FetchDescriptor<SyncOp>(predicate: #Predicate {
-                                $0.entityName == entityName && $0.recordId == recordId && $0.opId != opId
+                                $0.entityName == entityName && $0.recordId == recordId && $0.seq > seq
+                                    && $0.state == pending
                             }))
-                            for o in later where o.baseVersion == base { o.baseVersion = version }
+                            for o in later { o.baseVersion = version }
                         }
                     }
                     context.delete(op)

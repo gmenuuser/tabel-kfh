@@ -344,6 +344,34 @@ final class SyncEngineTests: XCTestCase {
         XCTAssertEqual(try shadow(.driver, d.id)?.version, 2)
     }
 
+    /// A1 sent once without an answer, A2 its later edit, B1 another record: the first push is [A1] alone, so B1
+    /// never reaches the server before A2 (the herd: purchase 10 → 20, then a sale of 15).
+    func testPushStopsAtTheSecondOpOfARecord() async throws {
+        let a = try localDriver("Алексеев")
+        StubURLProtocol.handler = { _ in throw URLError(.timedOut) }
+        await engine.syncNow()
+        a.phone = "20"
+        try context.syncedSave()
+        let b = try localDriver("Борисов")
+        XCTAssertEqual(try ops().map(\.recordId), [a.id, a.id, b.id])
+
+        StubURLProtocol.reset()
+        var version = 0
+        serve(push: { ops in
+            ops.map { op in
+                version += 1
+                return ["opId": op["opId"] ?? "", "status": "applied", "version": version]
+            }
+        })
+        await engine.syncNow()
+
+        let p = pushes()
+        let ids = p.map { $0.ops.map { $0["recordId"] as? String ?? "" } }
+        XCTAssertEqual(ids, [[a.id.uuidString.lowercased()], [a.id.uuidString.lowercased(), b.id.uuidString.lowercased()]])
+        XCTAssertEqual(p[1].ops.first?["baseVersion"] as? Int, 1, "A2 goes on top of A1's version")
+        XCTAssertEqual(try ops().count, 0)
+    }
+
     func testPullMoreLoops() async throws {
         let a = UUID(), b = UUID()
         serve(pulls: [
