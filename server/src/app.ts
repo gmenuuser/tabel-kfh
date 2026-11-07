@@ -49,7 +49,9 @@ function limiter(perMinute: number) {
 export function buildApp(o: AppOptions): FastifyInstance {
   const { db } = o;
   const log = o.log ?? ((l: string) => console.log(l));
-  const app = Fastify({ logger: false, bodyLimit: 20 * 1024 * 1024 });
+  // Behind the host nginx the peer is loopback or the docker bridge gateway (172.16/12); only they may set X-Forwarded-For,
+  // so the per-IP attempt limit sees the real client and cannot be dodged by a forged header.
+  const app = Fastify({ logger: false, bodyLimit: 20 * 1024 * 1024, trustProxy: ['127.0.0.1', '::1', '172.16.0.0/12'] });
   const allow = limiter(o.authAttemptsPerMinute ?? 20);
   mkdirSync(join(o.dataDir, 'files'), { recursive: true });
   mkdirSync(join(o.dataDir, 'backups'), { recursive: true });

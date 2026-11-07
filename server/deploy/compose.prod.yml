@@ -1,0 +1,12 @@
+# Production override for the Cubely VDS: docker compose -f docker-compose.yml -f deploy/compose.prod.yml ...
+# Docker-published ports bypass UFW, so only 127.0.0.1 is used; nginx on the host proxies to :8090.
+services:
+  db:
+    restart: unless-stopped
+    mem_limit: 512m
+    ports: !reset []        # the database is not published at all (5432 on the host belongs to another project)
+  api:
+    restart: unless-stopped
+    mem_limit: 384m
+    ports: !override
+      - "127.0.0.1:8090:8080"
