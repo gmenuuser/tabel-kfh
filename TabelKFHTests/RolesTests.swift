@@ -146,6 +146,90 @@ final class RolesTests: XCTestCase {
         XCTAssertFalse(context.hasChanges)
     }
 
+    /// A refused new employee goes with its hours marks (also one removed before it was sent, known only by its op)
+    /// and attendance, their ops and shadows; another employee's mark stays.
+    func testDeleteRefusedNewEmployeeRemovesItsMarks() throws {
+        let calendar = Calendar.farm
+        let day = calendar.date(day: 5, month: 11, year: 2026)
+        let (e, op) = try refusedEmployee(version: nil)
+        let other = Employee(lastName: "Старый", firstName: "Пётр", hireDate: Date(timeIntervalSince1970: 1_700_000_000))
+        context.insert(other)
+        try context.syncedSave()
+        let hours = HoursService(context: context, calendar: calendar, now: { day.addingTimeInterval(3600) })
+        try hours.set(8, for: e, on: day)
+        try hours.set(6, for: e, on: day.addingTimeInterval(86_400))
+        try hours.set(nil, for: e, on: day.addingTimeInterval(86_400))
+        try hours.set(7, for: other, on: day)
+        let attendance = AttendanceService(context: context, now: { day.addingTimeInterval(3600) }, calendar: calendar)
+        _ = try attendance.setStatus(.sick, for: e, on: day)
+        XCTAssertEqual(try count(AttendanceRecord.self), 1)
+        XCTAssertEqual(try context.fetch(FetchDescriptor<SyncOp>()).filter { $0.entityName == "hoursMark" }.count, 3)
+
+        try RefusedChanges.discard(op, in: context)
+
+        let ops = try context.fetch(FetchDescriptor<SyncOp>())
+        XCTAssertEqual(Set(ops.map(\.entityName)), ["employee", "hoursMark"], "only the other employee's records")
+        XCTAssertTrue(ops.allSatisfy { $0.recordId == other.id || $0.fields["employeeId"] == .string(other.id.uuidString.lowercased()) })
+        XCTAssertEqual(try context.fetch(FetchDescriptor<WorkHoursMark>()).map(\.employeeId), [other.id])
+        XCTAssertEqual(try count(AttendanceRecord.self), 0)
+        XCTAssertEqual(try count(SyncShadow.self), 2, "the other employee and its mark")
+        XCTAssertEqual(try context.fetch(FetchDescriptor<Employee>()).map(\.id), [other.id])
+        XCTAssertFalse(context.hasChanges)
+    }
+
+    /// A refused new driver goes with his payments; his sale stays, unlinked, and the unlinking is sent.
+    func testDeleteRefusedNewDriverRemovesPaymentsAndUnlinksSales() throws {
+        let moment = Date(timeIntervalSince1970: 1_800_000_000)
+        let driver = Driver(lastName: "Мунгалов", createdAt: moment)
+        context.insert(driver)
+        try context.syncedSave()
+        let op = try XCTUnwrap(context.fetch(FetchDescriptor<SyncOp>()).first)
+        op.state = "error"
+        let sale = CoalSale(saleDate: moment, kilograms: 2000, locationNameSnapshot: "Луговое", coalPricePerTonSnapshot: 3000,
+                            deliveryPriceSnapshot: 500, coalAmount: 6000, deliveryPrice: 500, vehicleType: .hired,
+                            driverId: driver.id, driverNameSnapshot: "Мунгалов", driverPaymentAmount: 500,
+                            createdAt: moment, updatedAt: moment)
+        context.insert(sale)
+        context.insert(DriverPayment(driverId: driver.id, driverNameSnapshot: "Мунгалов", paymentDate: moment, amount: 500,
+                                     createdAt: moment))
+        try context.syncedSave()
+
+        try RefusedChanges.discard(op, in: context)
+
+        XCTAssertEqual(try count(Driver.self), 0)
+        XCTAssertEqual(try count(DriverPayment.self), 0)
+        let kept = try XCTUnwrap(context.fetch(FetchDescriptor<CoalSale>()).first)
+        XCTAssertNil(kept.driverId)
+        XCTAssertEqual(kept.driverNameSnapshot, "Мунгалов")
+        let ops = try context.fetch(FetchDescriptor<SyncOp>())
+        XCTAssertEqual(ops.map(\.entityName), ["coalSale"])
+        XCTAssertEqual(ops.first?.fields["driverId"], .null, "the unsent sale goes without the link")
+        XCTAssertFalse(context.hasChanges)
+    }
+
+    /// A refused new own category goes with its operations and their slaughter records.
+    func testDeleteRefusedNewCategoryRemovesItsOperations() throws {
+        let moment = Date(timeIntervalSince1970: 1_800_000_000)
+        let category = LivestockCategory(species: .cattle, name: "Нетели", sortOrder: 9, createdAt: moment)
+        context.insert(category)
+        try context.syncedSave()
+        let op = try XCTUnwrap(context.fetch(FetchDescriptor<SyncOp>()).first)
+        op.state = "error"
+        let operation = LivestockOperation(kind: .slaughter, date: moment, categoryId: category.id, heads: 1,
+                                           createdAt: moment, updatedAt: moment)
+        context.insert(operation)
+        context.insert(SlaughterRecord(operationId: operation.id, reason: .meat, createdAt: moment))
+        try context.syncedSave()
+
+        try RefusedChanges.discard(op, in: context)
+
+        XCTAssertEqual(try count(LivestockCategory.self), 0)
+        XCTAssertEqual(try count(LivestockOperation.self), 0)
+        XCTAssertEqual(try count(SlaughterRecord.self), 0)
+        XCTAssertEqual(try count(SyncOp.self), 0)
+        XCTAssertEqual(try count(SyncShadow.self), 0)
+    }
+
     func testDeleteRefusedChangeOfServerRecordKeepsIt() throws {
         let (e, op) = try refusedEmployee(version: 4)
 

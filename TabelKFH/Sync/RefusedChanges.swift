@@ -40,31 +40,45 @@ enum RefusedChanges {
     }
 
     /// «Удалить»: the refused change goes. A record the server never had (no shadow, or version 0) goes from the
-    /// phone with all its changes; for a record the server has, the next pull starts over (cursor 0), so the server's
-    /// values come back. Queues nothing.
+    /// phone with all its changes, and so do the records that cannot be without it (`dependents`: an employee's
+    /// hours marks, attendance and timesheet versions, a driver's payments, a category's operations, an operation's
+    /// slaughter record), which would otherwise reach the server pointing at nothing; a sale keeps its driver's name
+    /// but loses the link (queued as an ordinary change). For a record the server has, the next pull starts over
+    /// (cursor 0), so the server's values come back — also for any removed dependent the server has.
     static func discard(_ op: SyncOp, in context: ModelContext) throws {
         if context.hasChanges { try context.syncedSave() }
+        let entityName = op.entityName
+        let recordId = op.recordId
+        let entity = SyncEntity(rawValue: entityName)
+        var neverOnServer = false
+        if let entity {
+            let key = SyncShadow.makeKey(entity, recordId)
+            var d = FetchDescriptor<SyncShadow>(predicate: #Predicate { $0.key == key })
+            d.fetchLimit = 1
+            let shadow = try context.fetch(d).first
+            neverOnServer = shadow == nil || shadow?.version == 0
+        }
+        if neverOnServer, entity == .driver {
+            // The sales stay (they are the farm's money); their link to the driver goes, as a change to send.
+            let driverId: UUID? = recordId
+            let sales = try context.fetch(FetchDescriptor<CoalSale>(predicate: #Predicate { $0.driverId == driverId }))
+            for sale in sales { sale.driverId = nil }
+            if !sales.isEmpty { try context.syncedSave() }
+        }
         SyncedSave.isApplyingRemote = true
         defer { SyncedSave.isApplyingRemote = false }
         do {
-            let entityName = op.entityName
-            let recordId = op.recordId
-            if let entity = SyncEntity(rawValue: entityName) {
-                let key = SyncShadow.makeKey(entity, recordId)
-                var d = FetchDescriptor<SyncShadow>(predicate: #Predicate { $0.key == key })
-                d.fetchLimit = 1
-                let shadow = try context.fetch(d).first
-                if shadow == nil || shadow?.version == 0 {
-                    // Singletons are never deleted (as in SyncEngine.apply): the screens would recreate and re-queue them.
-                    if !entity.isSingleton, let model = try SyncCodec.find(entity, id: recordId, in: context) {
-                        context.delete(model)
+            if neverOnServer, let entity {
+                for link in dependents[entity] ?? [] {
+                    for childId in try linkedIds(link.entity, field: link.field, to: recordId, in: context) {
+                        try purge(link.entity, id: childId, in: context)
                     }
-                    if let shadow { context.delete(shadow) }
-                    let all = try context.fetch(FetchDescriptor<SyncOp>(predicate: #Predicate {
-                        $0.entityName == entityName && $0.recordId == recordId
-                    }))
-                    for other in all where other.opId != op.opId { context.delete(other) }
                 }
+                // Singletons are never deleted (as in SyncEngine.apply): the screens would recreate and re-queue them.
+                if !entity.isSingleton, let model = try SyncCodec.find(entity, id: recordId, in: context) {
+                    context.delete(model)
+                }
+                try dropQueue(entity, id: recordId, except: op.opId, in: context)
             }
             context.delete(op)
             SyncState.current(in: context).cursor = 0
@@ -73,5 +87,73 @@ enum RefusedChanges {
             context.rollback()
             throw error
         }
+    }
+
+    /// The records that cannot be without a record of the entity: the child entity and its link field.
+    static let dependents: [SyncEntity: [(entity: SyncEntity, field: String)]] = [
+        .employee: [(.hoursMark, "employeeId"), (.attendanceRecord, "employeeId"), (.timesheetSnapshot, "employeeId")],
+        .driver: [(.driverPayment, "driverId")],
+        .livestockCategory: [(.livestockOperation, "categoryId"), (.livestockOperation, "targetCategoryId")],
+        .livestockOperation: [(.slaughterRecord, "operationId")],
+    ]
+
+    /// The record, its dependents, all their queued changes and shadows go (the caller has set isApplyingRemote).
+    private static func purge(_ entity: SyncEntity, id: UUID, in context: ModelContext) throws {
+        for link in dependents[entity] ?? [] {
+            for childId in try linkedIds(link.entity, field: link.field, to: id, in: context) {
+                try purge(link.entity, id: childId, in: context)
+            }
+        }
+        if let model = try SyncCodec.find(entity, id: id, in: context) { context.delete(model) }
+        try dropQueue(entity, id: id, except: nil, in: context)
+    }
+
+    private static func dropQueue(_ entity: SyncEntity, id: UUID, except kept: UUID?, in context: ModelContext) throws {
+        let key = SyncShadow.makeKey(entity, id)
+        for shadow in try context.fetch(FetchDescriptor<SyncShadow>(predicate: #Predicate { $0.key == key })) {
+            context.delete(shadow)
+        }
+        let name = entity.rawValue
+        let ops = try context.fetch(FetchDescriptor<SyncOp>(predicate: #Predicate { $0.entityName == name && $0.recordId == id }))
+        for op in ops where op.opId != kept { context.delete(op) }
+    }
+
+    /// The ids of the records of `entity` whose `field` is `parent`: the rows on the phone, and the records known
+    /// only by their shadow or queued change (an hours mark removed before it was sent has no row).
+    static func linkedIds(_ entity: SyncEntity, field: String, to parent: UUID, in context: ModelContext) throws -> Set<UUID> {
+        let link = SyncValue.string(parent.uuidString.lowercased())
+        var ids = Set<UUID>()
+        let prefix = entity.rawValue + ":"
+        for shadow in try context.fetch(FetchDescriptor<SyncShadow>()) where shadow.key.hasPrefix(prefix) {
+            if shadow.fields[field] == link, let id = UUID(uuidString: String(shadow.key.dropFirst(prefix.count))) {
+                ids.insert(id)
+            }
+        }
+        let name = entity.rawValue
+        for op in try context.fetch(FetchDescriptor<SyncOp>(predicate: #Predicate { $0.entityName == name }))
+        where op.fields[field] == link {
+            ids.insert(op.recordId)
+        }
+        let id = parent
+        let some: UUID? = parent
+        switch (entity, field) {
+        case (.hoursMark, "employeeId"):
+            ids.formUnion(try context.fetch(FetchDescriptor<WorkHoursMark>(predicate: #Predicate { $0.employeeId == id })).map(\.id))
+        case (.attendanceRecord, "employeeId"):
+            ids.formUnion(try context.fetch(FetchDescriptor<AttendanceRecord>(predicate: #Predicate { $0.employeeId == id })).map(\.id))
+        case (.timesheetSnapshot, "employeeId"):
+            ids.formUnion(try context.fetch(FetchDescriptor<TimesheetSnapshot>(predicate: #Predicate { $0.employeeId == some })).map(\.id))
+        case (.driverPayment, "driverId"):
+            ids.formUnion(try context.fetch(FetchDescriptor<DriverPayment>(predicate: #Predicate { $0.driverId == id })).map(\.id))
+        case (.livestockOperation, "categoryId"):
+            ids.formUnion(try context.fetch(FetchDescriptor<LivestockOperation>(predicate: #Predicate { $0.categoryId == id })).map(\.id))
+        case (.livestockOperation, "targetCategoryId"):
+            ids.formUnion(try context.fetch(FetchDescriptor<LivestockOperation>(predicate: #Predicate { $0.targetCategoryId == some })).map(\.id))
+        case (.slaughterRecord, "operationId"):
+            ids.formUnion(try context.fetch(FetchDescriptor<SlaughterRecord>(predicate: #Predicate { $0.operationId == id })).map(\.id))
+        default:
+            break
+        }
+        return ids
     }
 }
