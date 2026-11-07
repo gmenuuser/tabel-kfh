@@ -177,6 +177,11 @@ if [ "$FIRST" = 1 ]; then
   set -a; . /etc/kfh/restic.env; set +a
   restic snapshots --retry-lock 30m --tag kfh
 fi
+if [ -e /etc/systemd/system/kfh-backup.timer ]; then
+  # every update brings the current backup script (the timer and service files stay as installed)
+  install -m 755 deploy/kfh-backup.sh /usr/local/sbin/kfh-backup
+  echo "==> backup script refreshed"
+fi
 # only images of this compose project
 docker image prune -f --filter "label=com.docker.compose.project=kfh" >/dev/null
 echo "==> done"
