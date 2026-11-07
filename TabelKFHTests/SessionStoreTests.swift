@@ -416,12 +416,12 @@ final class SessionStoreTests: XCTestCase {
         let session = makeSession(FakeServer())
         XCTAssertEqual(session.state, .signedIn(role: "viewer"))
 
-        withExtendedLifetime(session) {
-            context.insert(Employee(lastName: "Петров", firstName: "Пётр", hireDate: Date(timeIntervalSince1970: 1_700_000_000)))
-            XCTAssertThrowsError(try context.syncedSave())
-            XCTAssertEqual(try? context.fetchCount(FetchDescriptor<SyncOp>()), 0)
-            XCTAssertEqual(try? employees().count, 0)
-        }
+        context.insert(Employee(lastName: "Петров", firstName: "Пётр", hireDate: Date(timeIntervalSince1970: 1_700_000_000)))
+        XCTAssertThrowsError(try context.syncedSave())
+        XCTAssertEqual(try context.fetchCount(FetchDescriptor<SyncOp>()), 0)
+        XCTAssertEqual(try employees().count, 0)
+        // The session (and its write rule) lives to here.
+        withExtendedLifetime(session) {}
     }
 
     func testDeleteRefusedChangePullsFromStart() async throws {
