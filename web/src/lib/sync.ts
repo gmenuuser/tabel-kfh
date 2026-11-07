@@ -183,9 +183,19 @@ export class SyncEngine {
     }
   }
 
+  /** Sends the queue in order, at most one op per record in a push: a later op of a record goes after the answer
+   *  to the earlier one, with the version that answer gave (sent together, it would conflict with its own earlier op). */
   private async pushAll() {
     for (;;) {
-      const batch = (await this.db.queue()).filter((o) => o.state !== 'error').slice(0, 200);
+      const seen = new Set<string>();
+      const batch: QueuedOp[] = [];
+      for (const o of await this.db.queue()) {
+        if (o.state === 'error' || batch.length >= 200) continue;
+        const key = `${o.entity}:${o.recordId}`;
+        if (seen.has(key)) continue;
+        seen.add(key);
+        batch.push(o);
+      }
       if (!batch.length) return;
       await this.db.putOps(batch.map((o) => ({ ...o, state: 'sending' as const })));
       let results: OpResult[];

@@ -185,3 +185,44 @@ test('an edit after a send whose answer was lost is not merged into the already 
   assert.equal(rec.data.lastName, 'Мунгалов');
   assert.equal(rec.data.phone, '+7 914', 'новое поле не потеряно');
 });
+
+test('two quick edits of one field offline: both go, no conflict, the server keeps the second', async () => {
+  const email = `web-twice${Date.now()}@example.com`;
+  const owner = await register(h.app, { email, platform: 'web' });
+  const a = await device(owner);
+  const id = await a.engine.save('driver', null, { lastName: 'Мунгалов', phone: '' });
+  await a.engine.sync();
+  a.net.state.online = false;
+  await a.engine.save('driver', id, { phone: '+7 914 1' });
+  await a.engine.sync(); // no network: the first edit was tried, so the next one is a separate change
+  await a.engine.save('driver', id, { phone: '+7 914 2' });
+  assert.equal(a.engine.status.pending, 2);
+  a.net.state.online = true;
+  await a.engine.sync();
+  assert.equal(a.engine.status.pending, 0);
+  assert.equal(a.engine.status.failed, 0);
+  assert.equal(a.engine.status.conflicts, 0, 'правки одного устройства не конфликтуют друг с другом');
+  const b = await device(await login(h.app, email, 'пароль-12345', 'android'));
+  await b.engine.sync();
+  assert.equal((await b.engine.list('driver'))[0].data.phone, '+7 914 2');
+});
+
+test('a new record edited and then deleted offline: all three changes go in order', async () => {
+  const email = `web-thrice${Date.now()}@example.com`;
+  const owner = await register(h.app, { email, platform: 'web' });
+  const a = await device(owner);
+  a.net.state.online = false;
+  const id = await a.engine.save('driver', null, { lastName: 'Мунгалов', phone: '1' });
+  await a.engine.sync();
+  await a.engine.save('driver', id, { phone: '2' });
+  await a.engine.sync();
+  await a.engine.remove('driver', id);
+  assert.equal(a.engine.status.pending, 3);
+  a.net.state.online = true;
+  await a.engine.sync();
+  assert.equal(a.engine.status.pending, 0);
+  assert.equal(a.engine.status.conflicts, 0);
+  const b = await device(await login(h.app, email, 'пароль-12345', 'android'));
+  await b.engine.sync();
+  assert.equal((await b.engine.list('driver')).length, 0, 'удаление после правок дошло');
+});
