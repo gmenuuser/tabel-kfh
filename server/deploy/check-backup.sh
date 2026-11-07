@@ -3,7 +3,8 @@
 #   ssh root@37.230.113.40 'bash /opt/kfh/server/deploy/check-backup.sh'
 # 1. restores the newest local dump into a temporary database and counts `records`;
 # 2. checks the newest files archive lists;
-# 3. restores the newest restic snapshot tagged kfh into a temporary folder and does the same with it.
+# 3. restores the newest dump and files archive of the newest restic snapshot tagged kfh into a temporary folder
+#    and does the same with them.
 set -euo pipefail
 cd /opt/kfh/server
 dc() { docker compose -f docker-compose.yml -f deploy/compose.prod.yml "$@"; }
@@ -33,8 +34,13 @@ echo -n "records in live base: "; dc exec -T db psql -U kfh -d kfh -Atc 'select 
 [ -r /etc/kfh/restic.env ] || { echo "/etc/kfh/restic.env missing - restic not checked" >&2; exit 1; }
 set -a; . /etc/kfh/restic.env; set +a
 restic snapshots --retry-lock 30m --tag kfh --latest 3
-restic restore latest --retry-lock 30m --tag kfh --target "$TMPDIR_R"
-R_DUMP="$(ls -1t "$TMPDIR_R"/var/backups/kfh/kfh-*.dump | head -n 1)"
-R_TAR="$(ls -1t "$TMPDIR_R"/var/backups/kfh/files-*.tar | head -n 1)"
+# Only the newest dump and files archive of the snapshot (it holds 14 of each): the names sort by their stamp.
+LISTING="$(restic ls latest --retry-lock 30m --tag kfh)"
+S_DUMP="$(printf '%s\n' "$LISTING" | grep -E '^/var/backups/kfh/kfh-[^/]*\.dump$' | sort | tail -n 1 || true)"
+S_TAR="$(printf '%s\n' "$LISTING" | grep -E '^/var/backups/kfh/files-[^/]*\.tar$' | sort | tail -n 1 || true)"
+[ -n "$S_DUMP" ] && [ -n "$S_TAR" ] || { echo "no dump or files archive in the latest kfh snapshot" >&2; exit 1; }
+restic restore latest --retry-lock 30m --tag kfh --target "$TMPDIR_R" --include "$S_DUMP" --include "$S_TAR"
+R_DUMP="$TMPDIR_R$S_DUMP"
+R_TAR="$TMPDIR_R$S_TAR"
 check "restic" "$R_DUMP" "$R_TAR"
 echo "OK"
