@@ -1,29 +1,31 @@
 #!/usr/bin/env bash
-# Nightly: pg_dump of the KFH database -> /var/backups/kfh (last 14 kept) -> restic (Cubely's repository, tag kfh).
+# Nightly: pg_dump + uploaded files of KFH -> /var/backups/kfh (last 14 of each kept) -> restic (Cubely's repository, tag kfh).
 # Runs on the VDS as root (installed as /usr/local/sbin/kfh-backup, fired by kfh-backup.timer).
-# The restic repository variables are only READ from the environment file Cubely's own backup uses:
-# its path is in /etc/kfh/restic-env-path (written by deploy.sh --first-time) or in $RESTIC_ENV_FILE.
+# Restic settings come from /etc/kfh/restic.env (created by deploy.sh --first-time).
 set -euo pipefail
 
 DIR=/var/backups/kfh
-COMPOSE_DIR=/opt/kfh/server
+cd /opt/kfh/server
+dc() { docker compose -f docker-compose.yml -f deploy/compose.prod.yml "$@"; }
+
 mkdir -p "$DIR"; chmod 700 "$DIR"
-OUT="$DIR/kfh-$(date +%Y-%m-%d_%H%M).dump"
+rm -f "$DIR"/*.part
+STAMP="$(date +%Y-%m-%d_%H%M)"
 
-cd "$COMPOSE_DIR"
-docker compose -f docker-compose.yml -f deploy/compose.prod.yml exec -T db pg_dump -U kfh -d kfh -Fc > "$OUT.part"
-mv "$OUT.part" "$OUT"
-echo "dump: $OUT ($(du -h "$OUT" | cut -f1))"
+dc exec -T db pg_dump -U kfh -d kfh -Fc > "$DIR/kfh-$STAMP.dump.part"
+mv "$DIR/kfh-$STAMP.dump.part" "$DIR/kfh-$STAMP.dump"
+dc exec -T api tar -C /data -cf - . > "$DIR/files-$STAMP.tar.part"
+mv "$DIR/files-$STAMP.tar.part" "$DIR/files-$STAMP.tar"
+echo "dump:  $(du -h "$DIR/kfh-$STAMP.dump" | cut -f1)  files: $(du -h "$DIR/files-$STAMP.tar" | cut -f1)"
 ls -1t "$DIR"/kfh-*.dump | tail -n +15 | xargs -r rm -f
+ls -1t "$DIR"/files-*.tar | tail -n +15 | xargs -r rm -f
 
-ENVFILE="${RESTIC_ENV_FILE:-$(cat /etc/kfh/restic-env-path 2>/dev/null || true)}"
-if [ -z "$ENVFILE" ] || [ ! -r "$ENVFILE" ]; then
-  echo "restic environment file not found (set RESTIC_ENV_FILE or /etc/kfh/restic-env-path); dump kept locally only" >&2
-  exit 1
-fi
+[ -r /etc/kfh/restic.env ] || { echo "/etc/kfh/restic.env missing; dump kept locally only" >&2; exit 1; }
 set -a
-# shellcheck disable=SC1090
-. "$ENVFILE"
+# shellcheck disable=SC1091
+. /etc/kfh/restic.env
 set +a
-restic backup --tag kfh "$DIR"
-restic snapshots --tag kfh --latest 1
+restic backup --retry-lock 30m --tag kfh "$DIR"
+# no --prune here: Cubely's own backup prunes the shared repository
+restic forget --retry-lock 30m --tag kfh --keep-daily 14 --keep-weekly 4
+restic snapshots --retry-lock 30m --tag kfh --latest 1

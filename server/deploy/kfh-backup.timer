@@ -4,7 +4,7 @@ Description=KFH backup at 03:30 Moscow time
 [Timer]
 OnCalendar=*-*-* 03:30:00 Europe/Moscow
 Persistent=true
-RandomizedDelaySeconds=300
+RandomizedDelaySec=300
 
 [Install]
 WantedBy=timers.target

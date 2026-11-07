@@ -1,5 +1,8 @@
 # Production override for the Cubely VDS: docker compose -f docker-compose.yml -f deploy/compose.prod.yml ...
 # Docker-published ports bypass UFW, so only 127.0.0.1 is used; nginx on the host proxies to :8090.
+# The project name is fixed: the volumes (kfh_pgdata, kfh_apidata) are named after it. NEVER change it.
+name: kfh
+
 services:
   db:
     restart: unless-stopped
