@@ -96,6 +96,7 @@ struct AgroCalculatorView: View {
                     Button(saved == nil ? "Сохранить" : "Сохранить изменения", action: save)
                         .buttonStyle(BigButtonStyle())
                         .disabled(!result.isComplete)
+                        .editable(.agroCalculation)
                     Button("Очистить", action: clear)
                         .buttonStyle(BigButtonStyle(color: Color(uiColor: .systemGray)))
                 }
@@ -103,6 +104,7 @@ struct AgroCalculatorView: View {
                     Button("Сохранить как новый расчёт") { save(asNew: true) }
                         .frame(maxWidth: .infinity)
                         .disabled(!result.isComplete)
+                        .editable(.agroCalculation)
                 }
                 if let note { Label(note, systemImage: "checkmark.circle.fill").foregroundStyle(Theme.primary) }
             }
@@ -337,7 +339,7 @@ struct AgroHistoryView: View {
                         }
                     }
                     .buttonStyle(.plain)
-                    .swipeActions { Button("Удалить", role: .destructive) { deleting = c } }
+                    .swipeActions { Button("Удалить", role: .destructive) { deleting = c }.onlyIfEditable(.agroCalculation) }
                 }
             }
             Section {

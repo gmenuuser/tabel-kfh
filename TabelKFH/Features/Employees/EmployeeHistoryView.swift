@@ -52,12 +52,15 @@ struct EmployeeHistoryView: View {
             }
 
             Section {
-                if employee.isArchived {
-                    Button("Вернуть из архива") { run { try EmployeeService(context: context).restore(employee) } }
-                } else {
-                    Button("В архив") { confirmArchive = true }
-                        .foregroundStyle(Theme.accent)
+                Group {
+                    if employee.isArchived {
+                        Button("Вернуть из архива") { run { try EmployeeService(context: context).restore(employee) } }
+                    } else {
+                        Button("В архив") { confirmArchive = true }
+                            .foregroundStyle(Theme.accent)
+                    }
                 }
+                .editable(.employee)
             } footer: {
                 Text("Архив только скрывает сотрудника с Главной; отметки и табели остаются.")
             }
@@ -67,6 +70,7 @@ struct EmployeeHistoryView: View {
         .toolbar {
             ToolbarItem(placement: .primaryAction) {
                 Button("Изменить") { editingProfile = true }
+                    .onlyIfEditable(.employee)
             }
         }
         .sheet(isPresented: $editingProfile, onDismiss: reload) {
@@ -236,6 +240,7 @@ struct HoursPickerView: View {
             HStack(spacing: 10) {
                 ForEach(WorkHours.options, id: \.self) { h in
                     Button(HoursStyle.title(h)) { choose(h) }
+                        .editable(.hoursMark)
                         .font(.title3.bold())
                         .frame(maxWidth: .infinity, minHeight: 60)
                         .foregroundStyle(current == h ? .white : HoursStyle.color(h))
@@ -246,6 +251,7 @@ struct HoursPickerView: View {
             }
             if current != nil {
                 Button("Снять отметку", role: .destructive) { choose(nil) }
+                    .onlyIfEditable(.hoursMark)
             }
             Spacer()
         }

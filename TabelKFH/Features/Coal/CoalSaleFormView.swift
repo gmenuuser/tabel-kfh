@@ -36,6 +36,7 @@ struct CoalSaleFormView: View {
         Group {
             if let binding = Binding($draft) {
                 form(binding)
+                    .editable(.coalSale)
             } else {
                 Color.clear
             }

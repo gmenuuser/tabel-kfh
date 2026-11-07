@@ -93,7 +93,9 @@ final class BackupFlow {
     }
 }
 
-/// The «Резервная копия» section of the settings form.
+/// The «Резервная копия» section of the settings form: a copy of the phone's data to a file. Restoring a file is
+/// not offered: with the sync on, it would overwrite the farm's data on the server (the owner restores a server
+/// copy instead, «Копии на сервере»).
 struct BackupView: View {
     let flow: BackupFlow
 
@@ -101,12 +103,11 @@ struct BackupView: View {
 
     var body: some View {
         Section {
-            Button("Создать резервную копию") { flow.makeBackup(context: context) }
-            Button("Восстановить из копии") { flow.isImporting = true }
+            Button("Сохранить копию в файл") { flow.makeBackup(context: context) }
         } header: {
-            Text("Резервная копия")
+            Text("Копия на телефоне")
         } footer: {
-            Text("Копия содержит сотрудников с архивом, отметки, версии табелей и настройки. Храните её в «Файлах».")
+            Text("Файл со всеми данными, которые есть на этом телефоне (сотрудники, отметки, уголь, скот). Храните его в «Файлах». Синхронизация — не замена копии.")
         }
     }
 }

@@ -56,10 +56,70 @@ final class AppWalkthroughTests: XCTestCase {
             XCTAssertTrue(textField(title).waitForExistence(timeout: 10), "settings field «\(title)»")
         }
         shot("11-settings")
-        let backup = app.buttons["Создать резервную копию"].firstMatch
+
+        // The owner's «Помощники»: the helpers with their roles (canned list under -uitest).
+        let helpers = app.buttons["openHelpers"].firstMatch
+        scroll(to: helpers)
+        XCTAssertTrue(helpers.exists, "the owner has «Помощники»")
+        helpers.tap()
+        XCTAssertTrue(app.navigationBars["Помощники"].waitForExistence(timeout: 10))
+        XCTAssertTrue(element(containing: "anna").waitForExistence(timeout: 10), "the helper is listed")
+        XCTAssertTrue(element(containing: "Помощник войдёт на iPhone").exists)
+        shot("13-helpers")
+        app.navigationBars.buttons.element(boundBy: 0).tap()
+        XCTAssertTrue(app.navigationBars["Настройки"].waitForExistence(timeout: 10))
+
+        let backup = app.buttons["Сохранить копию в файл"].firstMatch
         scroll(to: backup)
         XCTAssertTrue(backup.exists)
+        XCTAssertFalse(app.buttons["Восстановить из копии"].exists, "no restore from a file any more")
+        XCTAssertTrue(app.buttons["signOut"].exists, "«Выйти»")
         shot("12-settings-backup")
+    }
+
+    // The sign-in screen (signed out).
+    func testSignInScreen() throws {
+        app = XCUIApplication()
+        app.launchArguments = ["-uitest", "-uitest-signedout", "-AppleLanguages", "(ru)", "-AppleLocale", "ru_RU"]
+        app.launch()
+        XCTAssertTrue(app.textFields["signInLogin"].waitForExistence(timeout: 15), "the sign-in screen")
+        XCTAssertTrue(element(containing: "Пароль").exists)
+        XCTAssertFalse(app.buttons["openTimesheet"].exists)
+        shot("14-sign-in")
+    }
+
+    // A timesheet helper sees only «ТАБЕЛЬ РАБОТНИКОВ» and its reports.
+    func testTimesheetHelperHome() throws {
+        launchSignedIn(role: "timesheet")
+        XCTAssertTrue(app.buttons["openTimesheet"].waitForExistence(timeout: 15))
+        XCTAssertTrue(app.buttons["openReports"].exists)
+        for hidden in ["openCoal", "openLivestock", "openAgro"] {
+            XCTAssertFalse(app.buttons[hidden].exists, "\(hidden) is hidden for the timesheet helper")
+        }
+        XCTAssertTrue(app.buttons["syncStatus"].exists, "the sync line")
+        shot("15-helper-timesheet-home")
+        app.buttons["openTimesheet"].tap()
+        XCTAssertTrue(app.buttons["Добавить сотрудника"].firstMatch.waitForExistence(timeout: 10),
+                      "the timesheet helper adds employees")
+    }
+
+    // The viewer reads everything and changes nothing: no «Добавить сотрудника», the sale form is inactive.
+    func testViewerReadsOnly() throws {
+        launchSignedIn(role: "viewer")
+        XCTAssertTrue(app.buttons["openTimesheet"].waitForExistence(timeout: 15))
+        XCTAssertTrue(app.buttons["openCoal"].exists)
+        app.buttons["openTimesheet"].tap()
+        XCTAssertTrue(app.navigationBars["Табель работников"].waitForExistence(timeout: 10))
+        XCTAssertFalse(app.buttons["Добавить сотрудника"].exists, "the viewer adds no one")
+        backToMain()
+        app.buttons["openCoal"].tap()
+        XCTAssertTrue(app.navigationBars["Продажа угля"].waitForExistence(timeout: 10))
+        let save = app.buttons["СОХРАНИТЬ ПРОДАЖУ"].firstMatch
+        scroll(to: save)
+        XCTAssertTrue(save.exists)
+        XCTAssertFalse(save.isEnabled, "the viewer's sale form is inactive")
+        XCTAssertFalse(app.buttons["ЗАВЕРШИТЬ РАБОЧИЙ ДЕНЬ"].exists)
+        shot("16-viewer-coal")
     }
 
     func testWalkthroughDark() throws {
@@ -80,16 +140,23 @@ final class AppWalkthroughTests: XCTestCase {
 
     // MARK: - Steps
 
+    private func launchSignedIn(role: String) {
+        app = XCUIApplication()
+        app.launchArguments = ["-uitest", "-uitest-role", role, "-AppleLanguages", "(ru)", "-AppleLocale", "ru_RU"]
+        app.launch()
+    }
+
     private func launch(dark: Bool) {
         app = XCUIApplication()
         app.launchArguments = ["-uitest", "-AppleLanguages", "(ru)", "-AppleLocale", "ru_RU"]
         if dark { app.launchArguments.append("-uitest-dark") }
         app.launch()
-        // The main screen: three large buttons.
+        // The main screen: the sync line and the large buttons.
         let timesheet = app.buttons["openTimesheet"]
         XCTAssertTrue(timesheet.waitForExistence(timeout: 15), "the main screen offers «ТАБЕЛЬ РАБОТНИКОВ»")
         XCTAssertTrue(app.buttons["openCoal"].exists, "and «ПРОДАЖА УГЛЯ»")
         XCTAssertTrue(app.buttons["openReports"].exists, "and «ОТЧЁТЫ»")
+        XCTAssertTrue(element(containing: "Все данные синхронизированы").exists, "the sync line")
         shot(dark ? "20-dark-main" : "00-main")
         timesheet.tap()
         XCTAssertTrue(app.navigationBars["Табель работников"].waitForExistence(timeout: 10))

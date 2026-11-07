@@ -70,6 +70,7 @@ struct HomeView: View {
                 }
                 ForEach(shown) { row in
                     EmployeeHoursRow(row: row) { tap($0, for: row.employee) }
+                        .editable(.hoursMark)
                 }
                 Button {
                     addingEmployee = true
@@ -79,6 +80,7 @@ struct HomeView: View {
                 .buttonStyle(BigButtonStyle(color: Theme.primary))
                 .accessibilityLabel("Добавить сотрудника")
                 .padding(.top, 4)
+                .onlyIfEditable(.employee)
             }
             .padding(16)
         }
@@ -171,6 +173,7 @@ struct HomeView: View {
                 }
                 .buttonStyle(.bordered)
                 .tint(Theme.primary)
+                .onlyIfEditable(.hoursMark)
             }
         }
         .card()

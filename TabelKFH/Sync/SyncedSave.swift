@@ -8,6 +8,16 @@ enum SyncedSave {
     static var isApplyingRemote = false
     /// Called after a save that queued something («send in a moment»).
     static var onQueued: (() -> Void)?
+    /// May the signed-in person change records of the entity (the session sets it; nil: everything, as in tests).
+    /// A save with a change the role may not make is refused before anything reaches the queue.
+    static var allowed: ((SyncEntity) -> Bool)?
+
+    static func canWrite(_ entity: SyncEntity) -> Bool { allowed?(entity) ?? true }
+
+    /// A change the role may not make (the server's text).
+    struct NotAllowed: LocalizedError {
+        var errorDescription: String? { "Нет прав на изменение этих данных" }
+    }
 
     /// Queue dates strictly increase, so ops keep the order they were made in.
     fileprivate static var lastStamp = Date.distantPast
@@ -53,6 +63,12 @@ extension ModelContext {
             } else {
                 changes.append((entity: entity, id: id, fields: [:], delete: true))
             }
+        }
+
+        // A change of a record the role may not write: nothing is saved or queued, the screen's change is undone.
+        if changes.contains(where: { !SyncedSave.canWrite($0.entity) }) {
+            rollback()
+            throw SyncedSave.NotAllowed()
         }
 
         var queued = false

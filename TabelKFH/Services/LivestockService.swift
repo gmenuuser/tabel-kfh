@@ -112,6 +112,8 @@ final class LivestockService {
     /// Makes the default categories once (they can be renamed later; own ones can be added).
     func ensureDefaults() {
         guard ((try? context.fetchCount(FetchDescriptor<LivestockSettings>())) ?? 0) == 0 else { return }
+        // A role that may not change the herd (viewer) makes nothing: the farm's categories come with the sync.
+        guard SyncedSave.canWrite(.livestockSettings), SyncedSave.canWrite(.livestockCategory) else { return }
         let moment = now()
         context.insert(LivestockSettings(id: StableId.livestockSettings, createdAt: moment))
         if ((try? context.fetchCount(FetchDescriptor<LivestockCategory>())) ?? 0) == 0 {

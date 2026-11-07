@@ -8,6 +8,7 @@ struct CoalDaySummaryView: View {
     var initialDay: Date?
 
     @Environment(\.modelContext) private var context
+    @Environment(SessionStore.self) private var session
     // Watched so the report is built again after any change of sales, payments or days.
     @Query private var sales: [CoalSale]
     @Query private var payments: [DriverPayment]
@@ -33,9 +34,10 @@ struct CoalDaySummaryView: View {
                     .font(.headline)
                     .card()
                 if let report {
-                    CoalReportContent(report: report) { settlement in
-                        paying = drivers.first { $0.id == settlement.driverId }
-                    }
+                    // «Выплатить водителю» only for a role that may pay.
+                    let pay: ((DriverSettlement) -> Void)? = session.canEdit(.driverPayment)
+                        ? { settlement in paying = drivers.first { $0.id == settlement.driverId } } : nil
+                    CoalReportContent(report: report, onPay: pay)
                     dayActions(report)
                     CoalExportActions(document: CoalReportLayout.document(report))
                 }
@@ -79,6 +81,7 @@ struct CoalDaySummaryView: View {
                     .foregroundStyle(Theme.primary)
                 Button("Открыть день для редактирования") { confirmingReopen = true }
                     .buttonStyle(BigButtonStyle(color: Theme.accent))
+                    .editable(.coalWorkDay)
             }
             .card()
         } else {
@@ -88,6 +91,7 @@ struct CoalDaySummaryView: View {
                 Label("ЗАВЕРШИТЬ РАБОЧИЙ ДЕНЬ", systemImage: "checkmark.seal")
             }
             .buttonStyle(BigButtonStyle(color: Theme.accent))
+            .onlyIfEditable(.coalWorkDay)
         }
     }
 }

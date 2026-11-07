@@ -75,6 +75,7 @@ struct LivestockHistoryView: View {
                                      target: o.targetCategoryId.flatMap { byId[$0] }, slaughter: details[o.id])
                     }
                     .buttonStyle(.plain)
+                    .editable(.livestockOperation)
                 }
             }
         }

@@ -52,6 +52,8 @@ enum FarmSettingsStore {
         descriptor.fetchLimit = 1
         if let existing = (try? context.fetch(descriptor))?.first { return existing }
         let settings = FarmSettings()
+        // Signed in, the row comes with `/me` and the sync; a role that may not change it stores none.
+        guard SyncedSave.canWrite(.farmSettings) else { return settings }
         context.insert(settings)
         try? context.syncedSave()
         return settings

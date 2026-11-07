@@ -129,6 +129,7 @@ struct CoalHistoryView: View {
             ForEach(sales) { s in
                 Button { editing = s } label: { CoalSaleCard(sale: s, showsDate: period == .month) }
                     .buttonStyle(.plain)
+                    .editable(.coalSale)
                     .listRowInsets(EdgeInsets(top: 4, leading: 8, bottom: 4, trailing: 8))
                     .listRowBackground(Color.clear)
             }
@@ -241,6 +242,7 @@ struct CoalPricesView: View {
                     }
                     .swipeActions {
                         Button("Удалить", role: .destructive) { removing = l }
+                            .onlyIfEditable(.deliveryLocation)
                     }
                 }
                 Button {
@@ -255,6 +257,8 @@ struct CoalPricesView: View {
                      + "По умолчанию наёмный водитель получает всю стоимость доставки.")
             }
         }
+        // The viewer reads the prices; nothing here can be changed.
+        .editable(.coalSettings)
         .navigationTitle("Цены и населённые пункты")
         .navigationBarTitleDisplayMode(.inline)
         .keyboardDoneButton()
@@ -326,7 +330,7 @@ struct LocationFormView: View {
         .keyboardDoneButton()
         .toolbar {
             ToolbarItem(placement: .cancellationAction) { Button("Отмена") { dismiss() } }
-            ToolbarItem(placement: .confirmationAction) { Button("Сохранить", action: save) }
+            ToolbarItem(placement: .confirmationAction) { Button("Сохранить", action: save).editable(.deliveryLocation) }
         }
         .onAppear {
             guard !loaded else { return }

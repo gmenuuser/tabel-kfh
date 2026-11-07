@@ -72,11 +72,12 @@ struct FarmRootView: View {
     }
 }
 
-/// Главный экран: the farm, today, a short line about the day, and «ТАБЕЛЬ РАБОТНИКОВ», «ПРОДАЖА УГЛЯ»,
-/// «ОТЧЁТЫ».
+/// Главный экран: the farm, today, a short line about the day, the sync line, and the big buttons of the parts the
+/// role sees («ТАБЕЛЬ РАБОТНИКОВ», «ПРОДАЖА УГЛЯ», «СКОТ И ЗАБОЙ», «АГРОНОМИЧЕСКИЕ КАЛЬКУЛЯТОРЫ», «ОТЧЁТЫ»).
 struct MainScreen: View {
     let open: (MainDestination) -> Void
 
+    @Environment(SessionStore.self) private var session
     @Environment(\.modelContext) private var context
     @Environment(\.scenePhase) private var scenePhase
     @Query private var sales: [CoalSale]
@@ -99,16 +100,33 @@ struct MainScreen: View {
         ScrollView {
             VStack(spacing: 16) {
                 header
-                bigButton("ТАБЕЛЬ РАБОТНИКОВ", subtitle: "Отметки за день, табель за месяц, сотрудники",
-                          icon: "person.2.fill", color: Theme.primary, id: "openTimesheet") { open(.timesheet) }
-                bigButton("ПРОДАЖА УГЛЯ", subtitle: "Новая продажа, продажи за сегодня, итоги дня",
-                          icon: "truck.box.fill", color: Theme.accent, id: "openCoal") { open(.coal) }
-                bigButton("СКОТ И ЗАБОЙ", subtitle: "Поголовье, забой, приплод, история",
-                          icon: "pawprint.fill", color: LivestockTheme.module, id: "openLivestock") { open(.livestock) }
-                bigButton("АГРОНОМИЧЕСКИЕ КАЛЬКУЛЯТОРЫ", subtitle: "Посев, удобрения, опрыскивание, урожай и другие",
-                          icon: "function", color: CoalTheme.hired, id: "openAgro") { open(.agro) }
-                bigButton("ОТЧЁТЫ", subtitle: "Табель, продажи угля, выплаты водителям — PDF и Excel",
-                          icon: "doc.text.fill", color: Color(uiColor: .systemGray), id: "openReports") { open(.reports) }
+                SyncStatusLine()
+                let shown = session.destinations
+                if shown.isEmpty {
+                    Text("Для вашей роли в хозяйстве нет доступных разделов. Обратитесь к владельцу.")
+                        .foregroundStyle(.secondary)
+                        .card()
+                }
+                if shown.contains(.timesheet) {
+                    bigButton("ТАБЕЛЬ РАБОТНИКОВ", subtitle: "Отметки за день, табель за месяц, сотрудники",
+                              icon: "person.2.fill", color: Theme.primary, id: "openTimesheet") { open(.timesheet) }
+                }
+                if shown.contains(.coal) {
+                    bigButton("ПРОДАЖА УГЛЯ", subtitle: "Новая продажа, продажи за сегодня, итоги дня",
+                              icon: "truck.box.fill", color: Theme.accent, id: "openCoal") { open(.coal) }
+                }
+                if shown.contains(.livestock) {
+                    bigButton("СКОТ И ЗАБОЙ", subtitle: "Поголовье, забой, приплод, история",
+                              icon: "pawprint.fill", color: LivestockTheme.module, id: "openLivestock") { open(.livestock) }
+                }
+                if shown.contains(.agro) {
+                    bigButton("АГРОНОМИЧЕСКИЕ КАЛЬКУЛЯТОРЫ", subtitle: "Посев, удобрения, опрыскивание, урожай и другие",
+                              icon: "function", color: CoalTheme.hired, id: "openAgro") { open(.agro) }
+                }
+                if shown.contains(.reports) {
+                    bigButton("ОТЧЁТЫ", subtitle: reportsSubtitle,
+                              icon: "doc.text.fill", color: Color(uiColor: .systemGray), id: "openReports") { open(.reports) }
+                }
             }
             .padding(16)
         }
@@ -137,6 +155,16 @@ struct MainScreen: View {
         atWork = people.filter { (marks.hours(of: $0, on: today) ?? 0) > 0 }.count
     }
 
+    private var modules: [AppModule] { Roles.modules(role: session.role ?? "") }
+
+    private var reportsSubtitle: String {
+        var parts: [String] = []
+        if modules.contains(.timesheet) { parts.append("Табель") }
+        if modules.contains(.coal) { parts.append("продажи угля, выплаты водителям") }
+        if modules.contains(.livestock) { parts.append("скот и забой") }
+        return (parts.joined(separator: ", ") + " — PDF и Excel").capitalizedFirst
+    }
+
     private var header: some View {
         VStack(alignment: .leading, spacing: 8) {
             Text(farmName)
@@ -146,18 +174,27 @@ struct MainScreen: View {
                 .minimumScaleFactor(0.7)
             Text(CoalText.longDate(today).capitalizedFirst)
                 .font(.title3.weight(.medium))
+            if let role = session.role, role != "owner" {
+                Label("Ваша роль: \(Roles.title(role).lowercased())", systemImage: "person.badge.key")
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundStyle(Theme.primary)
+            }
             VStack(alignment: .leading, spacing: 4) {
-                Label(staff == 0 ? "Сотрудников пока нет" : "На работе: \(atWork) из \(staff)",
-                      systemImage: "person.2")
-                let t = CoalTotals(todaySales)
-                Label(t.salesCount == 0 ? "Продаж угля сегодня нет"
-                      : "Уголь: \(CoalText.sales(t.salesCount)) на \(CoalMath.rubles(t.revenue))",
-                      systemImage: "truck.box")
+                if modules.contains(.timesheet) {
+                    Label(staff == 0 ? "Сотрудников пока нет" : "На работе: \(atWork) из \(staff)",
+                          systemImage: "person.2")
+                }
+                if modules.contains(.coal) {
+                    let t = CoalTotals(todaySales)
+                    Label(t.salesCount == 0 ? "Продаж угля сегодня нет"
+                          : "Уголь: \(CoalText.sales(t.salesCount)) на \(CoalMath.rubles(t.revenue))",
+                          systemImage: "truck.box")
+                }
                 let herd = LivestockLedger.balances(herdOperations.map(HerdMove.init)).values.reduce(0, +)
-                if herd > 0 {
+                if herd > 0 && modules.contains(.livestock) {
                     Label("Скот: \(LivestockText.heads(herd))", systemImage: "pawprint")
                 }
-                if dayClosed {
+                if dayClosed && modules.contains(.coal) {
                     Label("Рабочий день по углю завершён", systemImage: "checkmark.seal.fill")
                         .foregroundStyle(Theme.primary)
                 }

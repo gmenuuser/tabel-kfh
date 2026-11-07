@@ -3,17 +3,27 @@ import SwiftData
 
 /// «Отчёты»: the monthly timesheet, coal sales and payments to drivers, each as PDF and Excel ready to print.
 struct ReportsView: View {
+    @Environment(SessionStore.self) private var session
+
     var body: some View {
+        let modules = Roles.modules(role: session.role ?? "")
         ScrollView {
             VStack(spacing: 14) {
-                row("Табель работников", subtitle: "Табель за месяц по всему хозяйству или по сотруднику",
-                    icon: "tablecells", color: Theme.primary) { MonthTimesheetView() }
-                row("Продажи угля", subtitle: "За день или за месяц: продажи, выручка, итоги",
-                    icon: "truck.box.fill", color: Theme.accent) { CoalSalesReportView() }
-                row("Выплаты водителям", subtitle: "Сколько заработал, получил и кому сколько ещё выплатить",
-                    icon: "banknote.fill", color: CoalTheme.hired) { DriverPaymentsReportView() }
-                row("Скот и забой", subtitle: "Остаток поголовья, забой, движение поголовья",
-                    icon: "pawprint.fill", color: LivestockTheme.module) { LivestockReportsView() }
+                // Only the reports of the parts the role sees.
+                if modules.contains(.timesheet) {
+                    row("Табель работников", subtitle: "Табель за месяц по всему хозяйству или по сотруднику",
+                        icon: "tablecells", color: Theme.primary) { MonthTimesheetView() }
+                }
+                if modules.contains(.coal) {
+                    row("Продажи угля", subtitle: "За день или за месяц: продажи, выручка, итоги",
+                        icon: "truck.box.fill", color: Theme.accent) { CoalSalesReportView() }
+                    row("Выплаты водителям", subtitle: "Сколько заработал, получил и кому сколько ещё выплатить",
+                        icon: "banknote.fill", color: CoalTheme.hired) { DriverPaymentsReportView() }
+                }
+                if modules.contains(.livestock) {
+                    row("Скот и забой", subtitle: "Остаток поголовья, забой, движение поголовья",
+                        icon: "pawprint.fill", color: LivestockTheme.module) { LivestockReportsView() }
+                }
             }
             .padding(16)
         }
@@ -180,6 +190,7 @@ struct DriverPaymentsReportView: View {
                         if balance.debt > 0 {
                             Button("Выплатить \(driver.lastName)") { paying = driver }
                                 .buttonStyle(BigButtonStyle(color: CoalTheme.hired))
+                                .onlyIfEditable(.driverPayment)
                         }
                         Divider()
                     }

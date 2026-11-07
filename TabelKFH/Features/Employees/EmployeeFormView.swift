@@ -94,7 +94,7 @@ struct EmployeeFormView: View {
                 Button("Отмена") { dismiss() }
             }
             ToolbarItem(placement: .confirmationAction) {
-                Button("Сохранить", action: save).bold()
+                Button("Сохранить", action: save).bold().editable(.employee)
             }
         }
         .onChange(of: photoItem) { _, item in

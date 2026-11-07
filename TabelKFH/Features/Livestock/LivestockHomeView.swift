@@ -93,6 +93,7 @@ struct LivestockHomeView: View {
                     color: Theme.primary) { section = .herd }
                 big("Записать забой", subtitle: "Списать забитых животных", icon: "scissors",
                     color: LivestockTheme.slaughter) { section = .slaughter }
+                    .onlyIfEditable(.slaughterRecord)
                 big("История операций", subtitle: "Все движения, исправление и удаление", icon: "clock.arrow.circlepath",
                     color: CoalTheme.hired) { section = .history }
                 big("Отчёты по скоту", subtitle: "Остаток, забой, движение — PDF и Excel", icon: "doc.text.fill",
@@ -192,6 +193,7 @@ struct HerdView: View {
                                 .buttonStyle(.borderedProminent)
                                 .tint(Theme.primary)
                                 .accessibilityLabel("Добавить \(c.name)")
+                                .editable(.livestockOperation)
                             Button {
                                 form = OperationTarget(draft: LivestockDraft(kind: .sale, date: AppClock.now(), categoryId: c.id))
                             } label: { Label("Уменьшить", systemImage: "minus").frame(maxWidth: .infinity, minHeight: 44) }
@@ -199,6 +201,7 @@ struct HerdView: View {
                                 .tint(LivestockTheme.slaughter)
                                 .disabled(counts.heads(c) == 0)
                                 .accessibilityLabel("Уменьшить \(c.name)")
+                                .editable(.livestockOperation)
                             Button { history = c } label: {
                                 Image(systemName: "clock.arrow.circlepath").frame(width: 30, height: 44)
                             }
@@ -210,6 +213,7 @@ struct HerdView: View {
                     .contextMenu {
                         if !c.isBuiltIn {
                             Button("Удалить категорию", role: .destructive) { delete(c) }
+                                .onlyIfEditable(.livestockCategory)
                         }
                     }
                 }
@@ -217,6 +221,7 @@ struct HerdView: View {
                     Label("Своя категория", systemImage: "plus.square.on.square").frame(maxWidth: .infinity, minHeight: 44)
                 }
                 .buttonStyle(.bordered)
+                .onlyIfEditable(.livestockCategory)
             }
             .padding(16)
         }

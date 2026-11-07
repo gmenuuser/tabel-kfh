@@ -236,6 +236,7 @@ struct MonthTimesheetView: View {
         }
         .buttonStyle(.plain)
         .disabled(!cell.employed)
+        .editable(.hoursMark)
         .accessibilityLabel("\(row.employee.fullName), \(day): \(cell.hours.map { "\($0) ч" } ?? "не отмечен")")
     }
 

@@ -22,6 +22,9 @@ final class CoalSettingsService {
         if let existing = (try? context.fetch(descriptor))?.first { return existing }
         let moment = now()
         let settings = CoalSettings(createdAt: moment, updatedAt: moment)
+        // A role that may not change the coal settings reads the defaults and stores nothing (the server would
+        // refuse the row); the farm's own settings come with the sync.
+        guard SyncedSave.canWrite(.coalSettings) else { return settings }
         context.insert(settings)
         if ((try? context.fetchCount(FetchDescriptor<DeliveryLocation>())) ?? 0) == 0 {
             for (index, d) in CoalDefaults.locations.enumerated() {

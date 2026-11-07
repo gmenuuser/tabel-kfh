@@ -47,6 +47,7 @@ struct DriversView: View {
                     }
                     .swipeActions {
                         Button("Удалить", role: .destructive) { deleting = d }
+                            .onlyIfEditable(.driver)
                     }
                 }
             }
@@ -56,6 +57,7 @@ struct DriversView: View {
                 } label: {
                     Label("Добавить водителя", systemImage: "person.badge.plus")
                 }
+                .onlyIfEditable(.driver)
             }
         }
         .searchable(text: $search, prompt: "Поиск по фамилии")
@@ -65,6 +67,7 @@ struct DriversView: View {
             ToolbarItem(placement: .primaryAction) {
                 Button { adding = true } label: { Image(systemName: "plus") }
                     .accessibilityLabel("Добавить водителя")
+                    .onlyIfEditable(.driver)
             }
         }
         .sheet(isPresented: $adding) {
@@ -150,6 +153,7 @@ struct DriverDetailView: View {
                     Label("Выплатить водителю", systemImage: "banknote")
                 }
                 .disabled(balance.debt <= 0)
+                .editable(.driverPayment)
             }
             Section("История доставок") {
                 if sales.isEmpty { Text("Доставок нет").foregroundStyle(.secondary) }
@@ -177,15 +181,19 @@ struct DriverDetailView: View {
                     }
                     .swipeActions {
                         Button("Удалить", role: .destructive) { deletingPayment = p }
+                            .onlyIfEditable(.driverPayment)
                     }
                 }
             }
             Section {
-                if driver.isArchived {
-                    Button("Вернуть из архива") { run { try DriverService(context: context).restore(driver) } }
-                } else {
-                    Button("Убрать в архив") { run { try DriverService(context: context).archive(driver) } }
+                Group {
+                    if driver.isArchived {
+                        Button("Вернуть из архива") { run { try DriverService(context: context).restore(driver) } }
+                    } else {
+                        Button("Убрать в архив") { run { try DriverService(context: context).archive(driver) } }
+                    }
                 }
+                .editable(.driver)
             } footer: {
                 Text("Архив скрывает водителя из выбора в новой продаже; его доставки, выплаты и долг сохраняются. "
                      + "Удалить (смахнуть влево в списке) можно только водителя без доставок и выплат.")
@@ -194,7 +202,7 @@ struct DriverDetailView: View {
         .navigationTitle(driver.lastName)
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
-            ToolbarItem(placement: .primaryAction) { Button("Изменить") { editing = true } }
+            ToolbarItem(placement: .primaryAction) { Button("Изменить") { editing = true }.onlyIfEditable(.driver) }
         }
         .sheet(isPresented: $editing) {
             NavigationStack { DriverFormView(driver: driver) }
@@ -252,7 +260,7 @@ struct DriverFormView: View {
         .toolbar {
             ToolbarItem(placement: .cancellationAction) { Button("Отмена") { dismiss() } }
             ToolbarItem(placement: .confirmationAction) {
-                Button("Сохранить", action: save).disabled(!draft.isValid)
+                Button("Сохранить", action: save).disabled(!draft.isValid).editable(.driver)
             }
         }
         .onAppear {
@@ -316,7 +324,7 @@ struct DriverPaymentFormView: View {
         .toolbar {
             ToolbarItem(placement: .cancellationAction) { Button("Отмена") { dismiss() } }
             ToolbarItem(placement: .confirmationAction) {
-                Button("Выплатить", action: pay).disabled((amount ?? 0) <= 0)
+                Button("Выплатить", action: pay).disabled((amount ?? 0) <= 0).editable(.driverPayment)
             }
         }
         .onAppear {

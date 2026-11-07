@@ -35,6 +35,7 @@ struct OperationFormView: View {
             ToolbarItem(placement: .cancellationAction) { Button("Отмена") { dismiss() } }
             ToolbarItem(placement: .confirmationAction) {
                 Button("Сохранить") { trySave() }
+                    .editable(.livestockOperation)
             }
         }
         .keyboardDoneButton()
@@ -132,11 +133,13 @@ struct OperationFormView: View {
             Section {
                 Button(operation == nil ? "СОХРАНИТЬ" : "СОХРАНИТЬ ИЗМЕНЕНИЯ") { trySave() }
                     .buttonStyle(BigButtonStyle(color: d.wrappedValue.kind == .slaughter ? LivestockTheme.slaughter : Theme.primary))
+                    .editable(.livestockOperation)
                     .listRowInsets(EdgeInsets())
                     .listRowBackground(Color.clear)
                 if operation != nil {
                     Button("Удалить операцию", role: .destructive) { confirmingDelete = true }
                         .frame(maxWidth: .infinity)
+                        .editable(.livestockOperation)
                 }
             }
         }

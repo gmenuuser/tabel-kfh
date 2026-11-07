@@ -133,6 +133,7 @@ struct SlaughterView: View {
                     if draft.isValid { confirming = true }
                 }
                 .buttonStyle(BigButtonStyle(color: LivestockTheme.slaughter))
+                .editable(.slaughterRecord)
                 if let saved {
                     Label(saved, systemImage: "checkmark.circle.fill").foregroundStyle(Theme.primary)
                 }

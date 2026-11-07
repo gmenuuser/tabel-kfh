@@ -4,7 +4,7 @@ import SwiftData
 @main
 struct TabelKFHApp: App {
     private let container: ModelContainer
-    /// The device's sign-in (`-uitest`: the owner, offline, no sync).
+    /// The device's sign-in (`-uitest`: the owner, offline, no sync; `-uitest-role`, `-uitest-signedout`).
     @State private var session: SessionStore
     /// Only under `-uitest -uitest-dark`: the UI tests take dark-mode screenshots.
     private let forcedScheme: ColorScheme?
@@ -33,7 +33,13 @@ struct TabelKFHApp: App {
         let mainContainer = container
         let store = MainActor.assumeIsolated {
             mainContainer.mainContext.autosaveEnabled = false
-            return uiTest ? SessionStore.uiTest(container: mainContainer) : SessionStore(container: mainContainer)
+            guard uiTest else { return SessionStore(container: mainContainer) }
+            // `-uitest-signedout`: the sign-in screen; `-uitest-role timesheet`: a helper's screens.
+            if arguments.contains("-uitest-signedout") { return SessionStore.uiTest(container: mainContainer, role: nil) }
+            if let i = arguments.firstIndex(of: "-uitest-role"), i + 1 < arguments.count {
+                return SessionStore.uiTest(container: mainContainer, role: arguments[i + 1])
+            }
+            return SessionStore.uiTest(container: mainContainer)
         }
         _session = State(initialValue: store)
     }

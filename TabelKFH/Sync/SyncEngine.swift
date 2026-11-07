@@ -142,6 +142,9 @@ final class SyncEngine {
         }
     }
 
+    /// The counts again (a refused change was removed).
+    func refreshStatus() { refreshCounts() }
+
     private func refreshCounts() {
         let refused = "error"
         status.pending = (try? context.fetchCount(FetchDescriptor<SyncOp>(predicate: #Predicate { $0.state != refused }))) ?? 0

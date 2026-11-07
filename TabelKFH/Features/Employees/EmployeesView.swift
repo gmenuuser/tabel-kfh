@@ -40,13 +40,16 @@ struct EmployeesView: View {
                     EmployeeRow(employee: e)
                 }
                 .swipeActions(edge: .trailing) {
-                    if e.isArchived {
-                        Button("Вернуть") { run { try service.restore(e) } }
-                            .tint(Theme.primary)
-                    } else {
-                        Button("В архив") { run { try service.archive(e) } }
-                            .tint(Theme.accent)
+                    Group {
+                        if e.isArchived {
+                            Button("Вернуть") { run { try service.restore(e) } }
+                                .tint(Theme.primary)
+                        } else {
+                            Button("В архив") { run { try service.archive(e) } }
+                                .tint(Theme.accent)
+                        }
                     }
+                    .onlyIfEditable(.employee)
                 }
             }
         }
@@ -56,6 +59,7 @@ struct EmployeesView: View {
             ToolbarItem(placement: .primaryAction) {
                 Button { adding = true } label: { Image(systemName: "plus") }
                     .accessibilityLabel("Добавить сотрудника")
+                    .onlyIfEditable(.employee)
             }
         }
         .sheet(isPresented: $adding) {

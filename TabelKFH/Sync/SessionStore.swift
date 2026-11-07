@@ -42,6 +42,8 @@ final class SessionStore {
     /// The token as the current engine may use it; closed when that engine stops, so a run of an earlier
     /// sign-in never sends the token of a later one.
     @ObservationIgnored private var engineGate: TokenGate?
+    /// The requests of the current sign-in (`/me` after a sync, the owner's lists), through the engine's gate.
+    @ObservationIgnored private var engineAPI: APIClient?
     @ObservationIgnored private let defaults: UserDefaults
     @ObservationIgnored private let deviceName: String
     @ObservationIgnored private let offline: Bool
@@ -79,10 +81,12 @@ final class SessionStore {
             state = .signedIn(role: stored.isEmpty ? "viewer" : stored)
             makeEngine()
         }
+        guardWrites()
     }
 
-    /// `-uitest`: signed in as the owner, no network, no engine.
-    private init(uiTestContainer container: ModelContainer) {
+    /// `-uitest`: signed in (as the owner, or `role`; nil: signed out), no network, no engine; the owner's lists
+    /// are canned.
+    private init(uiTestContainer container: ModelContainer, role: String?) {
         self.container = container
         tokens = UITestTokens()
         defaults = .standard
@@ -91,10 +95,25 @@ final class SessionStore {
         base = URL(string: "https://kfh.cubely.ru")!
         urlSession = .shared
         api = APIClient(token: { nil })
-        state = .signedIn(role: "owner")
+        state = role.map { State.signedIn(role: $0) } ?? .signedOut
+        if let role {
+            farm = FarmInfoDTO(id: "uitest", name: "КФХ Зубахин", region: "Приаргунский район",
+                               managerName: "Зубахин А. В.", timezone: "Asia/Chita")
+        }
+        guardWrites()
     }
 
-    static func uiTest(container: ModelContainer) -> SessionStore { SessionStore(uiTestContainer: container) }
+    static func uiTest(container: ModelContainer, role: String? = "owner") -> SessionStore {
+        SessionStore(uiTestContainer: container, role: role)
+    }
+
+    /// Saves of a change the role may not make are refused (`SyncedSave.allowed`), so no screen can queue one.
+    private func guardWrites() {
+        SyncedSave.allowed = { [weak self] entity in
+            guard let self, case .signedIn(let role) = self.state else { return true }
+            return Roles.canEdit(role: role, entity)
+        }
+    }
 
     private var context: ModelContext { container.mainContext }
 
@@ -102,9 +121,8 @@ final class SessionStore {
         stopEngine()
         let gate = TokenGate()
         let tokens = self.tokens
-        let engine = SyncEngine(container: container,
-                                api: APIClient(base: base, session: urlSession,
-                                               token: { gate.isOpen ? tokens.token() : nil }))
+        let gated = APIClient(base: base, session: urlSession, token: { gate.isOpen ? tokens.token() : nil })
+        let engine = SyncEngine(container: container, api: gated)
         // Idempotent: a later run after a 401 calls it again. An engine of an earlier sign-in is ignored.
         engine.onSignedOut = { [weak self, weak engine] in
             guard let self, let engine, self.engine === engine else { return }
@@ -112,12 +130,14 @@ final class SessionStore {
         }
         self.engine = engine
         engineGate = gate
+        engineAPI = gated
     }
 
     /// The run on its way writes nothing more and sends no token again.
     private func stopEngine() {
         engineGate?.close()
         engineGate = nil
+        engineAPI = nil
         engine?.stop()
     }
 
@@ -134,15 +154,15 @@ final class SessionStore {
         return { entity in role.map { Self.canEdit(role: $0, entity) } ?? false }
     }
 
-    static func canEdit(role: String, _ entity: SyncEntity) -> Bool {
-        switch role {
-        case "owner", "manager": return true
-        case "timesheet": return [.employee, .hoursMark, .attendanceRecord, .timesheetSnapshot].contains(entity)
-        case "coal": return [.coalSettings, .deliveryLocation, .driver, .coalSale, .driverPayment, .coalWorkDay].contains(entity)
-        case "livestock": return [.livestockCategory, .livestockOperation, .slaughterRecord, .livestockSettings].contains(entity)
-        default: return false
-        }
-    }
+    nonisolated static func canEdit(role: String, _ entity: SyncEntity) -> Bool { Roles.canEdit(role: role, entity) }
+
+    var isOwner: Bool { role == "owner" }
+
+    /// The big buttons of the main screen for this role.
+    var destinations: [MainDestination] { role.map { Roles.destinations(role: $0) } ?? [] }
+
+    /// What the sync shows (nothing to show under `-uitest`: all synced).
+    var syncStatus: SyncStatus { engine?.status ?? SyncStatus() }
 
     // MARK: Store
 
@@ -162,18 +182,19 @@ final class SessionStore {
     /// Deletes every row of every model (the data, the queue, the shadows, the sync state with its cursor) and the
     /// calculator drafts; queues nothing.
     func wipeLocalData() throws {
+        // Reports written for sharing hold the farm's data too. They go first: a store wipe that fails is tried
+        // again (on sign-out, and on the next launch while a sign-in's rows are left), the files with it.
+        for directory in Self.exportDirectories where FileManager.default.fileExists(atPath: directory.path) {
+            try? FileManager.default.removeItem(at: directory)
+        }
+        for key in defaults.dictionaryRepresentation().keys where key.hasPrefix("agroDraft.") {
+            defaults.removeObject(forKey: key)
+        }
         context.rollback()
         SyncedSave.isApplyingRemote = true
         defer { SyncedSave.isApplyingRemote = false }
         for type in SchemaV6.models { try deleteAll(type) }
         try context.save()
-        for key in defaults.dictionaryRepresentation().keys where key.hasPrefix("agroDraft.") {
-            defaults.removeObject(forKey: key)
-        }
-        // Reports written for sharing hold the farm's data too.
-        for directory in Self.exportDirectories where FileManager.default.fileExists(atPath: directory.path) {
-            try? FileManager.default.removeItem(at: directory)
-        }
     }
 
     /// The folders the reports are written to for sharing (`tmp/Export`, `tmp/CoalExport`).
@@ -269,20 +290,82 @@ final class SessionStore {
 
     /// A sync now, then `GET /me` (the role and the zone may have changed).
     func syncNow() async {
-        guard case .signedIn = state, let engine else { return }
+        guard case .signedIn = state, let engine, !engine.stopped else { return }
         await engine.syncNow()
-        guard case .signedIn = state else { return }
+        await refreshMe(of: engine)
+    }
+
+    /// `GET /me` of the sign-in `engine` belongs to: nothing when that sign-in ended (a sign-out began, or another
+    /// account signed in) before or while it was asked.
+    private func refreshMe(of engine: SyncEngine) async {
+        func current() -> Bool {
+            guard case .signedIn = state else { return false }
+            return self.engine === engine && !engine.stopped
+        }
+        guard current(), let api = engineAPI else { return }
         do {
             let me: Me = try await api.send("GET", "/me", body: nil)
-            guard case .signedIn = state else { return }
+            guard current() else { return }
             adoptZone(me.farm.timezone)
             try store(me)
             if state != .signedIn(role: me.role) { state = .signedIn(role: me.role) }
         } catch APIError.unauthorized {
+            guard current() else { return }
             finishSignOut(revoked: true)
         } catch {
             // Offline or a server error: the role and the farm stay as they were.
         }
+    }
+
+    /// The next pull starts from the first change (after a server restore, or a refused change removed), so every
+    /// record takes the server's version again.
+    func resyncFromStart() async {
+        guard case .signedIn = state else { return }
+        SyncedSave.isApplyingRemote = true
+        SyncState.current(in: context).cursor = 0
+        try? context.save()
+        SyncedSave.isApplyingRemote = false
+        await syncNow()
+    }
+
+    /// «Удалить» in «Не принятые изменения» (`RefusedChanges.discard`), then a sync from the start.
+    func deleteRefused(_ op: SyncOp) async throws {
+        try RefusedChanges.discard(op, in: context)
+        engine?.refreshStatus()
+        await syncNow()
+    }
+
+    // MARK: Owner
+
+    /// A request of this sign-in (the owner's lists: `/members`, `/devices`, `/conflicts`, `/backups`, `PATCH /farm`).
+    /// A 401 signs the phone out, as the sync does. Under `-uitest`: canned answers.
+    func send<T: Decodable>(_ method: String, _ path: String, body: Encodable? = nil) async throws -> T {
+        if offline { return try JSONDecoder().decode(T.self, from: UITestServer.answer(method, path)) }
+        guard case .signedIn = state, let engine, let api = engineAPI else { throw APIError.unauthorized }
+        do {
+            return try await api.send(method, path, body: body)
+        } catch APIError.unauthorized {
+            if self.engine === engine && !engine.stopped { finishSignOut(revoked: true) }
+            throw APIError.unauthorized
+        }
+    }
+
+    /// The owner renames the farm or its manager (`PATCH /farm`), then `/me` brings the new names here.
+    func updateFarm(name: String, managerName: String) async throws {
+        let _: OKAnswer = try await send("PATCH", "/farm", body: FarmPatch(name: name, managerName: managerName))
+        if offline {
+            farm?.name = name
+            farm?.managerName = managerName
+            let settings = FarmSettingsStore.current(in: context)
+            SyncedSave.isApplyingRemote = true
+            settings.farmName = name
+            settings.managerName = managerName
+            try? context.save()
+            SyncedSave.isApplyingRemote = false
+            return
+        }
+        guard let engine else { return }
+        await refreshMe(of: engine)
     }
 
     /// Starts the sync triggers: the app becoming active (and every 60 s while it is), the network coming back,
@@ -373,6 +456,28 @@ private struct Me: Decodable {
 }
 
 private struct OK: Decodable {}
+
+/// The owner's lists under `-uitest` (screenshots of «Помощники», «Устройства», «Конфликты», «Резервные копии»).
+private enum UITestServer {
+    static func answer(_ method: String, _ path: String) -> Data {
+        let text: String
+        switch (method, path) {
+        case ("GET", "/members"):
+            text = #"[{"id":"u1","login":null,"email":"zubakhin@example.ru","name":"Зубахин","role":"owner"},{"id":"u2","login":"anna","email":null,"name":"anna","role":"timesheet"},{"id":"u3","login":"sergey","email":null,"name":"sergey","role":"coal"}]"#
+        case ("GET", "/devices"):
+            text = #"[{"id":"d1","name":"iPhone владельца","platform":"ios","email":"zubakhin@example.ru","login":null,"lastSeenAt":"2026-11-06T02:00:00.000Z","revoked":false,"current":true},{"id":"d2","name":"iPhone Анны","platform":"ios","email":null,"login":"anna","lastSeenAt":"2026-11-05T09:30:00.000Z","revoked":false,"current":false},{"id":"d3","name":"Сайт","platform":"web","email":null,"login":"sergey","lastSeenAt":null,"revoked":true,"current":false}]"#
+        case ("GET", "/conflicts"):
+            text = #"{"conflicts":[{"id":"c1","entity":"employee","recordId":"r1","field":"position","serverValue":"Тракторист","clientValue":"Механизатор"}]}"#
+        case ("GET", "/backups"):
+            text = #"[{"id":"b1","sha256":"x","records":124,"size":"52000","created_at":"2026-11-05T19:00:00.000Z"}]"#
+        case ("POST", "/backups"):
+            text = #"{"id":"b2","records":124,"createdAt":"2026-11-06T02:00:00.000Z"}"#
+        default:
+            text = #"{"ok":true}"#
+        }
+        return Data(text.utf8)
+    }
+}
 
 /// A message for the sign-in screen.
 struct SessionMessage: LocalizedError {

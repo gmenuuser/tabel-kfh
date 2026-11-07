@@ -8,6 +8,7 @@ struct CoalSaleScreen: View {
 
     @Environment(\.modelContext) private var context
     @Environment(\.scenePhase) private var scenePhase
+    @Environment(SessionStore.self) private var session
     @Query(sort: \CoalSale.saleDate, order: .reverse) private var allSales: [CoalSale]
     @Query private var workDays: [CoalWorkDay]
     @Query(filter: #Predicate<DeliveryLocation> { $0.isActive == true }) private var locationRows: [DeliveryLocation]
@@ -34,6 +35,8 @@ struct CoalSaleScreen: View {
     }
 
     private var isClosed: Bool { workDays.contains { $0.date == today && $0.isClosed } }
+    /// The viewer reads the day; the form and the buttons that change it are inactive.
+    private var canSell: Bool { session.canEdit(.coalSale) }
     private var closedAt: Date? { workDays.first { $0.date == today && $0.isClosed }?.closedAt }
     private var pricePerTon: Int { settingsRows.first?.pricePerTonKopecks ?? CoalDefaults.pricePerTonKopecks }
 
@@ -49,13 +52,15 @@ struct CoalSaleScreen: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 16) {
                 header
+                if !canSell { ReadOnlyNote() }
                 if isClosed {
                     closedBanner
                 } else if let binding = Binding($draft) {
                     form(binding)
+                        .disabled(!canSell)
                 }
                 salesList
-                if !isClosed {
+                if !isClosed && session.canEdit(.coalWorkDay) {
                     Button {
                         closing = true
                     } label: {
@@ -163,6 +168,7 @@ struct CoalSaleScreen: View {
             }
             Button("Открыть день для исправлений") { confirmingReopen = true }
                 .buttonStyle(BigButtonStyle(color: Theme.accent))
+                .editable(.coalWorkDay)
         }
         .card()
     }
@@ -318,14 +324,15 @@ struct CoalSaleScreen: View {
                     CoalSaleCard(sale: sale)
                 }
                 .buttonStyle(.plain)
+                .disabled(!canSell)
                 .contextMenu {
-                    if !isClosed {
+                    if !isClosed && canSell {
                         Button("Изменить") { editing = sale }
                         Button("Отменить продажу", role: .destructive) { cancelling = sale }
                     }
                 }
             }
-            if !todaySales.isEmpty && !isClosed {
+            if !todaySales.isEmpty && !isClosed && canSell {
                 Text("Нажмите на продажу, чтобы исправить или отменить её.")
                     .font(.footnote)
                     .foregroundStyle(.secondary)
