@@ -103,6 +103,7 @@ export function SettingsPage() {
           ))}
           <form className="row" onSubmit={(e) => {
             e.preventDefault();
+            if (!helper.login.trim()) { setNote('Введите логин помощника'); return; }
             act(async () => {
               await engine.call('/members', { method: 'POST', body: JSON.stringify({ ...helper, login: helper.login.trim() }) });
               setHelper({ login: '', password: '', role: 'timesheet' });

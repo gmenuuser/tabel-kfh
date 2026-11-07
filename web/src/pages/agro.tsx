@@ -1,11 +1,13 @@
 import { useState } from 'react';
 import { useApp, useRecords } from '../app.tsx';
+import { canEdit } from '../lib/roles.ts';
 import { KINDS, choices, complete, compute, fields, type Inputs } from '../lib/agro.ts';
 import { dayKey, shortDate, timeText } from '../lib/time.ts';
 
 /** «Агрономические калькуляторы»: the result right under the fields; saved calculations are shared. */
 export function AgroPage() {
-  const { engine } = useApp();
+  const { engine, session } = useApp();
+  const editable = canEdit(session.role);
   const saved = useRecords('agroCalculation');
   const [kind, setKind] = useState<string | null>(null);
   const [inputs, setInputs] = useState<Inputs>({});
@@ -44,7 +46,7 @@ export function AgroPage() {
                 </button>
                 <span>{main ? `${main.title}: ${main.text}` : ''}</span>
                 <span className="muted">{shortDate(dayKey(String(c.data.createdAt)))} {timeText(String(c.data.createdAt))}</span>
-                <button className="link danger" onClick={() => { if (confirm('Удалить расчёт?')) engine.remove('agroCalculation', c.id); }}>Удалить</button>
+                <button className="link danger" disabled={!editable} onClick={() => { if (confirm('Удалить расчёт?')) engine.remove('agroCalculation', c.id); }}>Удалить</button>
               </div>
             );
           })}
@@ -97,8 +99,8 @@ export function AgroPage() {
         {r.warnings.map((w) => <p key={w} className="note">{w}</p>)}
       </section>
       <div className="row">
-        <button className="big" disabled={!complete(r)} onClick={() => save()}>{editingId ? 'Сохранить изменения' : 'Сохранить'}</button>
-        {editingId && <button disabled={!complete(r)} onClick={() => save(true)}>Сохранить как новый</button>}
+        <button className="big" disabled={!editable || !complete(r)} onClick={() => save()}>{editingId ? 'Сохранить изменения' : 'Сохранить'}</button>
+        {editingId && <button disabled={!editable || !complete(r)} onClick={() => save(true)}>Сохранить как новый</button>}
         <button className="big secondary" onClick={() => { setInputs({}); setTitle(''); localStorage.removeItem(`kfh.agro.${kind}`); }}>Очистить</button>
         {complete(r) && <button onClick={() => { navigator.clipboard?.writeText(text); setNote('Результат скопирован'); }}>Копировать результат</button>}
         {complete(r) && 'share' in navigator && <button onClick={() => navigator.share({ text }).catch(() => {})}>Поделиться</button>}

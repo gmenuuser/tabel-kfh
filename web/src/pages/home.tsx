@@ -1,5 +1,5 @@
 import { useApp, useRecords } from '../app.tsx';
-import { canOpen } from '../lib/roles.ts';
+import { canOpen, modulesFor } from '../lib/roles.ts';
 import { coalTotals, herdBalances, rubles, plural } from '../lib/domain.ts';
 import { dayKey, longDate, todayKey } from '../lib/time.ts';
 
@@ -10,6 +10,7 @@ export function HomePage({ go }: { go: (r: string) => void }) {
   const marks = useRecords('hoursMark');
   const sales = useRecords('coalSale');
   const ops = useRecords('livestockOperation');
+  const modules = modulesFor(session.role);
   const today = todayKey();
   const active = employees.filter((e) => !e.data.isArchived);
   const todayMarks = marks.filter((m) => dayKey(String(m.data.day)) === today);
@@ -30,9 +31,9 @@ export function HomePage({ go }: { go: (r: string) => void }) {
         <div className="subtitle">{longDate(today)}</div>
         <div className="muted">{farm.region}</div>
         <ul className="facts">
-          <li>{active.length ? `Отработали сегодня: ${worked} из ${active.length}` : 'Сотрудников пока нет'}</li>
-          <li>{todaySales.sales ? `Уголь: ${todaySales.sales} ${plural(todaySales.sales, 'продажа', 'продажи', 'продаж')} на ${rubles(todaySales.revenue)}` : 'Продаж угля сегодня нет'}</li>
-          {herd > 0 && <li>Скот: {herd} {plural(herd, 'голова', 'головы', 'голов')}</li>}
+          {modules.includes('timesheet') && <li>{active.length ? `Отработали сегодня: ${worked} из ${active.length}` : 'Сотрудников пока нет'}</li>}
+          {modules.includes('coal') && <li>{todaySales.sales ? `Уголь: ${todaySales.sales} ${plural(todaySales.sales, 'продажа', 'продажи', 'продаж')} на ${rubles(todaySales.revenue)}` : 'Продаж угля сегодня нет'}</li>}
+          {modules.includes('livestock') && herd > 0 && <li>Скот: {herd} {plural(herd, 'голова', 'головы', 'голов')}</li>}
         </ul>
       </section>
       <div className="tiles">

@@ -1,5 +1,6 @@
 import { useMemo, useState } from 'react';
 import { useApp, useRecords } from '../app.tsx';
+import { canEdit } from '../lib/roles.ts';
 import type { LocalRecord } from '../lib/db.ts';
 import { HOURS, hoursTotals } from '../lib/domain.ts';
 import { stableId } from '../lib/ids.ts';
@@ -41,6 +42,7 @@ const hoursClass = (h: number | undefined) => (h === undefined ? '' : `h${h}`);
 
 /** «Табель работников»: the day and four buttons per person. */
 export function TimesheetPage({ go }: { go: (r: string) => void }) {
+  const editable = canEdit(useApp().session.role);
   const employees = useRecords('employee');
   const marks = useRecords('hoursMark');
   const setHours = useHours();
@@ -78,7 +80,7 @@ export function TimesheetPage({ go }: { go: (r: string) => void }) {
           <strong>Отмечено: {marked.length} из {people.length}</strong>
           <strong className="accent">Часов: {total}</strong>
           {marked.length < people.length && (
-            <button onClick={() => people.filter((e) => !index.has(`${e.id}:${day}`)).forEach((e) => setHours(e.id, day, 8))}>
+            <button disabled={!editable} onClick={() => people.filter((e) => !index.has(`${e.id}:${day}`)).forEach((e) => setHours(e.id, day, 8))}>
               Всем неотмеченным — 8 ч
             </button>
           )}
@@ -96,7 +98,7 @@ export function TimesheetPage({ go }: { go: (r: string) => void }) {
             </div>
             <div className="hours">
               {HOURS.map((x) => (
-                <button key={x} className={`hbtn h${x} ${h === x ? 'on' : ''}`} aria-pressed={h === x}
+                <button key={x} disabled={!editable} className={`hbtn h${x} ${h === x ? 'on' : ''}`} aria-pressed={h === x}
                         onClick={() => setHours(e.id, day, h === x ? null : x)}>{x} ч</button>
               ))}
             </div>
@@ -109,7 +111,8 @@ export function TimesheetPage({ go }: { go: (r: string) => void }) {
 
 /** «Табель за месяц»: employees by days, hours in the cells, totals; names and dates stay in place. */
 export function MonthPage() {
-  const { farm } = useApp();
+  const { farm, session } = useApp();
+  const editable = canEdit(session.role);
   const employees = useRecords('employee');
   const marks = useRecords('hoursMark');
   const setHours = useHours();
@@ -173,7 +176,7 @@ export function MonthPage() {
                   <th className="sticky-col">{shortName(r.e)}</th>
                   {r.cells.map((c, i) => (
                     <td key={keys[i]} className={c === undefined ? 'off' : `cell ${typeof c === 'number' ? `h${c}` : ''}`}
-                        onClick={() => c !== undefined && setEditing({ employee: r.e, key: keys[i] })}
+                        onClick={() => editable && c !== undefined && setEditing({ employee: r.e, key: keys[i] })}
                         title={`${fullName(r.e)}, ${i + 1}`}>{typeof c === 'number' ? c : ''}</td>
                   ))}
                   {tv(r.t).map((v, i) => <td key={i} className="tot">{v}</td>)}

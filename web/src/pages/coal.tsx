@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useApp, useRecords, useStatus } from '../app.tsx';
+import { canEdit } from '../lib/roles.ts';
 import type { LocalRecord } from '../lib/db.ts';
 import { coalAmount, coalTotals, driverAccounts, driverDebt, parseRubles, parseTons, rubles, rublesField, tons, type Data } from '../lib/domain.ts';
 import { stableId } from '../lib/ids.ts';
@@ -31,7 +32,8 @@ function useCoalDefaults() {
 const QUICK = ['0,5', '1', '1,5', '2', '2,5', '3'];
 
 export function CoalPage({ go }: { go: (r: string) => void }) {
-  const { engine } = useApp();
+  const { engine, session } = useApp();
+  const editable = canEdit(session.role);
   const { price, locations } = useCoalDefaults();
   const drivers = useRecords('driver').filter((d) => !d.data.isArchived);
   const sales = useRecords('coalSale');
@@ -101,7 +103,7 @@ export function CoalPage({ go }: { go: (r: string) => void }) {
       {closed ? (
         <section className="card">
           <h3 className="accent">Рабочий день завершён</h3>
-          <button onClick={() => engine.save('coalWorkDay', dayId, { isClosed: false })}>Открыть день для исправлений</button>
+          <button disabled={!editable} onClick={() => engine.save('coalWorkDay', dayId, { isClosed: false })}>Открыть день для исправлений</button>
         </section>
       ) : (
         <section className="card form">
@@ -131,7 +133,7 @@ export function CoalPage({ go }: { go: (r: string) => void }) {
             <div className="total"><span>ИТОГО</span><span>{rubles(coal + delivery)}</span></div>
           </div>
           {error && <div className="error">{error}</div>}
-          <button className="big" onClick={save}>СОХРАНИТЬ ПРОДАЖУ</button>
+          <button className="big" disabled={!editable} onClick={save}>СОХРАНИТЬ ПРОДАЖУ</button>
           {saved && <div className="note">{saved}</div>}
         </section>
       )}
@@ -143,11 +145,11 @@ export function CoalPage({ go }: { go: (r: string) => void }) {
           <div className="row between"><span className="muted">{timeText(String(s.data.saleDate))}</span><strong>{rubles(Number(s.data.totalAmount))}</strong></div>
           <div className="name">{tons(Number(s.data.kilograms))} т · {String(s.data.locationNameSnapshot)}</div>
           <div>{s.data.vehicleType === 'hired' ? `Наёмная: ${s.data.driverNameSnapshot}` : 'Собственная машина КФХ'}</div>
-          {!closed && <button className="link danger" onClick={() => { if (confirm('Отменить продажу?')) engine.remove('coalSale', s.id); }}>Отменить продажу</button>}
+          {!closed && <button className="link danger" disabled={!editable} onClick={() => { if (confirm('Отменить продажу?')) engine.remove('coalSale', s.id); }}>Отменить продажу</button>}
         </section>
       ))}
 
-      {!closed && <button className="big orange" onClick={() => setClosing(true)}>ЗАВЕРШИТЬ РАБОЧИЙ ДЕНЬ</button>}
+      {!closed && <button className="big orange" disabled={!editable} onClick={() => setClosing(true)}>ЗАВЕРШИТЬ РАБОЧИЙ ДЕНЬ</button>}
       {closing && (
         <div className="modal" onClick={() => setClosing(false)}>
           <div className="card form" onClick={(e) => e.stopPropagation()}>
@@ -161,7 +163,7 @@ export function CoalPage({ go }: { go: (r: string) => void }) {
               <div className="total"><span>Остаток после выплат водителям</span><span>{rubles(totals.revenue - totals.driverPayments)}</span></div>
             </div>
             <p className="muted">Остаток — это ещё не прибыль. Деньги водителям этим не выплачиваются.</p>
-            <button className="big" onClick={closeDay}>ПОДТВЕРДИТЬ ЗАВЕРШЕНИЕ ДНЯ</button>
+            <button className="big" disabled={!editable} onClick={closeDay}>ПОДТВЕРДИТЬ ЗАВЕРШЕНИЕ ДНЯ</button>
           </div>
         </div>
       )}
