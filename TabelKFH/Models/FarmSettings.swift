@@ -53,7 +53,7 @@ enum FarmSettingsStore {
         if let existing = (try? context.fetch(descriptor))?.first { return existing }
         let settings = FarmSettings()
         context.insert(settings)
-        try? context.save()
+        try? context.syncedSave()
         return settings
     }
 }

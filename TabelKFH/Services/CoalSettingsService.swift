@@ -29,7 +29,7 @@ final class CoalSettingsService {
                                                 createdAt: moment.addingTimeInterval(Double(index))))
             }
         }
-        try? context.save()
+        try? context.syncedSave()
         return settings
     }
 
@@ -43,7 +43,7 @@ final class CoalSettingsService {
         guard settings.pricePerTonKopecks != kopecks else { return }
         settings.pricePerTonKopecks = kopecks
         settings.updatedAt = now()
-        try context.save()
+        try context.syncedSave()
     }
 
     // MARK: - Villages
@@ -80,7 +80,7 @@ final class CoalSettingsService {
         }
         location.deliveryPriceKopecks = deliveryKopecks
         location.driverPaymentKopecks = driverPaymentKopecks
-        try context.save()
+        try context.syncedSave()
         return location
     }
 
@@ -93,13 +93,13 @@ final class CoalSettingsService {
         location.name = trimmed
         location.deliveryPriceKopecks = deliveryKopecks
         location.driverPaymentKopecks = driverPaymentKopecks
-        try context.save()
+        try context.syncedSave()
     }
 
     /// «Удалить»: the village leaves the list of a new sale; saved sales keep its name and prices.
     func removeLocation(_ location: DeliveryLocation) throws {
         location.isActive = false
-        try context.save()
+        try context.syncedSave()
     }
 
     private func validate(name: String, delivery: Int, driverPayment: Int?) throws -> String {

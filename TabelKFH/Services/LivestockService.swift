@@ -123,7 +123,7 @@ final class LivestockService {
                 }
             }
         }
-        try? context.save()
+        try? context.syncedSave()
     }
 
     func categories(_ species: Species? = nil) throws -> [LivestockCategory] {
@@ -149,7 +149,7 @@ final class LivestockService {
                                   species: species, name: trimmed, sortOrder: (existing.map(\.sortOrder).max() ?? 0) + 1,
                                   createdAt: now())
         context.insert(c)
-        try context.save()
+        try context.syncedSave()
         return c
     }
 
@@ -160,7 +160,7 @@ final class LivestockService {
         let used = try moves().contains { $0.categoryId == c.id || $0.targetCategoryId == id }
         if used { throw LivestockError.categoryInUse }
         context.delete(c)
-        try context.save()
+        try context.syncedSave()
     }
 
     // MARK: Herd
@@ -204,7 +204,7 @@ final class LivestockService {
                                    createdAt: moment, updatedAt: moment)
         context.insert(o)
         try saveSlaughter(d, for: o)
-        try context.save()
+        try context.syncedSave()
         return o
     }
 
@@ -221,7 +221,7 @@ final class LivestockService {
         o.comment = d.comment.trimmingCharacters(in: .whitespacesAndNewlines)
         o.updatedAt = now()
         try saveSlaughter(d, for: o)
-        try context.save()
+        try context.syncedSave()
     }
 
     /// Deletes an operation entered by mistake (with its slaughter details). Refused when the herd would go
@@ -230,7 +230,7 @@ final class LivestockService {
         try check(replacing: o.id, with: nil)
         if let s = try slaughterRecord(for: o.id) { context.delete(s) }
         context.delete(o)
-        try context.save()
+        try context.syncedSave()
     }
 
     /// The form of a saved operation.

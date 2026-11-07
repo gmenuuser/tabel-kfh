@@ -66,7 +66,7 @@ final class TimesheetService {
                                          createdAt: createdAt, documentData: documentData,
                                          employeeData: employeeData)
         context.insert(snapshot)
-        try context.save()
+        try context.syncedSave()
         return snapshot
     }
 

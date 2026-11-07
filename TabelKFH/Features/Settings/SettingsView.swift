@@ -81,7 +81,7 @@ private struct SettingsForm: View {
         .keyboardDoneButton()
         .backupPresenters(backup, onRestore: onRestore)
         .onChange(of: settings.info) { _, _ in
-            try? context.save()
+            try? context.syncedSave()
         }
     }
 

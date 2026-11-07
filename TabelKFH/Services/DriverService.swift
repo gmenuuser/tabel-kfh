@@ -44,7 +44,7 @@ final class DriverService {
         let d = Driver(lastName: "", createdAt: now())
         apply(draft, to: d)
         context.insert(d)
-        try context.save()
+        try context.syncedSave()
         return d
     }
 
@@ -55,17 +55,17 @@ final class DriverService {
         let name = d.fullName
         for s in try sales(of: d) where s.driverNameSnapshot != name { s.driverNameSnapshot = name }
         for p in try payments(of: d) where p.driverNameSnapshot != name { p.driverNameSnapshot = name }
-        try context.save()
+        try context.syncedSave()
     }
 
     func archive(_ d: Driver) throws {
         d.isArchived = true
-        try context.save()
+        try context.syncedSave()
     }
 
     func restore(_ d: Driver) throws {
         d.isArchived = false
-        try context.save()
+        try context.syncedSave()
     }
 
     func hasHistory(_ d: Driver) throws -> Bool {
@@ -76,7 +76,7 @@ final class DriverService {
     func delete(_ d: Driver) throws {
         if try hasHistory(d) { throw CoalError.driverHasHistory }
         context.delete(d)
-        try context.save()
+        try context.syncedSave()
     }
 
     /// Drivers for the picker: not archived, by surname; `search` matches the start of any name part

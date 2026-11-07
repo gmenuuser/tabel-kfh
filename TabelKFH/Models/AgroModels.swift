@@ -65,19 +65,19 @@ final class AgroService {
             existing.inputsData = Self.encode(cleaned)
             existing.resultData = resultData
             existing.updatedAt = moment
-            try context.save()
+            try context.syncedSave()
             return existing
         }
         let c = AgroCalculation(kind: kind, title: trimmed, inputsData: Self.encode(cleaned), resultData: resultData,
                                 createdAt: moment, updatedAt: moment)
         context.insert(c)
-        try context.save()
+        try context.syncedSave()
         return c
     }
 
     func delete(_ c: AgroCalculation) throws {
         context.delete(c)
-        try context.save()
+        try context.syncedSave()
     }
 
     /// Newest first, filtered by kind, a text in the title or inputs, and `start <= createdAt < end`.

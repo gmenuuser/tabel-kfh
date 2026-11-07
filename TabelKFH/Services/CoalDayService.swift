@@ -28,14 +28,14 @@ final class DriverPaymentService {
                               paymentDate: date ?? moment, amount: amount,
                               comment: comment.trimmingCharacters(in: .whitespacesAndNewlines), createdAt: moment)
         context.insert(p)
-        try context.save()
+        try context.syncedSave()
         return p
     }
 
     /// Removes a payment entered by mistake; the debt grows back.
     func delete(_ p: DriverPayment) throws {
         context.delete(p)
-        try context.save()
+        try context.syncedSave()
     }
 
     /// Payments with `start <= paymentDate < end`, oldest first.
@@ -105,7 +105,7 @@ final class CoalDayService {
         day.totalKilograms = report.totals.kilograms
         day.totalDriverPayments = report.totals.driverPayments
         day.ownVehicleDeliveryRevenue = report.totals.ownVehicleDeliveryRevenue
-        try context.save()
+        try context.syncedSave()
         return day
     }
 
@@ -113,7 +113,7 @@ final class CoalDayService {
     func reopen(_ date: Date) throws {
         guard let day = try workDay(on: date), day.isClosed else { throw CoalError.dayNotClosed }
         day.isClosed = false
-        try context.save()
+        try context.syncedSave()
     }
 
     /// Closed days, newest first.

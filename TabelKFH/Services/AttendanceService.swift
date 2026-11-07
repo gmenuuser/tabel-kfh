@@ -153,7 +153,7 @@ final class AttendanceService {
         r.manualWorkedMinutes = nil
         r.breakMinutes = e.defaultBreakMinutes
         r.updatedAt = moment
-        try context.save()
+        try context.syncedSave()
         return r
     }
 
@@ -178,7 +178,7 @@ final class AttendanceService {
                                                            breakMinutes: r.breakMinutes)
         r.manualWorkedMinutes = nil
         r.updatedAt = moment
-        try context.save()
+        try context.syncedSave()
         return r
     }
 
@@ -213,13 +213,13 @@ final class AttendanceService {
             r.manualWorkedMinutes = nil
         }
         r.updatedAt = now()
-        try context.save()
+        try context.syncedSave()
         return r
     }
 
     func delete(_ r: AttendanceRecord) throws {
         context.delete(r)
-        try context.save()
+        try context.syncedSave()
     }
 
     // MARK: - Marks without times (the timesheet of statuses)
@@ -239,7 +239,7 @@ final class AttendanceService {
         guard let status else {
             if let existing {
                 context.delete(existing)
-                try context.save()
+                try context.syncedSave()
             }
             return nil
         }
@@ -254,7 +254,7 @@ final class AttendanceService {
             }
             r.updatedAt = now()
         }
-        try context.save()
+        try context.syncedSave()
         return r
     }
 
@@ -277,7 +277,7 @@ final class AttendanceService {
             r.status = .present
             marked += 1
         }
-        if marked > 0 { try context.save() }
+        if marked > 0 { try context.syncedSave() }
         return marked
     }
 

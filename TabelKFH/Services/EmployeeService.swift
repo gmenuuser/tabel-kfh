@@ -77,7 +77,7 @@ final class EmployeeService {
         let e = Employee(lastName: "", firstName: "", hireDate: calendar.dayStart(draft.hireDate))
         apply(draft, to: e)
         context.insert(e)
-        try context.save()
+        try context.syncedSave()
         return e
     }
 
@@ -85,17 +85,17 @@ final class EmployeeService {
     func update(_ e: Employee, from draft: EmployeeDraft) throws {
         try validate(draft)
         apply(draft, to: e)
-        try context.save()
+        try context.syncedSave()
     }
 
     func archive(_ e: Employee) throws {
         e.isArchived = true
-        try context.save()
+        try context.syncedSave()
     }
 
     func restore(_ e: Employee) throws {
         e.isArchived = false
-        try context.save()
+        try context.syncedSave()
     }
 
     /// Not archived and employed on `day` (hired on or before it, not dismissed before it), by name.

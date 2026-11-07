@@ -148,7 +148,7 @@ final class CoalSaleService {
                          vehicleType: draft.vehicle, createdAt: moment, updatedAt: moment)
         apply(draft, driverName: driverName, to: s)
         context.insert(s)
-        try context.save()
+        try context.syncedSave()
         return s
     }
 
@@ -160,13 +160,13 @@ final class CoalSaleService {
         let driverName = try checkedDriverName(draft, previousDriverId: s.driverId)
         apply(draft, driverName: driverName, to: s)
         s.updatedAt = now()
-        try context.save()
+        try context.syncedSave()
     }
 
     func delete(_ s: CoalSale) throws {
         try ensureOpen(s.saleDate)
         context.delete(s)
-        try context.save()
+        try context.syncedSave()
     }
 
     func sale(id: UUID) throws -> CoalSale? {

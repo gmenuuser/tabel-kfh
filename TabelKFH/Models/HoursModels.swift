@@ -83,7 +83,7 @@ final class HoursService {
         } else {
             existing.first.map { context.delete($0) }
         }
-        try context.save()
+        try context.syncedSave()
     }
 
     /// The button row: the selected value again removes the mark, another value replaces it.
