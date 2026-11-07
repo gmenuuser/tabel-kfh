@@ -31,6 +31,8 @@ final class SyncEngine {
     @ObservationIgnored private var again = false
     @ObservationIgnored private var signedOut = false
     @ObservationIgnored private var soon: Task<Void, Never>?
+    /// Set by `stop()` (sign-out): nothing more is sent, and nothing fetched afterwards is written.
+    @ObservationIgnored private(set) var stopped = false
 
     /// Ops in one push (the server takes up to 500).
     static let batchSize = 100
@@ -52,6 +54,7 @@ final class SyncEngine {
 
     /// One sync at a time: a call during a sync runs one more right after it (a change just made).
     func syncNow() async {
+        if stopped { return }
         if let running {
             again = true
             await running.value
@@ -62,7 +65,7 @@ final class SyncEngine {
             repeat {
                 self.again = false
                 await self.run()
-            } while self.again && self.status.online && !self.signedOut
+            } while self.again && self.status.online && !self.signedOut && !self.stopped
             self.running = nil
         }
         running = task
@@ -74,26 +77,46 @@ final class SyncEngine {
         soon?.cancel()
         soon = Task { @MainActor [weak self] in
             try? await Task.sleep(nanoseconds: 1_000_000_000)
-            guard !Task.isCancelled, let self else { return }
+            guard !Task.isCancelled, let self, !self.stopped else { return }
             self.soon = nil
             await self.syncNow()
         }
     }
 
+    /// Sign-out: the run on its way is cancelled and writes nothing more (checked after every request), no new
+    /// run starts. Call before wiping the store.
+    func stop() {
+        stopped = true
+        running?.cancel()
+        soon?.cancel()
+        soon = nil
+        status.syncing = false
+    }
+
+    /// Thrown when stopped: everything after it leaves the store alone.
+    private func checkStopped() throws {
+        if stopped { throw CancellationError() }
+    }
+
     // MARK: One run
 
     private func run() async {
+        if stopped { return }
         status.syncing = true
         var unauthorized = false
         do {
             try await pushAll()
             try await pullAll()
             let open: ConflictList = try await api.send("GET", "/conflicts", body: nil)
+            try checkStopped()
             let state = SyncState.current(in: context)
             state.conflicts = open.conflicts.count
             state.lastSyncAt = Date()
             state.lastError = ""
             status.online = true
+        } catch _ where stopped {
+            // Signed out meanwhile: the store is being wiped, nothing is written.
+            return
         } catch APIError.unauthorized {
             unauthorized = true
             SyncState.current(in: context).lastError = APIError.unauthorized.localizedDescription
@@ -131,6 +154,7 @@ final class SyncEngine {
     /// to the earlier one, with the version that answer gave.
     private func pushAll() async throws {
         while true {
+            try checkStopped()
             let refused = "error"
             let queue = try context.fetch(FetchDescriptor<SyncOp>(predicate: #Predicate { $0.state != refused },
                                                                    sortBy: [SortDescriptor(\.seq)]))
@@ -148,6 +172,7 @@ final class SyncEngine {
             do {
                 response = try await api.send("POST", "/sync/push", body: PushBody(ops: batch.map(PushOp.init)))
             } catch {
+                try checkStopped()
                 // No answer: the ops stay queued with their opIds (the server ignores repeats).
                 for op in batch {
                     op.state = "pending"
@@ -157,6 +182,7 @@ final class SyncEngine {
                 throw error
             }
 
+            try checkStopped()
             var settled = Set<UUID>()
             var refusedHere = false
             for r in response.results {
@@ -218,6 +244,7 @@ final class SyncEngine {
 
     /// One page, applied and saved in one go on the main actor (nothing else runs in between), queueing nothing.
     private func apply(_ page: PullPage) throws {
+        try checkStopped()
         // A change on a screen not saved yet is queued first, so the remote save below cannot take it unqueued.
         if context.hasChanges { try context.syncedSave() }
         SyncedSave.isApplyingRemote = true

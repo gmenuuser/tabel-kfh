@@ -31,10 +31,17 @@ final class SessionStore {
     private(set) var farm: FarmInfoDTO?
     /// The engine of this sign-in; nil when signed out, and under `-uitest`.
     private(set) var engine: SyncEngine?
+    /// Shown on the sign-in screen after the server refused the device («Доступ к хозяйству отключён…»).
+    var signOutNotice: String?
 
     @ObservationIgnored private let container: ModelContainer
     @ObservationIgnored private let tokens: TokenStore
     @ObservationIgnored private let api: APIClient
+    @ObservationIgnored private let base: URL
+    @ObservationIgnored private let urlSession: URLSession
+    /// The token as the current engine may use it; closed when that engine stops, so a run of an earlier
+    /// sign-in never sends the token of a later one.
+    @ObservationIgnored private var engineGate: TokenGate?
     @ObservationIgnored private let defaults: UserDefaults
     @ObservationIgnored private let deviceName: String
     @ObservationIgnored private let offline: Bool
@@ -55,8 +62,16 @@ final class SessionStore {
         self.defaults = defaults
         self.deviceName = deviceName
         self.offline = false
+        self.base = base
+        urlSession = session
         api = APIClient(base: base, session: session, token: { tokens.token() })
-        if tokens.token() != nil {
+        if tokens.token() == nil {
+            // Signed out, but a sign-in's rows are still here (a wipe that failed): wiped now. A phone that was never
+            // signed in has no `SyncState` and keeps its own data (offered as a copy before the sign-in).
+            var d = FetchDescriptor<SyncState>()
+            d.fetchLimit = 1
+            if ((try? container.mainContext.fetchCount(d)) ?? 0) > 0 { try? wipeLocalData() }
+        } else {
             farm = defaults.data(forKey: Self.farmKey).flatMap { try? JSONDecoder().decode(FarmInfoDTO.self, from: $0) }
             var d = FetchDescriptor<SyncState>()
             d.fetchLimit = 1
@@ -73,6 +88,8 @@ final class SessionStore {
         defaults = .standard
         deviceName = "uitest"
         offline = true
+        base = URL(string: "https://kfh.cubely.ru")!
+        urlSession = .shared
         api = APIClient(token: { nil })
         state = .signedIn(role: "owner")
     }
@@ -82,13 +99,26 @@ final class SessionStore {
     private var context: ModelContext { container.mainContext }
 
     private func makeEngine() {
-        let engine = SyncEngine(container: container, api: api)
+        stopEngine()
+        let gate = TokenGate()
+        let tokens = self.tokens
+        let engine = SyncEngine(container: container,
+                                api: APIClient(base: base, session: urlSession,
+                                               token: { gate.isOpen ? tokens.token() : nil }))
         // Idempotent: a later run after a 401 calls it again. An engine of an earlier sign-in is ignored.
         engine.onSignedOut = { [weak self, weak engine] in
             guard let self, let engine, self.engine === engine else { return }
-            self.finishSignOut()
+            self.finishSignOut(revoked: true)
         }
         self.engine = engine
+        engineGate = gate
+    }
+
+    /// The run on its way writes nothing more and sends no token again.
+    private func stopEngine() {
+        engineGate?.close()
+        engineGate = nil
+        engine?.stop()
     }
 
     // MARK: Role
@@ -140,7 +170,14 @@ final class SessionStore {
         for key in defaults.dictionaryRepresentation().keys where key.hasPrefix("agroDraft.") {
             defaults.removeObject(forKey: key)
         }
+        // Reports written for sharing hold the farm's data too.
+        for directory in Self.exportDirectories where FileManager.default.fileExists(atPath: directory.path) {
+            try? FileManager.default.removeItem(at: directory)
+        }
     }
+
+    /// The folders the reports are written to for sharing (`tmp/Export`, `tmp/CoalExport`).
+    static var exportDirectories: [URL] { [ExportFiles.directory, CoalExportFiles.directory] }
 
     private func deleteAll<T: PersistentModel>(_ type: T.Type) throws {
         for model in try context.fetch(FetchDescriptor<T>()) { context.delete(model) }
@@ -163,12 +200,17 @@ final class SessionStore {
                 // The login's 401 is a wrong login or password, not a revoked device.
                 throw APIError.server(status: 401, message: "Неверный логин или пароль")
             }
-            tokens.save(answer.token)
+            do {
+                try tokens.save(answer.token)
+            } catch {
+                throw SessionMessage("Не удалось сохранить вход на телефоне")
+            }
             me = try await api.send("GET", "/me", body: nil)
         } catch {
             tokens.delete()
             throw error
         }
+        signOutNotice = nil
         state = .loading
         do {
             adoptZone(me.farm.timezone)
@@ -193,22 +235,30 @@ final class SessionStore {
     /// Then everything on the phone is wiped and the sign-in screen shows.
     func signOut(force: Bool) async {
         if !force, tokens.token() != nil {
+            // The run on its way stops first: nothing it fetches is written, the wipe below is final.
+            stopEngine()
             let _: OK? = try? await api.send("POST", "/auth/logout", body: nil)
-            tokens.delete()
-            // A sync on its way finishes first (its requests now get 401), so nothing lands after the wipe.
-            var waited = 0
-            while engine?.status.syncing == true, waited < 200 {
-                try? await Task.sleep(nanoseconds: 50_000_000)
-                waited += 1
-            }
         }
-        finishSignOut()
+        finishSignOut(revoked: force)
     }
 
-    /// Wipes the phone and shows the sign-in screen; safe to call again.
-    private func finishSignOut() {
+    /// Stops the sync, wipes the phone and shows the sign-in screen; safe to call again. `revoked`: the server
+    /// refused the device, the sign-in screen says so (with the unsent changes that were lost).
+    private func finishSignOut(revoked: Bool = false) {
+        let lost = pendingChanges
+        let wasSignedOut = state == .signedOut
+        stopEngine()
         tokens.delete()
-        try? wipeLocalData()
+        do {
+            try wipeLocalData()
+        } catch {
+            // Once more; failing again, the next launch wipes (signed out with a sign-in's rows left).
+            try? wipeLocalData()
+        }
+        if revoked && !wasSignedOut {
+            signOutNotice = lost > 0 ? "Доступ к хозяйству отключён. Неотправленных изменений удалено: \(lost)."
+                                     : "Доступ к хозяйству отключён."
+        }
         defaults.removeObject(forKey: Self.farmKey)
         farm = nil
         engine = nil
@@ -229,7 +279,7 @@ final class SessionStore {
             try store(me)
             if state != .signedIn(role: me.role) { state = .signedIn(role: me.role) }
         } catch APIError.unauthorized {
-            finishSignOut()
+            finishSignOut(revoked: true)
         } catch {
             // Offline or a server error: the role and the farm stay as they were.
         }
@@ -324,8 +374,22 @@ private struct Me: Decodable {
 
 private struct OK: Decodable {}
 
+/// A message for the sign-in screen.
+struct SessionMessage: LocalizedError {
+    let errorDescription: String?
+    init(_ text: String) { errorDescription = text }
+}
+
+/// Lets an engine's requests carry the token until its sign-in ends (read on URLSession's threads).
+private final class TokenGate: @unchecked Sendable {
+    private let lock = NSLock()
+    private var open = true
+    var isOpen: Bool { lock.lock(); defer { lock.unlock() }; return open }
+    func close() { lock.lock(); open = false; lock.unlock() }
+}
+
 private struct UITestTokens: TokenStore {
-    func save(_ token: String) {}
+    func save(_ token: String) throws {}
     func token() -> String? { nil }
     func delete() {}
 }

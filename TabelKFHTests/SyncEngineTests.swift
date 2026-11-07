@@ -21,6 +21,14 @@ final class StubURLProtocol: URLProtocol {
     private static let lock = NSLock()
     private static var storedHandler: ((Request) throws -> (Int, Data))?
     private static var storedRequests: [Request] = []
+    private static var storedHold: ((Request) -> DispatchSemaphore?)?
+
+    /// A request this returns a semaphore for is answered (by `handler`) only once the semaphore is signalled,
+    /// off the loading thread, so other requests go on meanwhile.
+    static var hold: ((Request) -> DispatchSemaphore?)? {
+        get { lock.lock(); defer { lock.unlock() }; return storedHold }
+        set { lock.lock(); storedHold = newValue; lock.unlock() }
+    }
 
     static var handler: ((Request) throws -> (Int, Data))? {
         get { lock.lock(); defer { lock.unlock() }; return storedHandler }
@@ -36,6 +44,7 @@ final class StubURLProtocol: URLProtocol {
         lock.lock()
         storedHandler = nil
         storedRequests = []
+        storedHold = nil
         lock.unlock()
     }
 
@@ -48,8 +57,20 @@ final class StubURLProtocol: URLProtocol {
                         body: Self.body(of: request))
         Self.lock.lock()
         Self.storedRequests.append(r)
-        let h = Self.storedHandler
+        let held = Self.storedHold?(r)
         Self.lock.unlock()
+        if let held {
+            DispatchQueue.global().async {
+                held.wait()
+                self.respond(to: r)
+            }
+            return
+        }
+        respond(to: r)
+    }
+
+    private func respond(to r: Request) {
+        let h = Self.handler
         do {
             guard let h else { throw URLError(.notConnectedToInternet) }
             let (status, data) = try h(r)

@@ -32,6 +32,12 @@ struct SignInView: View {
                     .font(.largeTitle.bold())
                     .foregroundStyle(Theme.primary)
                     .padding(.top, 40)
+                if let notice = session.signOutNotice {
+                    Label(notice, systemImage: "lock.fill")
+                        .foregroundStyle(Theme.accent)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .accessibilityIdentifier("signOutNotice")
+                }
                 VStack(alignment: .leading, spacing: 6) {
                     Text("Почта или логин").font(.subheadline).foregroundStyle(.secondary)
                     TextField("Почта или логин", text: $login)

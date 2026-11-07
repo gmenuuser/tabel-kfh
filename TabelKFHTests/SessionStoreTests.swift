@@ -5,7 +5,11 @@ import SwiftData
 /// The token kept in memory (the CI simulator runs the app unsigned, without a Keychain).
 private final class MemoryTokens: TokenStore {
     var stored: String?
-    func save(_ token: String) { stored = token }
+    var failSave = false
+    func save(_ token: String) throws {
+        if failSave { throw CocoaError(.fileWriteUnknown) }
+        stored = token
+    }
     func token() -> String? { stored }
     func delete() { stored = nil }
 }
@@ -23,6 +27,8 @@ private final class FakeServer {
     }
 
     func revoke() { lock.lock(); revoked = true; lock.unlock() }
+
+    func addPull(_ page: String) { lock.lock(); pulls.append(page); lock.unlock() }
 
     func handle(_ r: StubURLProtocol.Request) throws -> (Int, Data) {
         lock.lock(); defer { lock.unlock() }
@@ -205,10 +211,82 @@ final class SessionStoreTests: XCTestCase {
         XCTAssertEqual(try context.fetchCount(FetchDescriptor<SyncShadow>()), 0)
         // No logout request: the server already refused the device.
         XCTAssertEqual(requests("/auth/logout").count, 0)
+        XCTAssertEqual(session.signOutNotice, "Доступ к хозяйству отключён. Неотправленных изменений удалено: 1.")
 
         // Called again by a later run: nothing breaks.
         await session.syncNow()
         await session.signOut(force: true)
+        XCTAssertEqual(session.state, .signedOut)
+    }
+
+    func testSignOutStopsTheRunInFlight() async throws {
+        let server = FakeServer(pulls: [FakeServer.employeePage(UUID(), lastName: "Первый", next: 3)])
+        let session = makeSession(server)
+        try await session.signIn(login: "ivan", password: "secret-pass")
+        // The next pull is answered only after the sign-out, with a page of the farm.
+        server.addPull(FakeServer.employeePage(UUID(), lastName: "Поздний", next: 9))
+        let release = DispatchSemaphore(value: 0)
+        let asked = expectation(description: "pull asked")
+        StubURLProtocol.hold = { r in
+            guard r.path == "/sync/pull" else { return nil }
+            asked.fulfill()
+            return release
+        }
+        let sync = Task { await session.syncNow() }
+        await fulfillment(of: [asked], timeout: 10)
+
+        await session.signOut(force: false)
+        StubURLProtocol.hold = nil
+        release.signal()
+        await sync.value
+        try await Task.sleep(nanoseconds: 300_000_000)
+
+        XCTAssertEqual(session.state, .signedOut)
+        XCTAssertNil(session.signOutNotice)
+        XCTAssertEqual(try employees().count, 0)
+        XCTAssertEqual(try context.fetchCount(FetchDescriptor<SyncState>()), 0)
+        XCTAssertEqual(try context.fetchCount(FetchDescriptor<SyncShadow>()), 0)
+        XCTAssertEqual(try context.fetchCount(FetchDescriptor<SyncOp>()), 0)
+    }
+
+    func testWipeRemovesExportedFiles() throws {
+        let session = makeSession(FakeServer())
+        let manager = FileManager.default
+        for directory in SessionStore.exportDirectories {
+            try manager.createDirectory(at: directory, withIntermediateDirectories: true)
+            try Data("табель".utf8).write(to: directory.appendingPathComponent("Табель.pdf"))
+        }
+        XCTAssertEqual(SessionStore.exportDirectories.map(\.lastPathComponent).sorted(), ["CoalExport", "Export"])
+
+        try session.wipeLocalData()
+
+        for directory in SessionStore.exportDirectories {
+            XCTAssertFalse(manager.fileExists(atPath: directory.path), directory.path)
+        }
+    }
+
+    func testLaunchWithoutTokenWipesLeftovers() throws {
+        // A sign-in's rows with no token (a wipe that failed): wiped on launch.
+        try localEmployee("Остался")
+        SyncState.current(in: context).cursor = 7
+        try context.save()
+
+        let session = makeSession(FakeServer())
+
+        XCTAssertEqual(session.state, .signedOut)
+        XCTAssertEqual(try employees().count, 0)
+        XCTAssertEqual(try context.fetchCount(FetchDescriptor<SyncState>()), 0)
+    }
+
+    func testTokenNotSavedShowsMessage() async throws {
+        tokens.failSave = true
+        let session = makeSession(FakeServer())
+        do {
+            try await session.signIn(login: "ivan", password: "secret-pass")
+            XCTFail("signed in without a stored token")
+        } catch {
+            XCTAssertEqual(error.localizedDescription, "Не удалось сохранить вход на телефоне")
+        }
         XCTAssertEqual(session.state, .signedOut)
     }
 

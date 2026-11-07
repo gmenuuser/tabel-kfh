@@ -4,7 +4,7 @@ import Security
 /// Where the device token is kept. The app uses the Keychain; the unit tests keep it in memory (the CI simulator
 /// runs the app unsigned, without Keychain access).
 protocol TokenStore {
-    func save(_ token: String)
+    func save(_ token: String) throws
     func token() -> String?
     func delete()
 }
@@ -21,12 +21,17 @@ enum Keychain {
          kSecAttrAccount as String: account]
     }
 
-    static func save(_ token: String) {
+    struct SaveError: Error {
+        let status: OSStatus
+    }
+
+    static func save(_ token: String) throws {
         delete()
         var item = query
         item[kSecValueData as String] = Data(token.utf8)
         item[kSecAttrAccessible as String] = kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly
-        SecItemAdd(item as CFDictionary, nil)
+        let status = SecItemAdd(item as CFDictionary, nil)
+        guard status == errSecSuccess else { throw SaveError(status: status) }
     }
 
     static func token() -> String? {
@@ -47,7 +52,7 @@ enum Keychain {
 
 /// `TokenStore` over `Keychain`.
 struct KeychainTokenStore: TokenStore {
-    func save(_ token: String) { Keychain.save(token) }
+    func save(_ token: String) throws { try Keychain.save(token) }
     func token() -> String? { Keychain.token() }
     func delete() { Keychain.delete() }
 }
