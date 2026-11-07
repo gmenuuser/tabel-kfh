@@ -12,6 +12,7 @@ import { LivestockPage } from './pages/livestock.tsx';
 import { AgroPage } from './pages/agro.tsx';
 import { ReportsPage } from './pages/reports.tsx';
 import { SettingsPage } from './pages/settings.tsx';
+import { canEdit, canOpen } from './lib/roles.ts';
 
 const NAV: [string, string][] = [
   ['home', 'Главная'], ['timesheet', 'Табель'], ['coal', 'Уголь'], ['livestock', 'Скот'], ['agro', 'Калькуляторы'],
@@ -30,9 +31,12 @@ function useRoute(): [string, (r: string) => void] {
 }
 
 function Shell() {
-  const { farm } = useApp();
-  const [route, go] = useRoute();
+  const { farm, session } = useApp();
+  const [rawRoute, go] = useRoute();
+  // A page the role may not see is the home page.
+  const route = canOpen(session.role, rawRoute.split('/')[0]) ? rawRoute : 'home';
   const page = route.split('/')[0];
+  const readOnly = !canEdit(session.role) && ['employees', 'coal/drivers', 'coal/prices', 'livestock'].includes(route);
   const body = (() => {
     switch (route) {
       case 'timesheet': return <TimesheetPage go={go} />;
@@ -53,13 +57,13 @@ function Shell() {
       <header className="top no-print">
         <div className="brand">{farm.name}</div>
         <nav>
-          {NAV.map(([id, title]) => (
+          {NAV.filter(([id]) => canOpen(session.role, id)).map(([id, title]) => (
             <a key={id} href={`#/${id}`} className={page === id ? 'active' : ''}>{title}</a>
           ))}
         </nav>
       </header>
       <div className="no-print"><SyncBadge /></div>
-      <main className="page">{body}</main>
+      <main className="page">{readOnly ? <fieldset disabled style={{ border: 0, padding: 0, margin: 0, minWidth: 0 }}>{body}</fieldset> : body}</main>
     </div>
   );
 }

@@ -104,7 +104,7 @@ export function SettingsPage() {
           <form className="row" onSubmit={(e) => {
             e.preventDefault();
             act(async () => {
-              await engine.call('/members', { method: 'POST', body: JSON.stringify(helper) });
+              await engine.call('/members', { method: 'POST', body: JSON.stringify({ ...helper, login: helper.login.trim() }) });
               setHelper({ login: '', password: '', role: 'timesheet' });
             }, 'Помощник добавлен');
           }}>

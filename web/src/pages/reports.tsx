@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { useApp, useRecords } from '../app.tsx';
+import { modulesFor } from '../lib/roles.ts';
 import { SPECIES, OPERATION_KINDS, coalTotals, driverAccounts, herdBalances, rubles, tons, delta, type Data } from '../lib/domain.ts';
 import { MONTHS, addDays, dayKey, dayStartISO, daysInMonth, shortDate, timeText, todayKey } from '../lib/time.ts';
 import { download, xlsx, type Cell } from '../lib/xlsx.ts';
@@ -9,13 +10,16 @@ const kop = (v: number) => v / 100;
 
 /** «Отчёты»: coal sales, payments to drivers, the herd — on screen, as Excel, and printed (or saved as PDF). */
 export function ReportsPage() {
-  const { farm } = useApp();
+  const { farm, session } = useApp();
+  const modules = modulesFor(session.role);
+  const kinds = ([['coal', 'Продажи угля'], ['payments', 'Выплаты водителям'], ['herd', 'Скот']] as [Report, string][])
+    .filter(([k]) => modules.includes(k === 'herd' ? 'livestock' : 'coal'));
   const sales = useRecords('coalSale');
   const payments = useRecords('driverPayment');
   const drivers = useRecords('driver');
   const ops = useRecords('livestockOperation');
   const categories = useRecords('livestockCategory');
-  const [report, setReport] = useState<Report>('coal');
+  const [report, setReport] = useState<Report>(kinds[0]?.[0] ?? 'coal');
   const [period, setPeriod] = useState<'day' | 'month'>('day');
   const [day, setDay] = useState(todayKey());
   const start = period === 'day' ? day : `${day.slice(0, 7)}-01`;
@@ -79,14 +83,15 @@ export function ReportsPage() {
     }).filter((r) => r.start || r.end || r.purchase || r.birth || r.slaughter || r.sale || r.death || r.other || r.tin);
   }
 
+  if (!kinds.length) return <><h2>Отчёты</h2>{modules.includes('timesheet') && <a className="button" href="#/timesheet/month">Табель работников</a>}</>;
   return (
     <>
       <div className="no-print">
         <h2>Отчёты</h2>
         <div className="segmented">
-          {([['coal', 'Продажи угля'], ['payments', 'Выплаты водителям'], ['herd', 'Скот']] as [Report, string][]).map(([k, v]) =>
+          {kinds.map(([k, v]) =>
             <button key={k} className={report === k ? 'active' : ''} onClick={() => setReport(k)}>{v}</button>)}
-          <a className="button" href="#/timesheet/month">Табель работников</a>
+          {modules.includes('timesheet') && <a className="button" href="#/timesheet/month">Табель работников</a>}
         </div>
         <div className="row">
           <div className="segmented"><button className={period === 'day' ? 'active' : ''} onClick={() => setPeriod('day')}>За день</button>

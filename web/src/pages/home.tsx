@@ -1,10 +1,11 @@
 import { useApp, useRecords } from '../app.tsx';
+import { canOpen } from '../lib/roles.ts';
 import { coalTotals, herdBalances, rubles, plural } from '../lib/domain.ts';
 import { dayKey, longDate, todayKey } from '../lib/time.ts';
 
 /** Главная панель: today at a glance and the large entries. */
 export function HomePage({ go }: { go: (r: string) => void }) {
-  const { farm } = useApp();
+  const { farm, session } = useApp();
   const employees = useRecords('employee');
   const marks = useRecords('hoursMark');
   const sales = useRecords('coalSale');
@@ -35,7 +36,7 @@ export function HomePage({ go }: { go: (r: string) => void }) {
         </ul>
       </section>
       <div className="tiles">
-        {tiles.map(([id, title, sub, color]) => (
+        {tiles.filter(([id]) => canOpen(session.role, id)).map(([id, title, sub, color]) => (
           <button key={id} className={`tile ${color}`} onClick={() => go(id)}>
             <span className="tile-title">{title}</span>
             <span className="tile-sub">{sub}</span>
