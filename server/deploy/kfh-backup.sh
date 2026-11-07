@@ -14,7 +14,20 @@ STAMP="$(date +%Y-%m-%d_%H%M)"
 
 dc exec -T db pg_dump -U kfh -d kfh -Fc > "$DIR/kfh-$STAMP.dump.part"
 mv "$DIR/kfh-$STAMP.dump.part" "$DIR/kfh-$STAMP.dump"
-dc exec -T api tar -C /data -cf - . > "$DIR/files-$STAMP.tar.part"
+# An upload landing mid-backup makes tar exit 1 (GNU: "file changed as we read it"; busybox, which the api image
+# has, also uses 1 for a file that vanished): the file comes with the next night, so that is a warning - but only
+# if the archive itself is whole (busybox exits 1 on fatal errors too): it lists, and it ends with the end-of-archive
+# marker (last 1024 bytes zero; an archive cut at a member boundary lists fine without it). Else the backup fails.
+rc=0
+PART="$DIR/files-$STAMP.tar.part"
+dc exec -T api tar -C /data -cf - . > "$PART" || rc=$?
+if [ "$rc" = 1 ] && tar -tf "$PART" >/dev/null && [ "$(wc -c < "$PART")" -ge 1024 ] \
+   && [ "$(tail -c 1024 "$PART" | tr -d '\0' | wc -c)" -eq 0 ]; then
+  echo "warning: files changed while archiving them (tar exit 1); the archive reads back whole and is kept" >&2
+elif [ "$rc" != 0 ]; then
+  echo "files archive failed (tar exit $rc)" >&2
+  exit "$rc"
+fi
 mv "$DIR/files-$STAMP.tar.part" "$DIR/files-$STAMP.tar"
 echo "dump:  $(du -h "$DIR/kfh-$STAMP.dump" | cut -f1)  files: $(du -h "$DIR/files-$STAMP.tar" | cut -f1)"
 ls -1t "$DIR"/kfh-*.dump | tail -n +15 | xargs -r rm -f

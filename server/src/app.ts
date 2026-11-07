@@ -33,6 +33,8 @@ declare module 'fastify' {
 }
 
 const PLATFORMS = new Set(['ios', 'android', 'web', 'test']);
+/** A malformed id in a path is a record that does not exist (404), never a database error (500). */
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 /** A small per-address limit for the sign-in endpoints. */
 function limiter(perMinute: number) {
@@ -251,6 +253,7 @@ export function buildApp(o: AppOptions): FastifyInstance {
   /** The owner sets a new password for a helper; all the helper's devices of this farm are signed out. */
   app.post('/members/:userId/password', { preHandler: [signedIn, ownerOnly] }, async (req, reply) => {
     const { userId } = req.params as { userId: string };
+    if (!UUID.test(userId)) return fail(reply, 404, 'Помощник не найден');
     const password = (req.body as Record<string, unknown> | undefined)?.password;
     if (!validPassword(password)) return fail(reply, 400, 'Пароль — не короче 8 символов');
     if (userId === req.session.userId) return fail(reply, 400, 'Свой пароль владелец меняет через восстановление доступа');
@@ -281,12 +284,16 @@ export function buildApp(o: AppOptions): FastifyInstance {
   app.patch('/members/:userId', { preHandler: [signedIn, ownerOnly] }, async (req, reply) => {
     const role = (req.body as Record<string, unknown> | undefined)?.role as Role;
     const { userId } = req.params as { userId: string };
+    if (!UUID.test(userId)) return fail(reply, 404, 'Помощник не найден');
     if (!ROLES.includes(role) || role === 'owner' || userId === req.session.userId) return fail(reply, 400, 'Неверная роль');
     // The helper signs in again to get the new rights.
-    await inTransaction(db, async (tx) => {
-      await tx.query('UPDATE memberships SET role = $3 WHERE farm_id = $1 AND user_id = $2', [req.session.farmId, userId, role]);
+    const found = await inTransaction(db, async (tx) => {
+      const m = await tx.query('UPDATE memberships SET role = $3 WHERE farm_id = $1 AND user_id = $2', [req.session.farmId, userId, role]);
+      if (!m.rowCount) return false;
       await tx.query('UPDATE devices SET revoked_at = now() WHERE farm_id = $1 AND user_id = $2 AND revoked_at IS NULL', [req.session.farmId, userId]);
+      return true;
     });
+    if (!found) return fail(reply, 404, 'Помощник не найден');
     await audit(req.session, 'member.role', { userId, role });
     return { ok: true };
   });
@@ -294,9 +301,15 @@ export function buildApp(o: AppOptions): FastifyInstance {
   /** Removes a helper from the farm and signs all their devices of this farm out. */
   app.delete('/members/:userId', { preHandler: [signedIn, ownerOnly] }, async (req, reply) => {
     const { userId } = req.params as { userId: string };
+    if (!UUID.test(userId)) return fail(reply, 404, 'Помощник не найден');
     if (userId === req.session.userId) return fail(reply, 400, 'Владельца удалить нельзя');
-    await db.query('DELETE FROM memberships WHERE farm_id = $1 AND user_id = $2', [req.session.farmId, userId]);
-    await db.query('UPDATE devices SET revoked_at = now() WHERE farm_id = $1 AND user_id = $2 AND revoked_at IS NULL', [req.session.farmId, userId]);
+    const found = await inTransaction(db, async (tx) => {
+      const m = await tx.query('DELETE FROM memberships WHERE farm_id = $1 AND user_id = $2', [req.session.farmId, userId]);
+      if (!m.rowCount) return false;
+      await tx.query('UPDATE devices SET revoked_at = now() WHERE farm_id = $1 AND user_id = $2 AND revoked_at IS NULL', [req.session.farmId, userId]);
+      return true;
+    });
+    if (!found) return fail(reply, 404, 'Помощник не найден');
     await audit(req.session, 'member.remove', { userId });
     return { ok: true };
   });

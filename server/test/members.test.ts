@@ -126,3 +126,34 @@ test('пароль нельзя менять у учётной записи с �
   const r2 = await h.app.inject({ method: 'POST', url: `/members/${mail.rows[0].id}/password`, headers: auth(owner), payload: { password: 'взлом-пароль-1' } });
   assert.equal(r2.statusCode, 404);
 });
+
+test('роль, пароль и удаление для чужого, несуществующего или кривого id — 404, не владелец — 403', async () => {
+  const owner = await register(h.app);
+  const other = await register(h.app);
+  const helper = (await createHelper(owner, { login: `own-${Date.now()}`, password: 'помощник-123', role: 'coal' })).json();
+  const foreign = (await createHelper(other, { login: `foreign-${Date.now()}`, password: 'помощник-123', role: 'coal' })).json();
+  const call = (who: Parameters<typeof auth>[0], method: 'PATCH' | 'POST' | 'DELETE', id: string) => h.app.inject({
+    method, headers: auth(who),
+    url: method === 'POST' ? `/members/${id}/password` : `/members/${id}`,
+    payload: method === 'PATCH' ? { role: 'viewer' } : method === 'POST' ? { password: 'новый-пароль-1' } : undefined });
+
+  for (const method of ['PATCH', 'POST', 'DELETE'] as const) {
+    for (const id of [foreign.id, randomUUID(), 'not-a-uuid', '1']) {
+      const r = await call(owner, method, id);
+      assert.equal(r.statusCode, 404, `${method} ${id}`);
+    }
+  }
+  // Nothing of the other farm changed.
+  const row = (await h.db.query('SELECT role FROM memberships WHERE user_id = $1', [foreign.id])).rows;
+  assert.deepEqual(row, [{ role: 'coal' }]);
+  assert.equal((await h.db.query('SELECT count(*)::int AS n FROM devices WHERE user_id = $1 AND revoked_at IS NOT NULL',
+    [foreign.id])).rows[0].n, 0);
+
+  const coal = await login(h.app, helper.login, 'помощник-123');
+  for (const method of ['PATCH', 'POST', 'DELETE'] as const) {
+    assert.equal((await call(coal, method, helper.id)).statusCode, 403, `${method} не владельцем`);
+  }
+  // The owner's own member still works.
+  assert.equal((await call(owner, 'PATCH', helper.id)).statusCode, 200);
+  assert.equal((await call(owner, 'DELETE', helper.id)).statusCode, 200);
+});

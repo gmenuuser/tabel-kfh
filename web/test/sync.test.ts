@@ -185,3 +185,85 @@ test('an edit after a send whose answer was lost is not merged into the already 
   assert.equal(rec.data.lastName, 'Мунгалов');
   assert.equal(rec.data.phone, '+7 914', 'новое поле не потеряно');
 });
+
+test('two quick edits of one field offline: both go, no conflict, the server keeps the second', async () => {
+  const email = `web-twice${Date.now()}@example.com`;
+  const owner = await register(h.app, { email, platform: 'web' });
+  const a = await device(owner);
+  const id = await a.engine.save('driver', null, { lastName: 'Мунгалов', phone: '' });
+  await a.engine.sync();
+  a.net.state.online = false;
+  await a.engine.save('driver', id, { phone: '+7 914 1' });
+  await a.engine.sync(); // no network: the first edit was tried, so the next one is a separate change
+  await a.engine.save('driver', id, { phone: '+7 914 2' });
+  assert.equal(a.engine.status.pending, 2);
+  a.net.state.online = true;
+  await a.engine.sync();
+  assert.equal(a.engine.status.pending, 0);
+  assert.equal(a.engine.status.failed, 0);
+  assert.equal(a.engine.status.conflicts, 0, 'правки одного устройства не конфликтуют друг с другом');
+  const b = await device(await login(h.app, email, 'пароль-12345', 'android'));
+  await b.engine.sync();
+  assert.equal((await b.engine.list('driver'))[0].data.phone, '+7 914 2');
+});
+
+test('a new record edited and then deleted offline: all three changes go in order', async () => {
+  const email = `web-thrice${Date.now()}@example.com`;
+  const owner = await register(h.app, { email, platform: 'web' });
+  const a = await device(owner);
+  a.net.state.online = false;
+  const id = await a.engine.save('driver', null, { lastName: 'Мунгалов', phone: '1' });
+  await a.engine.sync();
+  await a.engine.save('driver', id, { phone: '2' });
+  await a.engine.sync();
+  await a.engine.remove('driver', id);
+  assert.equal(a.engine.status.pending, 3);
+  a.net.state.online = true;
+  await a.engine.sync();
+  assert.equal(a.engine.status.pending, 0);
+  assert.equal(a.engine.status.conflicts, 0);
+  const b = await device(await login(h.app, email, 'пароль-12345', 'android'));
+  await b.engine.sync();
+  assert.equal((await b.engine.list('driver')).length, 0, 'удаление после правок дошло');
+});
+
+test('the queue keeps its order across records: a sale after an edited purchase is not sent before that edit', async () => {
+  const owner = await register(h.app, { email: `web-order${Date.now()}@example.com`, platform: 'web' });
+  const a = await device(owner);
+  const category = await a.engine.save('livestockCategory', null, { species: 'cattle', name: 'Коровы', sortOrder: 0 });
+  await a.engine.sync();
+  a.net.state.online = false;
+  const purchase = await a.engine.save('livestockOperation', null, { kind: 'purchase', categoryId: category, heads: 10,
+    date: '2026-11-01T00:00:00.000Z', createdAt: '2026-11-01T01:00:00.000Z' });
+  await a.engine.sync(); // tried offline: the edit below becomes a separate change
+  await a.engine.save('livestockOperation', purchase, { heads: 20 });
+  await a.engine.save('livestockOperation', null, { kind: 'sale', categoryId: category, heads: 15,
+    date: '2026-11-02T00:00:00.000Z', createdAt: '2026-11-02T01:00:00.000Z' });
+  assert.equal(a.engine.status.pending, 3);
+  a.net.state.online = true;
+  await a.engine.sync();
+  assert.equal(a.engine.status.failed, 0, 'продажа не отклонена из-за нехватки голов');
+  assert.equal(a.engine.status.pending, 0);
+  assert.equal(a.engine.status.conflicts, 0);
+});
+
+test('a later op of a record is moved to the returned version whatever base it had', async () => {
+  const email = `web-rebase${Date.now()}@example.com`;
+  const owner = await register(h.app, { email, platform: 'web' });
+  const a = await device(owner);
+  const id = await a.engine.save('driver', null, { lastName: 'Мунгалов', phone: '1' });
+  await a.engine.sync();
+  a.net.state.online = false;
+  await a.engine.save('driver', id, { phone: '2' });
+  await a.engine.sync();
+  await a.engine.save('driver', id, { phone: '3' });
+  // An older base on the later op (as after a pull reset): it was still made on top of the earlier one.
+  const later = (await a.db.queue()).at(-1)!;
+  await a.db.putOps([{ ...later, baseVersion: 0 }]);
+  a.net.state.online = true;
+  await a.engine.sync();
+  assert.equal(a.engine.status.conflicts, 0);
+  const b = await device(await login(h.app, email, 'пароль-12345', 'android'));
+  await b.engine.sync();
+  assert.equal((await b.engine.list('driver'))[0].data.phone, '3');
+});

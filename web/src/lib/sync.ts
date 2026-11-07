@@ -183,9 +183,21 @@ export class SyncEngine {
     }
   }
 
+  /** Sends the queue in order, at most one op per record in a push: a later op of a record goes after the answer
+   *  to the earlier one, with the version that answer gave (sent together, it would conflict with its own earlier op).
+   *  The batch stops at the first op of a record already in it: nothing queued after that op goes before it
+   *  (the server checks the herd against what it already has, so order across records matters too). */
   private async pushAll() {
     for (;;) {
-      const batch = (await this.db.queue()).filter((o) => o.state !== 'error').slice(0, 200);
+      const seen = new Set<string>();
+      const batch: QueuedOp[] = [];
+      for (const o of await this.db.queue()) {
+        if (o.state === 'error') continue;
+        const key = `${o.entity}:${o.recordId}`;
+        if (seen.has(key) || batch.length >= 200) break;
+        seen.add(key);
+        batch.push(o);
+      }
       if (!batch.length) return;
       await this.db.putOps(batch.map((o) => ({ ...o, state: 'sending' as const })));
       let results: OpResult[];
@@ -213,7 +225,7 @@ export class SyncEngine {
           if (rec) await this.db.putRecords([{ ...rec, version: r.version }]);
           // Later changes of this record were made on top of this one.
           const later = (await this.db.queue()).filter((o) => o.entity === op.entity && o.recordId === op.recordId
-            && o.opId !== op.opId && o.baseVersion === op.baseVersion);
+            && o.opId !== op.opId && o.seq > op.seq);
           if (later.length) await this.db.putOps(later.map((o) => ({ ...o, baseVersion: r.version! })));
         }
       }

@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useApp, useRecords, useStatus } from '../app.tsx';
-import { canEdit } from '../lib/roles.ts';
+import { canEdit, canWrite } from '../lib/roles.ts';
 import type { LocalRecord } from '../lib/db.ts';
 import { coalAmount, coalTotals, driverAccounts, driverDebt, parseRubles, parseTons, rubles, rublesField, tons, type Data } from '../lib/domain.ts';
 import { stableId } from '../lib/ids.ts';
@@ -12,20 +12,23 @@ const driverName = (d: LocalRecord) => [d.data.lastName, d.data.firstName, d.dat
 
 /** The price and the owner's two villages, made once for the farm (stable ids: every device makes the same rows). */
 function useCoalDefaults() {
-  const { engine } = useApp();
+  const { engine, session } = useApp();
   const status = useStatus();
   const settings = useRecords('coalSettings');
   const locations = useRecords('deliveryLocation');
   useEffect(() => {
     if (!status.lastSyncAt && status.online) return; // wait for the first sync to see what the farm already has
-    if (!settings.length) engine.save('coalSettings', SETTINGS_ID, { pricePerTonKopecks: 650000 });
-    if (!locations.length) {
+    // Only a role the server lets change them makes the defaults (a viewer's would be refused).
+    if (!settings.length && canWrite(session.role, 'coalSettings')) {
+      engine.save('coalSettings', SETTINGS_ID, { pricePerTonKopecks: 650000 });
+    }
+    if (!locations.length && canWrite(session.role, 'deliveryLocation')) {
       for (const [name, price] of DEFAULT_LOCATIONS) {
         engine.save('deliveryLocation', stableId(`deliveryLocation:${name}`), { name, deliveryPriceKopecks: price,
           driverPaymentKopecks: null, isActive: true, createdAt: new Date().toISOString() });
       }
     }
-  }, [settings.length, locations.length, status.lastSyncAt, status.online, engine]);
+  }, [settings.length, locations.length, status.lastSyncAt, status.online, engine, session.role]);
   return { price: Number(settings[0]?.data.pricePerTonKopecks ?? 650000), locations: locations.filter((l) => l.data.isActive !== false) };
 }
 
