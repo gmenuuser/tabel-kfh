@@ -18,9 +18,12 @@ final class SyncOp {
     var state: String
     var attempts: Int
     var errorText: String
+    /// The queue order (1, 2, 3…, counted on from the last op in the queue): ops go to the server in it, whatever
+    /// the device clock says. Added to V6 before V6 reached any phone, so no new schema version.
+    var seq: Int = 0
 
     init(opId: UUID = UUID(), entityName: String, recordId: UUID, kind: String, baseVersion: Int, fieldsJSON: Data,
-         createdAt: Date, state: String = "pending", attempts: Int = 0, errorText: String = "") {
+         createdAt: Date, state: String = "pending", attempts: Int = 0, errorText: String = "", seq: Int = 0) {
         self.opId = opId
         self.entityName = entityName
         self.recordId = recordId
@@ -31,6 +34,7 @@ final class SyncOp {
         self.state = state
         self.attempts = attempts
         self.errorText = errorText
+        self.seq = seq
     }
 
     var fields: SyncFields { SyncJSON.decode(fieldsJSON) }

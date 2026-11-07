@@ -26,6 +26,10 @@ struct TabelKFHApp: App {
         } catch {
             fatalError("Не удалось открыть базу данных: \(error)")
         }
+        // Every write goes through `syncedSave()` (store and send queue in one save); an autosave would store a
+        // change without queueing it.
+        let mainContainer = container
+        MainActor.assumeIsolated { mainContainer.mainContext.autosaveEnabled = false }
     }
 
     var body: some Scene {

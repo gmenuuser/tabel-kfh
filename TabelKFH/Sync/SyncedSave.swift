@@ -56,6 +56,16 @@ extension ModelContext {
         }
 
         var queued = false
+        var seq: Int?
+        func nextSeq() throws -> Int {
+            if seq == nil {
+                var last = FetchDescriptor<SyncOp>(sortBy: [SortDescriptor(\.seq, order: .reverse)])
+                last.fetchLimit = 1
+                seq = try fetch(last).first?.seq ?? 0
+            }
+            seq! += 1
+            return seq!
+        }
         for c in changes {
             let key = SyncShadow.makeKey(c.entity, c.id)
             var sd = FetchDescriptor<SyncShadow>(predicate: #Predicate { $0.key == key })
@@ -64,7 +74,7 @@ extension ModelContext {
             if c.delete {
                 insert(SyncOp(entityName: c.entity.rawValue, recordId: c.id, kind: "delete",
                               baseVersion: shadow?.version ?? 0, fieldsJSON: SyncJSON.encode([:]),
-                              createdAt: SyncedSave.nextStamp()))
+                              createdAt: SyncedSave.nextStamp(), seq: try nextSeq()))
                 if let shadow {
                     shadow.wasDeleted = true
                 } else {
@@ -79,7 +89,7 @@ extension ModelContext {
             if try !mergeIntoUnsentOp(changed, entityName: c.entity.rawValue, recordId: c.id) {
                 insert(SyncOp(entityName: c.entity.rawValue, recordId: c.id, kind: "upsert",
                               baseVersion: shadow?.version ?? 0, fieldsJSON: SyncJSON.encode(changed),
-                              createdAt: SyncedSave.nextStamp()))
+                              createdAt: SyncedSave.nextStamp(), seq: try nextSeq()))
             }
             if let shadow {
                 shadow.fieldsJSON = SyncJSON.encode(c.fields)
@@ -96,7 +106,7 @@ extension ModelContext {
     /// Adds the fields to the record's last op when that op is an upsert never sent; false otherwise.
     private func mergeIntoUnsentOp(_ fields: SyncFields, entityName: String, recordId: UUID) throws -> Bool {
         var d = FetchDescriptor<SyncOp>(predicate: #Predicate { $0.entityName == entityName && $0.recordId == recordId },
-                                        sortBy: [SortDescriptor(\.createdAt, order: .reverse)])
+                                        sortBy: [SortDescriptor(\.seq, order: .reverse)])
         d.fetchLimit = 1
         guard let op = try fetch(d).first, op.state == "pending", op.attempts == 0, op.kind == "upsert" else {
             return false
