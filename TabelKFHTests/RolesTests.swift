@@ -158,6 +158,20 @@ final class RolesTests: XCTestCase {
         XCTAssertFalse(context.hasChanges)
     }
 
+    func testDeleteRefusedNewSingletonKeepsTheRow() throws {
+        FarmSettingsStore.current(in: context)
+        let op = try XCTUnwrap(context.fetch(FetchDescriptor<SyncOp>()).first)
+        XCTAssertEqual(op.entityName, SyncEntity.farmSettings.rawValue)
+        op.state = "error"
+        try context.save()
+
+        try RefusedChanges.discard(op, in: context)
+
+        XCTAssertEqual(try count(SyncOp.self), 0)
+        XCTAssertEqual(try count(FarmSettings.self), 1, "singletons are never deleted, like SyncEngine.apply")
+        XCTAssertFalse(context.hasChanges)
+    }
+
     func testRefusedEntityTitles() {
         XCTAssertEqual(RefusedChanges.title(entityName: "coalSale"), "Продажа угля")
         XCTAssertEqual(RefusedChanges.title(entityName: "hoursMark"), "Часы")

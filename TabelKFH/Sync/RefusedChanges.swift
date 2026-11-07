@@ -55,7 +55,10 @@ enum RefusedChanges {
                 d.fetchLimit = 1
                 let shadow = try context.fetch(d).first
                 if shadow == nil || shadow?.version == 0 {
-                    if let model = try SyncCodec.find(entity, id: recordId, in: context) { context.delete(model) }
+                    // Singletons are never deleted (as in SyncEngine.apply): the screens would recreate and re-queue them.
+                    if !entity.isSingleton, let model = try SyncCodec.find(entity, id: recordId, in: context) {
+                        context.delete(model)
+                    }
                     if let shadow { context.delete(shadow) }
                     let all = try context.fetch(FetchDescriptor<SyncOp>(predicate: #Predicate {
                         $0.entityName == entityName && $0.recordId == recordId

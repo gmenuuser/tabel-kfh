@@ -254,8 +254,17 @@ private struct SettingsForm: View {
     }
 
     private var signOutQuestion: String {
-        let n = session.pendingChanges
-        return n > 0 ? "\(n) изменений ещё не отправлены. Выйти всё равно?" : "Выйти из хозяйства?"
+        let n = session.pendingChanges, r = session.refusedChanges
+        var parts: [String] = []
+        if n > 0 {
+            parts.append("\(n) \(BackupService.plural(n, "изменение", "изменения", "изменений")) ещё не "
+                + BackupService.plural(n, "отправлено", "отправлены", "отправлены") + ".")
+        }
+        if r > 0 {
+            parts.append("\(r) \(BackupService.plural(r, "изменение", "изменения", "изменений")) сервер не принял — "
+                + "при выходе они удалятся.")
+        }
+        return parts.isEmpty ? "Выйти из хозяйства?" : (parts + ["Выйти всё равно?"]).joined(separator: " ")
     }
 
     // MARK: Parts

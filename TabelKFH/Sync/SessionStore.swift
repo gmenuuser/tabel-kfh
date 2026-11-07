@@ -167,6 +167,12 @@ final class SessionStore {
     // MARK: Store
 
     /// Changes not sent yet (refused ones not counted): «N изменений ещё не отправлены».
+    /// Changes the server refused («Не принятые изменения»); they are dropped on sign-out.
+    var refusedChanges: Int {
+        let refused = "error"
+        return (try? context.fetchCount(FetchDescriptor<SyncOp>(predicate: #Predicate { $0.state == refused }))) ?? 0
+    }
+
     var pendingChanges: Int {
         let refused = "error"
         return (try? context.fetchCount(FetchDescriptor<SyncOp>(predicate: #Predicate { $0.state != refused }))) ?? 0
@@ -321,6 +327,8 @@ final class SessionStore {
     /// record takes the server's version again.
     func resyncFromStart() async {
         guard case .signedIn = state else { return }
+        // Changes still unsaved on a screen are queued first: a save under isApplyingRemote would never send them.
+        if context.hasChanges { try? context.syncedSave() }
         SyncedSave.isApplyingRemote = true
         SyncState.current(in: context).cursor = 0
         try? context.save()

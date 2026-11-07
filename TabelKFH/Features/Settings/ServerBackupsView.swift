@@ -4,6 +4,15 @@ import SwiftUI
 /// «Восстановить» (every device of the farm gets the copy's data) behind a warning.
 struct ServerBackupsView: View {
     @Environment(SessionStore.self) private var session
+
+    /// Unsent changes of this phone become conflicts after a restore — say so before it.
+    private var unsentWarning: String {
+        let n = session.pendingChanges
+        guard n > 0 else { return "" }
+        return "\n\nНа этом телефоне \(n) \(BackupService.plural(n, "изменение", "изменения", "изменений")) ещё не "
+            + BackupService.plural(n, "отправлено", "отправлены", "отправлены")
+            + ": после восстановления они попадут в «Конфликты». Лучше сначала нажать «Синхронизировать сейчас»."
+    }
     @State private var backups: [ServerBackupDTO] = []
     @State private var loading = true
     @State private var problem: String?
@@ -58,7 +67,7 @@ struct ServerBackupsView: View {
             Button("Восстановить", role: .destructive) { restore(b) }
             Button("Отмена", role: .cancel) {}
         } message: { b in
-            Text("Данные хозяйства на сервере и на всех устройствах станут такими, как в копии от \(OwnerText.moment(b.createdAt)). Всё, что внесли после неё, будет удалено. Отменить это нельзя — при сомнении сначала создайте новую копию.")
+            Text("Данные хозяйства на сервере и на всех устройствах станут такими, как в копии от \(OwnerText.moment(b.createdAt)). Всё, что внесли после неё, будет удалено. Отменить это нельзя — при сомнении сначала создайте новую копию." + unsentWarning)
         }
         .alert(note ?? "", isPresented: Binding(get: { note != nil }, set: { if !$0 { note = nil } })) {
             Button("OK", role: .cancel) {}
