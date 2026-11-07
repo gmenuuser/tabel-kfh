@@ -73,7 +73,9 @@ final class AppWalkthroughTests: XCTestCase {
         scroll(to: backup)
         XCTAssertTrue(backup.exists)
         XCTAssertFalse(app.buttons["Восстановить из копии"].exists, "no restore from a file any more")
-        XCTAssertTrue(app.buttons["signOut"].exists, "«Выйти»")
+        let signOut = app.buttons["signOut"].firstMatch
+        scroll(to: signOut)
+        XCTAssertTrue(signOut.exists, "«Выйти»")
         shot("12-settings-backup")
     }
 
