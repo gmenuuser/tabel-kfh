@@ -11,7 +11,7 @@ import { dayKey, dayStartISO } from '../src/lib/time.ts';
 let h: Harness;
 let base = '';
 before(async () => {
-  h = await harness();
+  h = await harness({ registrationOpen: true });
   base = await h.app.listen({ port: 0, host: '127.0.0.1' });
 });
 after(async () => { await h.close(); });
@@ -166,4 +166,22 @@ test('a change made during a sync is sent right after it', async () => {
   await a.engine.save('driver', null, { lastName: 'Кайдолов' });
   await Promise.all([first, a.engine.sync()]);
   assert.equal(a.engine.status.pending, 0);
+});
+
+test('an edit after a send whose answer was lost is not merged into the already sent change', async () => {
+  const email = `web-lost${Date.now()}@example.com`;
+  const owner = await register(h.app, { email, platform: 'web' });
+  const a = await device(owner);
+  const id = await a.engine.save('driver', null, { lastName: 'Мунгалов' });
+  a.net.state.loseAnswers = 1; // the server applies the change, the answer never arrives
+  await a.engine.sync();
+  assert.equal(a.engine.status.pending, 1, 'изменение осталось в очереди');
+  await a.engine.save('driver', id, { phone: '+7 914' });
+  await a.engine.sync();
+  assert.equal(a.engine.status.pending, 0);
+  const b = await device(await login(h.app, email, 'пароль-12345', 'android'));
+  await b.engine.sync();
+  const rec = (await b.engine.list('driver'))[0];
+  assert.equal(rec.data.lastName, 'Мунгалов');
+  assert.equal(rec.data.phone, '+7 914', 'новое поле не потеряно');
 });

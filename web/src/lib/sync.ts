@@ -78,9 +78,11 @@ export class SyncEngine {
     if (existing && !Object.keys(changed).length && !existing.deleted) return recordId;
     const record: LocalRecord = { key: `${entity}:${recordId}`, entity, id: recordId, version: existing?.version ?? 0,
                                   data: { ...(existing?.data ?? {}), ...changed }, deleted: false };
-    // A queued change of the same record not sent yet takes these fields too: fewer operations, same result.
+    // A queued change of the same record never sent takes these fields too: fewer operations, same result.
+    // One that was sent (attempts > 0) may have been applied with the answer lost: the server would answer a repeat
+    // with the old result and drop new fields, so those go in a new operation.
     const queued = (await this.db.queue()).find((o) => o.entity === entity && o.recordId === recordId
-      && o.state === 'pending' && o.kind === 'upsert');
+      && o.state === 'pending' && o.attempts === 0 && o.kind === 'upsert');
     const op: QueuedOp = queued
       ? { ...queued, fields: { ...queued.fields, ...changed } }
       : { opId: newId(), entity, recordId, kind: 'upsert', baseVersion: record.version, fields: changed,
