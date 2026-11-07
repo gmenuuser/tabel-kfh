@@ -9,11 +9,14 @@ struct SettingsView: View {
     var onRestore: () -> Void = {}
 
     @Environment(\.modelContext) private var context
+    /// The stored row. A role that may not change it gets a blank row not stored (`FarmSettingsStore`) until `/me`
+    /// or the sync stores the farm's: the stored one is shown as soon as it exists.
+    @Query private var rows: [FarmSettings]
     @State private var settings: FarmSettings?
 
     var body: some View {
         Group {
-            if let settings {
+            if let settings = rows.first ?? settings {
                 SettingsForm(settings: settings) {
                     self.settings = FarmSettingsStore.current(in: context)
                     onRestore()

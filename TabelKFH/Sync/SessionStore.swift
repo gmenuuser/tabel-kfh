@@ -358,21 +358,31 @@ final class SessionStore {
         }
     }
 
-    /// The owner renames the farm or its manager (`PATCH /farm`), then `/me` brings the new names here.
+    /// The owner renames the farm or its manager (`PATCH /farm`). The server has the names once it answers, so they
+    /// go into this phone at once (queuing nothing: they are not synced fields); `/me` then brings the rest, and a
+    /// `/me` that fails leaves the new names shown.
     func updateFarm(name: String, managerName: String) async throws {
         let _: OKAnswer = try await send("PATCH", "/farm", body: FarmPatch(name: name, managerName: managerName))
-        if offline {
-            farm?.name = name
-            farm?.managerName = managerName
-            let settings = FarmSettingsStore.current(in: context)
-            SyncedSave.isApplyingRemote = true
-            settings.farmName = name
-            settings.managerName = managerName
-            try? context.save()
-            SyncedSave.isApplyingRemote = false
-            return
+        farm?.name = name
+        farm?.managerName = managerName
+        if !offline, let farm, let data = try? JSONEncoder().encode(farm) { defaults.set(data, forKey: Self.farmKey) }
+        // A change on a screen not saved yet is queued first; the save below queues nothing.
+        if context.hasChanges { try? context.syncedSave() }
+        SyncedSave.isApplyingRemote = true
+        var d = FetchDescriptor<FarmSettings>()
+        d.fetchLimit = 1
+        let settings: FarmSettings
+        if let existing = try? context.fetch(d).first {
+            settings = existing
+        } else {
+            settings = FarmSettings()
+            context.insert(settings)
         }
-        guard let engine else { return }
+        settings.farmName = name
+        settings.managerName = managerName
+        try? context.save()
+        SyncedSave.isApplyingRemote = false
+        guard !offline, let engine else { return }
         await refreshMe(of: engine)
     }
 

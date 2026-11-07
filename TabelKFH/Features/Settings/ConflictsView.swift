@@ -1,7 +1,8 @@
 import SwiftUI
 
 /// «Конфликты» (owner): the same thing was changed on two devices; for each, both versions and the choice
-/// «Оставить с сервера» / «Оставить моё» (`POST /conflicts/:id/resolve`). Nothing is lost until then.
+/// «Взять с сервера» / «Взять с устройства» (`POST /conflicts/:id/resolve`; the device's version may come from a
+/// helper's phone, not this one). Nothing is lost until then.
 struct ConflictsView: View {
     @Environment(SessionStore.self) private var session
     @State private var conflicts: [ConflictDTO] = []
@@ -26,10 +27,10 @@ struct ConflictsView: View {
                         versionRow("На сервере", OwnerText.value(c.serverValue))
                         versionRow("С устройства", OwnerText.value(c.clientValue))
                         HStack {
-                            Button("Оставить с сервера") { resolve(c, "server") }
+                            Button("Взять с сервера") { resolve(c, "server") }
                                 .buttonStyle(.bordered)
                             Spacer()
-                            Button("Оставить моё") { resolve(c, "client") }
+                            Button("Взять с устройства") { resolve(c, "client") }
                                 .buttonStyle(.borderedProminent)
                                 .tint(Theme.primary)
                         }

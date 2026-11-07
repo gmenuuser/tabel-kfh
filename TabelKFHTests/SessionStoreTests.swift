@@ -20,6 +20,7 @@ private final class FakeServer {
     private var pulls: [String]
     private var timezone: String
     private var revoked = false
+    private var meFails = false
 
     init(pulls: [String] = [], timezone: String = "Asia/Chita") {
         self.pulls = pulls
@@ -27,6 +28,9 @@ private final class FakeServer {
     }
 
     func revoke() { lock.lock(); revoked = true; lock.unlock() }
+
+    /// `GET /me` answers 500 from now on.
+    func failMe() { lock.lock(); meFails = true; lock.unlock() }
 
     func addPull(_ page: String) { lock.lock(); pulls.append(page); lock.unlock() }
 
@@ -42,7 +46,10 @@ private final class FakeServer {
             }
             return (200, Data(#"{"token":"tok-1","deviceId":"d1","farmId":"f1","userId":"u1","role":"owner","farms":[{"farmId":"f1","role":"owner"}]}"#.utf8))
         case "/me":
+            if meFails { return (500, Data(#"{"error":"Ошибка сервера"}"#.utf8)) }
             return (200, Data(#"{"userId":"u1","deviceId":"d1","role":"owner","farm":{"id":"f1","name":"КФХ Зубахин А.В.","region":"Приаргунский район","managerName":"Зубахин А. В.","timezone":"\#(timezone)"}}"#.utf8))
+        case "/farm":
+            return (200, Data(#"{"ok":true}"#.utf8))
         case "/auth/logout":
             return (200, Data(#"{"ok":true}"#.utf8))
         case "/sync/push":
@@ -122,6 +129,23 @@ final class SessionStoreTests: XCTestCase {
     }
 
     // MARK: Tests
+
+    func testUpdateFarmShowsTheNewNamesWhenMeFails() async throws {
+        let server = FakeServer()
+        let session = makeSession(server)
+        try await session.signIn(login: "ivan", password: "secret-pass")
+        server.failMe()
+
+        try await session.updateFarm(name: "КФХ Новое", managerName: "Петров П. П.")
+
+        XCTAssertEqual(requests("/farm").map(\.method), ["PATCH"])
+        XCTAssertEqual(session.farm?.name, "КФХ Новое")
+        XCTAssertEqual(session.farm?.managerName, "Петров П. П.")
+        XCTAssertEqual(FarmSettingsStore.current(in: context).farmName, "КФХ Новое")
+        XCTAssertEqual(FarmSettingsStore.current(in: context).managerName, "Петров П. П.")
+        let farmOps = try context.fetch(FetchDescriptor<SyncOp>()).filter { $0.entityName == "farmSettings" }
+        XCTAssertTrue(farmOps.isEmpty, "the names are not synced fields: nothing is queued")
+    }
 
     func testSignInWipesAndLoads() async throws {
         try localEmployee("Старый")
