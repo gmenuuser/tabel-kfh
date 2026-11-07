@@ -16,13 +16,22 @@ export interface Harness {
   close(): Promise<void>;
 }
 
-export async function harness(authAttemptsPerMinute = 10_000): Promise<Harness> {
+export interface HarnessOptions {
+  authAttemptsPerMinute?: number;
+  registrationOpen?: boolean;
+}
+
+/** `harness(3)` limits sign-in attempts; `harness({ registrationOpen: true })` lets tests register farms. */
+export async function harness(options: number | HarnessOptions = {}): Promise<Harness> {
+  const o = typeof options === 'number' ? { authAttemptsPerMinute: options } : options;
+  const authAttemptsPerMinute = o.authAttemptsPerMinute ?? 10_000;
   const db = createPool(TEST_URL);
   await migrate(db, join(import.meta.dirname, '..', 'sql'));
   await db.query(`TRUNCATE users, farms, memberships, devices, invites, password_resets, records, processed_ops,
                   conflicts, files, backups, audit_log CASCADE`);
   const logs: string[] = [];
-  const app = buildApp({ db, dataDir: mkdtempSync(join(tmpdir(), 'kfh-')), log: (l) => logs.push(l), authAttemptsPerMinute });
+  const app = buildApp({ db, dataDir: mkdtempSync(join(tmpdir(), 'kfh-')), log: (l) => logs.push(l), authAttemptsPerMinute,
+                      registrationOpen: o.registrationOpen ?? false });
   await app.ready();
   return { app, db, logs, close: async () => { await app.close(); await db.end(); } };
 }
@@ -47,7 +56,7 @@ export async function register(app: FastifyInstance, extra: Record<string, unkno
 }
 
 export async function login(app: FastifyInstance, email: string, password: string, platform = 'android'): Promise<Device> {
-  const r = await app.inject({ method: 'POST', url: '/auth/login', payload: { email, password, deviceName: platform, platform } });
+  const r = await app.inject({ method: 'POST', url: '/auth/login', payload: { login: email, password, deviceName: platform, platform } });
   if (r.statusCode !== 200) throw new Error(r.body);
   return r.json();
 }

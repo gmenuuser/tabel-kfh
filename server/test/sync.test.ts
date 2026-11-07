@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { harness, register, login, auth, pushOps, pullAll, upsert, remove, randomUUID, type Harness } from './helpers.ts';
 
 let h: Harness;
-before(async () => { h = await harness(); });
+before(async () => { h = await harness({ registrationOpen: true }); });
 after(async () => { await h.close(); });
 
 const sale = (over: object = {}) => ({
@@ -173,26 +173,22 @@ test('удаление доходит до других устройств, уд
 
 test('роли помощников и отзыв устройства', async () => {
   const owner = await register(h.app, { email: `h${Date.now()}@example.com` });
-  const invite = await h.app.inject({ method: 'POST', url: '/invites', headers: auth(owner), payload: { role: 'timesheet' } });
-  assert.equal(invite.statusCode, 201);
-  const join = await h.app.inject({ method: 'POST', url: '/auth/join', payload: {
-    code: invite.json().code, email: `helper${Date.now()}@example.com`, password: 'помощник-123', name: 'Бригадир', platform: 'android' } });
-  assert.equal(join.statusCode, 201);
-  const helper = join.json();
+  const created = await h.app.inject({ method: 'POST', url: '/members', headers: auth(owner),
+    payload: { login: 'brigadir', password: 'помощник-123', role: 'timesheet' } });
+  assert.equal(created.statusCode, 201);
+  const helper = await login(h.app, 'brigadir', 'помощник-123', 'android');
   assert.equal(helper.role, 'timesheet');
   assert.equal((await pushOps(h.app, helper, [upsert('hoursMark', randomUUID(), { employeeId: randomUUID(), day: '2026-11-06', hours: 8 })]))[0].status, 'applied');
   const sales = await pushOps(h.app, helper, [upsert('coalSale', randomUUID(), sale())]);
   assert.equal(sales[0].status, 'rejected', 'бригадир не трогает продажи');
-  const reuse = await h.app.inject({ method: 'POST', url: '/auth/join', payload: {
-    code: invite.json().code, email: `x${Date.now()}@example.com`, password: 'помощник-123' } });
-  assert.equal(reuse.statusCode, 400, 'приглашение одноразовое');
 
   const devices = (await h.app.inject({ method: 'GET', url: '/devices', headers: auth(owner) })).json();
   assert.equal(devices.length, 2);
   const lost = devices.find((d: { id: string }) => d.id === helper.deviceId);
   assert.equal((await h.app.inject({ method: 'POST', url: `/devices/${lost.id}/revoke`, headers: auth(owner) })).statusCode, 200);
   assert.equal((await h.app.inject({ method: 'GET', url: '/sync/pull', headers: auth(helper) })).statusCode, 401, 'отозванное устройство отключено');
-  const notOwner = await h.app.inject({ method: 'POST', url: '/invites', headers: auth(helper), payload: { role: 'manager' } });
+  const notOwner = await h.app.inject({ method: 'POST', url: '/members', headers: auth(helper),
+    payload: { login: 'second', password: 'помощник-123', role: 'manager' } });
   assert.equal(notOwner.statusCode, 401);
 });
 

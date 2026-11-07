@@ -60,3 +60,10 @@ export function normalEmail(e: unknown): string | null {
   const t = e.trim().toLowerCase();
   return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(t) && t.length <= 200 ? t : null;
 }
+
+/** A helper's login: 3-32 of latin letters, digits, «_» and «-», lower case. */
+export function normalLogin(v: unknown): string | null {
+  if (typeof v !== 'string') return null;
+  const t = v.trim().toLowerCase();
+  return /^[a-z0-9_-]{3,32}$/.test(t) ? t : null;
+}

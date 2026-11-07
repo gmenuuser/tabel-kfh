@@ -1,10 +1,10 @@
 import Fastify, { type FastifyInstance, type FastifyReply, type FastifyRequest } from 'fastify';
-import { randomBytes, randomInt } from 'node:crypto';
+import { randomInt } from 'node:crypto';
 import { mkdirSync, writeFileSync, readFileSync, existsSync } from 'node:fs';
 import { join } from 'node:path';
 import type { Db } from './db.ts';
 import { inTransaction } from './db.ts';
-import { hashPassword, verifyPassword, newToken, sha256, sessionOf, validPassword, normalEmail, type Session } from './auth.ts';
+import { hashPassword, verifyPassword, newToken, sha256, sessionOf, validPassword, normalEmail, normalLogin, type Session } from './auth.ts';
 import { ROLES, ENTITIES, canRead, type Role } from './entities.ts';
 import { push, pull, openConflicts, resolveConflict, type PushOp } from './sync.ts';
 
@@ -18,6 +18,8 @@ export interface AppOptions {
   authAttemptsPerMinute?: number;
   /** The built site (web/dist): served from the same address, so no CORS and no second server. */
   webDir?: string;
+  /** Anyone may open a new farm (`POST /auth/register`). Closed by default: the owner's farm already exists. */
+  registrationOpen?: boolean;
 }
 
 const STATIC_TYPES: Record<string, string> = {
@@ -103,8 +105,11 @@ export function buildApp(o: AppOptions): FastifyInstance {
 
   // MARK: Accounts
 
+  app.get('/auth/config', async () => ({ registrationOpen: o.registrationOpen === true }));
+
   /** A new account and its farm; the device is signed in. */
   app.post('/auth/register', async (req, reply) => {
+    if (o.registrationOpen !== true) return fail(reply, 403, 'Регистрация закрыта');
     if (!allow(`auth:${req.ip}`)) return fail(reply, 429, 'Слишком много попыток, подождите минуту');
     const b = (req.body ?? {}) as Record<string, unknown>;
     const email = normalEmail(b.email);
@@ -137,11 +142,15 @@ export function buildApp(o: AppOptions): FastifyInstance {
   app.post('/auth/login', async (req, reply) => {
     if (!allow(`auth:${req.ip}`)) return fail(reply, 429, 'Слишком много попыток, подождите минуту');
     const b = (req.body ?? {}) as Record<string, unknown>;
-    const email = normalEmail(b.email);
-    const u = email ? (await db.query('SELECT id, password_hash FROM users WHERE email = $1', [email])).rows[0] : undefined;
+    // `login` (or the older `email`) is an e-mail first, otherwise a helper's login.
+    const who = typeof b.login === 'string' ? b.login : b.email;
+    const email = normalEmail(who);
+    const login = email ? null : normalLogin(who);
+    const u = email ? (await db.query('SELECT id, password_hash FROM users WHERE email = $1', [email])).rows[0]
+            : login ? (await db.query('SELECT id, password_hash FROM users WHERE login = $1', [login])).rows[0] : undefined;
     if (!u || typeof b.password !== 'string' || !(await verifyPassword(b.password, u.password_hash))) {
-      await audit(null, 'auth.login.failed', { email });
-      return fail(reply, 401, 'Неверная почта или пароль');
+      await audit(null, 'auth.login.failed', { email, login });
+      return fail(reply, 401, 'Неверный логин или пароль');
     }
     const farms = (await db.query('SELECT farm_id, role FROM memberships WHERE user_id = $1 ORDER BY created_at', [u.id])).rows;
     const m = typeof b.farmId === 'string' ? farms.find((f) => f.farm_id === b.farmId) : farms[0];
@@ -214,46 +223,51 @@ export function buildApp(o: AppOptions): FastifyInstance {
     return { ok: true };
   });
 
-  /** An invite code for a helper with a role; valid for 7 days, used once. */
-  app.post('/invites', { preHandler: [signedIn, ownerOnly] }, async (req, reply) => {
-    const role = (req.body as Record<string, unknown> | undefined)?.role as Role;
+  /** The owner creates a helper: a login (no e-mail), a password and a role. */
+  app.post('/members', { preHandler: [signedIn, ownerOnly] }, async (req, reply) => {
+    const b = (req.body ?? {}) as Record<string, unknown>;
+    const login = normalLogin(b.login);
+    const role = b.role as Role;
+    if (!login) return fail(reply, 400, 'Логин — от 3 до 32 латинских букв, цифр, «_» и «-»');
+    if (!validPassword(b.password)) return fail(reply, 400, 'Пароль — не короче 8 символов');
     if (!ROLES.includes(role) || role === 'owner') return fail(reply, 400, 'Роль: manager, timesheet, coal, livestock или viewer');
-    const code = randomBytes(6).toString('base64url');
-    await db.query("INSERT INTO invites (code, farm_id, role, created_by, expires_at) VALUES ($1, $2, $3, $4, now() + interval '7 days')",
-      [code, req.session.farmId, role, req.session.userId]);
-    await audit(req.session, 'invite.create', { role });
-    return reply.code(201).send({ code, role });
+    const hash = await hashPassword(b.password);
+    try {
+      const id = await inTransaction(db, async (tx) => {
+        const u = await tx.query('INSERT INTO users (login, name, password_hash) VALUES ($1, $2, $3) RETURNING id', [login, login, hash]);
+        await tx.query('INSERT INTO memberships (farm_id, user_id, role) VALUES ($1, $2, $3)', [req.session.farmId, u.rows[0].id, role]);
+        return u.rows[0].id as string;
+      });
+      await audit(req.session, 'member.create', { userId: id, login, role });
+      return reply.code(201).send({ id, login, role });
+    } catch (e: unknown) {
+      if ((e as { code?: string }).code === '23505') return fail(reply, 409, 'Такой логин уже есть');
+      throw e;
+    }
   });
 
-  /** A helper joins with the code: a new account, or an existing one with its password. */
-  app.post('/auth/join', async (req, reply) => {
-    if (!allow(`auth:${req.ip}`)) return fail(reply, 429, 'Слишком много попыток, подождите минуту');
-    const b = (req.body ?? {}) as Record<string, unknown>;
-    const email = normalEmail(b.email);
-    if (!email || typeof b.code !== 'string' || typeof b.password !== 'string') return fail(reply, 400, 'Укажите код, почту и пароль');
-    return inTransaction(db, async (tx) => {
-      const inv = (await tx.query('SELECT * FROM invites WHERE code = $1 AND used_at IS NULL AND expires_at > now() FOR UPDATE',
-        [b.code])).rows[0];
-      if (!inv) return fail(reply, 400, 'Приглашение неверное или устарело');
-      let user = (await tx.query('SELECT id, password_hash FROM users WHERE email = $1', [email])).rows[0];
-      if (user) {
-        if (!(await verifyPassword(b.password as string, user.password_hash))) return fail(reply, 401, 'Неверный пароль');
-      } else {
-        if (!validPassword(b.password)) return fail(reply, 400, 'Пароль — не короче 8 символов');
-        user = (await tx.query('INSERT INTO users (email, name, password_hash) VALUES ($1, $2, $3) RETURNING id',
-          [email, String(b.name ?? '').trim(), await hashPassword(b.password as string)])).rows[0];
-      }
-      await tx.query('INSERT INTO memberships (farm_id, user_id, role) VALUES ($1, $2, $3) ON CONFLICT (farm_id, user_id) DO UPDATE SET role = $3',
-        [inv.farm_id, user.id, inv.role]);
-      await tx.query('UPDATE invites SET used_at = now(), used_by = $2 WHERE code = $1', [b.code, user.id]);
-      const d = await issueDevice(tx, inv.farm_id, user.id, b.deviceName, b.platform);
-      return reply.code(201).send({ token: d.token, deviceId: d.deviceId, farmId: inv.farm_id, userId: user.id, role: inv.role });
+  /** The owner sets a new password for a helper; all the helper's devices of this farm are signed out. */
+  app.post('/members/:userId/password', { preHandler: [signedIn, ownerOnly] }, async (req, reply) => {
+    const { userId } = req.params as { userId: string };
+    const password = (req.body as Record<string, unknown> | undefined)?.password;
+    if (!validPassword(password)) return fail(reply, 400, 'Пароль — не короче 8 символов');
+    if (userId === req.session.userId) return fail(reply, 400, 'Свой пароль владелец меняет через восстановление доступа');
+    const hash = await hashPassword(password);
+    const found = await inTransaction(db, async (tx) => {
+      const m = await tx.query('SELECT 1 FROM memberships WHERE farm_id = $1 AND user_id = $2', [req.session.farmId, userId]);
+      if (!m.rowCount) return false;
+      await tx.query('UPDATE users SET password_hash = $2 WHERE id = $1', [userId, hash]);
+      await tx.query('UPDATE devices SET revoked_at = now() WHERE user_id = $1 AND revoked_at IS NULL', [userId]);
+      return true;
     });
+    if (!found) return fail(reply, 404, 'Помощник не найден');
+    await audit(req.session, 'member.password', { userId });
+    return { ok: true };
   });
 
   app.get('/members', { preHandler: signedIn }, async (req) => {
     return (await db.query(
-      `SELECT u.id, u.email, u.name, m.role FROM memberships m JOIN users u ON u.id = m.user_id WHERE m.farm_id = $1 ORDER BY m.created_at`,
+      `SELECT u.id, u.login, u.email, u.name, m.role FROM memberships m JOIN users u ON u.id = m.user_id WHERE m.farm_id = $1 ORDER BY m.created_at`,
       [req.session.farmId])).rows;
   });
 
@@ -261,7 +275,11 @@ export function buildApp(o: AppOptions): FastifyInstance {
     const role = (req.body as Record<string, unknown> | undefined)?.role as Role;
     const { userId } = req.params as { userId: string };
     if (!ROLES.includes(role) || role === 'owner' || userId === req.session.userId) return fail(reply, 400, 'Неверная роль');
-    await db.query('UPDATE memberships SET role = $3 WHERE farm_id = $1 AND user_id = $2', [req.session.farmId, userId, role]);
+    // The helper signs in again to get the new rights.
+    await inTransaction(db, async (tx) => {
+      await tx.query('UPDATE memberships SET role = $3 WHERE farm_id = $1 AND user_id = $2', [req.session.farmId, userId, role]);
+      await tx.query('UPDATE devices SET revoked_at = now() WHERE farm_id = $1 AND user_id = $2 AND revoked_at IS NULL', [req.session.farmId, userId]);
+    });
     await audit(req.session, 'member.role', { userId, role });
     return { ok: true };
   });
@@ -279,11 +297,11 @@ export function buildApp(o: AppOptions): FastifyInstance {
   app.get('/devices', { preHandler: signedIn }, async (req) => {
     const s = req.session;
     const rows = (await db.query(
-      `SELECT d.id, d.name, d.platform, d.created_at, d.last_seen_at, d.revoked_at, u.email
+      `SELECT d.id, d.name, d.platform, d.created_at, d.last_seen_at, d.revoked_at, u.email, u.login
          FROM devices d JOIN users u ON u.id = d.user_id
         WHERE d.farm_id = $1 AND ($2 OR d.user_id = $3) ORDER BY d.created_at`,
       [s.farmId, s.role === 'owner', s.userId])).rows;
-    return rows.map((d) => ({ id: d.id, name: d.name, platform: d.platform, email: d.email, createdAt: d.created_at,
+    return rows.map((d) => ({ id: d.id, name: d.name, platform: d.platform, email: d.email, login: d.login, createdAt: d.created_at,
                               lastSeenAt: d.last_seen_at, revoked: !!d.revoked_at, current: d.id === s.deviceId }));
   });
 

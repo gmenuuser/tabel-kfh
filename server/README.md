@@ -34,7 +34,7 @@ docker compose down           # остановить (данные сохран�
 
 **Одинаковые id на всех платформах.** Записи, которые должны быть одни на хозяйство или на «человека и день»,
 получают id из имени: первые 16 байт SHA-256 от UTF-8 строки, версия 8 (`b[6] = b[6] & 0x0f | 0x80`),
-вариант 10. Имена: `hoursMark:<employeeId>:<YYYY-MM-DD>`, `coalSettings`, `coalWorkDay:<YYYY-MM-DD>`,
+вариант 10. Имена: `hoursMark:<employeeId>:<YYYY-MM-DD>`, `coalSettings`, `farmSettings`, `livestockSettings`, `coalWorkDay:<YYYY-MM-DD>`,
 `deliveryLocation:<название>`, `livestockCategory:<вид>:<название>`. День — по часовому поясу хозяйства.
 Снятая отметка часов — `hours: null` (запись остаётся, чтобы её можно было поставить снова).
 
@@ -64,13 +64,18 @@ npm test
 | `livestock` | только скот |
 | `viewer` | всё смотреть, ничего не менять |
 
-Права проверяет сервер. Владелец приглашает помощника: `POST /invites {role}` → код; помощник входит с кодом
-(`POST /auth/join`).
+Права проверяет сервер. Владелец сам заводит помощника: `POST /members {login, password, role}` (логин — 3–32
+латинских букв, цифр, `_` и `-`, без почты; роль не `owner`). Помощник входит `POST /auth/login {login, password}`.
+Владелец меняет пароль помощника `POST /members/{id}/password {password}` и роль `PATCH /members/{id} {role}` —
+в обоих случаях все устройства помощника отключаются и он входит заново.
+
+Регистрация новых хозяйств закрыта: `POST /auth/register` отвечает 403, пока в окружении не задано
+`REGISTRATION_OPEN=true`. Открыта ли она, видно без входа: `GET /auth/config` → `{registrationOpen}`.
 
 ## Протокол синхронизации (для iPhone, Android и сайта)
 
 Все запросы, кроме входа, с заголовком `Authorization: Bearer <токен устройства>`. Токен выдаётся при
-регистрации, входе или присоединении и хранится в защищённом хранилище устройства (Keychain, Android
+регистрации или входе и хранится в защищённом хранилище устройства (Keychain, Android
 Keystore). На сервере хранится только его SHA-256.
 
 **Запись** — `entity` (тип), `id` (UUID, создаётся на устройстве), `version` (номер версии на сервере),
@@ -108,10 +113,11 @@ Keystore). На сервере хранится только его SHA-256.
 
 ## Остальное API
 
-- `POST /auth/register`, `/auth/login`, `/auth/logout`, `/auth/join`, `/auth/reset-request`, `/auth/reset`
+- `POST /auth/register`, `/auth/login`, `/auth/logout`, `/auth/reset-request`, `/auth/reset`
+- `GET /auth/config` — открыта ли регистрация
 - `GET /me`, `PATCH /farm` (название, регион, руководитель, часовой пояс; по умолчанию Приаргунский район,
   Забайкальский край, `Asia/Chita`)
-- `GET /members`, `PATCH /members/{id}`, `DELETE /members/{id}`, `POST /invites`
+- `GET /members`, `POST /members`, `POST /members/{id}/password`, `PATCH /members/{id}`, `DELETE /members/{id}`
 - `GET /devices`, `POST /devices/{id}/revoke` — отозвать доступ потерянного устройства
 - `PUT /files` (тело — файл; одинаковый файл не хранится дважды), `GET /files/{id}`
 - `POST /backups`, `GET /backups`, `GET /backups/{id}/verify`, `POST /backups/{id}/restore {confirm: true}`

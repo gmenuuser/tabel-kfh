@@ -11,6 +11,7 @@ if (!url) {
 const db = createPool(url);
 await migrate(db, join(import.meta.dirname, '..', 'sql'));
 const app = buildApp({ db, dataDir: process.env.DATA_DIR ?? join(import.meta.dirname, '..', 'data'),
+                      registrationOpen: process.env.REGISTRATION_OPEN === 'true',
                       webDir: process.env.WEB_DIR ?? join(import.meta.dirname, '..', '..', 'web', 'dist') });
 const port = Number(process.env.PORT ?? 8080);
 await app.listen({ port, host: '0.0.0.0' });
