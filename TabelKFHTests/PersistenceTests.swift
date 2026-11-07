@@ -136,12 +136,61 @@ final class PersistenceTests: XCTestCase {
         XCTAssertEqual(SchemaV2.versionIdentifier, Schema.Version(2, 0, 0))
         XCTAssertEqual(SchemaV3.versionIdentifier, Schema.Version(3, 0, 0))
         XCTAssertEqual(SchemaV4.versionIdentifier, Schema.Version(4, 0, 0))
-        XCTAssertEqual(TabelMigrationPlan.schemas.count, 5)
-        XCTAssertEqual(TabelMigrationPlan.stages.count, 4)
+        XCTAssertEqual(SchemaV6.versionIdentifier, Schema.Version(6, 0, 0))
+        XCTAssertEqual(TabelMigrationPlan.schemas.count, 6)
+        XCTAssertEqual(TabelMigrationPlan.stages.count, 5)
         XCTAssertEqual(SchemaV1.models.count, 4)
         XCTAssertEqual(SchemaV2.models.count, 10)
         XCTAssertEqual(SchemaV3.models.count, 14)
         XCTAssertEqual(SchemaV4.models.count, 15)
         XCTAssertEqual(SchemaV5.models.count, 16)
+        XCTAssertEqual(SchemaV6.models.count, 19)
+    }
+
+    /// The phone's version 5 store opens with the send queue (empty: nothing old is sent by itself) and keeps
+    /// every value.
+    func testMigrationV5toV6KeepsData() throws {
+        let url = directory.appendingPathComponent("tabel.store")
+        let calendar = Calendar.farm
+        let hire = calendar.date(day: 1, month: 3, year: 2025)
+        let day = calendar.date(day: 5, month: 11, year: 2026)
+        let created = Date(timeIntervalSinceReferenceDate: 800_000_000)
+        let employeeId = UUID()
+        let markId = UUID()
+        let driverId = UUID()
+        do {
+            let schema = Schema(versionedSchema: SchemaV5.self)
+            let container = try ModelContainer(for: schema, migrationPlan: nil,
+                                               configurations: [ModelConfiguration(schema: schema, url: url,
+                                                                                   cloudKitDatabase: .none)])
+            let context = ModelContext(container)
+            context.insert(Employee(id: employeeId, lastName: "Зубахин", firstName: "Иван", patronymic: "Петрович",
+                                    position: "Тракторист", hireDate: hire))
+            context.insert(WorkHoursMark(id: markId, employeeId: employeeId, day: day, hours: 12, createdAt: created,
+                                         updatedAt: created))
+            context.insert(Driver(id: driverId, lastName: "Мунгалов", phone: "123", createdAt: created))
+            try context.save()
+        }
+        let context = ModelContext(try makeModelContainer(url: url))
+        let e = try XCTUnwrap(try context.fetch(FetchDescriptor<Employee>()).first)
+        XCTAssertEqual(e.id, employeeId)
+        XCTAssertEqual(e.fullName, "Зубахин Иван Петрович")
+        XCTAssertEqual(e.position, "Тракторист")
+        XCTAssertEqual(e.hireDate, hire)
+        let m = try XCTUnwrap(try context.fetch(FetchDescriptor<WorkHoursMark>()).first)
+        XCTAssertEqual(m.id, markId)
+        XCTAssertEqual(m.hours, 12)
+        XCTAssertEqual(m.day, day)
+        let d = try XCTUnwrap(try context.fetch(FetchDescriptor<Driver>()).first)
+        XCTAssertEqual(d.id, driverId)
+        XCTAssertEqual(d.phone, "123")
+        XCTAssertEqual(try context.fetchCount(FetchDescriptor<SyncOp>()), 0)
+        XCTAssertEqual(try context.fetchCount(FetchDescriptor<SyncShadow>()), 0)
+        XCTAssertEqual(try context.fetchCount(FetchDescriptor<SyncState>()), 0)
+
+        // The new tables work in the migrated store.
+        d.phone = "456"
+        try context.syncedSave()
+        XCTAssertEqual(try context.fetch(FetchDescriptor<SyncOp>()).map(\.entity), ["driver"])
     }
 }
