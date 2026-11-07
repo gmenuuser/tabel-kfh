@@ -45,19 +45,47 @@ touch "$T/s3.env"
 eq "all secret files present" "$(kfh_restic_env_missing_files "$T/kfh.env")" ""
 eq "mask" "$(echo 's3:https://s3.example.ru/bucket/secret/path' | kfh_mask_repo)" "s3:https://s3.example.ru/bucket/..."
 
+# Guarded, quoted and commented source lines.
+cat > "$T/kfh2.env" <<EOF
+RESTIC_PASSWORD_FILE="$T/pass" # Cubely's password
+. '$T/s3.env'   # keys
+[ -r $T/extra.env ] && . $T/extra.env
+test -f "$T/extra2.env" && . "$T/extra2.env"
+# . $T/commented.env
+EOF
+eq "quotes and trailing comments: nothing missing" "$(kfh_restic_env_missing_files "$T/kfh2.env")" ""
+eq "guarded missing files are optional" "$(kfh_restic_env_optional_missing_files "$T/kfh2.env")" "$T/extra.env
+$T/extra2.env"
+rm "$T/s3.env"
+eq "quoted required file missing" "$(kfh_restic_env_missing_files "$T/kfh2.env")" "$T/s3.env"
+touch "$T/s3.env"
+
+eq "mask rest credentials" "$(echo 'rest:https://kfh:p4ss@backup.example.ru:8000/repo' | kfh_mask_repo)" "rest:https://***@backup.example.ru:8000/..."
+eq "mask https credentials" "$(echo 'https://u:p@h.example/x/y' | kfh_mask_repo)" "https://***@h.example/..."
+eq "mask sftp user" "$(echo 'sftp:backup@host.example:/srv/restic' | kfh_mask_repo)" "sftp:***@host.example:/..."
+eq "mask local path untouched" "$(echo '/srv/restic-repo' | kfh_mask_repo)" "/srv/restic-repo"
+
 # The tar step of kfh-backup.sh, cut out of it, with a fake `dc` exiting with a given code.
 BLOCK="$(sed -n '/^rc=0$/,/^mv "\$DIR\/files-/p' "$(dirname "$0")/kfh-backup.sh")"
-mkdir -p "$T/data"; head -c 5000 /dev/urandom > "$T/data/a"
-tar_step() { # exit-code whole|truncated -> prints "<script exit> <archive kept 0/1>"
+mkdir -p "$T/data"; head -c 5120 /dev/urandom > "$T/data/a"; head -c 5120 /dev/urandom > "$T/data/b"
+tar_step() { # exit-code whole|truncated|boundary -> prints "<script exit> <archive kept 0/1>"
   local RC="$1" MODE="$2" DIR="$T/out" STAMP=x r=0
   rm -rf "$DIR"; mkdir -p "$DIR"
-  dc() { if [ "$MODE" = whole ]; then tar -C "$T/data" -cf - .; else tar -C "$T/data" -cf - . | head -c 2000; fi; return "$RC"; }
+  dc() {
+    case "$MODE" in
+      whole) tar -C "$T/data" -cf - ./a ./b ;;
+      truncated) tar -C "$T/data" -cf - ./a ./b | head -c 2000 ;;
+      boundary) tar -C "$T/data" -cf - ./a ./b | head -c 5632 ;; # exactly the first member: it lists fine
+    esac
+    return "$RC"
+  }
   ( eval "$BLOCK" ) 2>/dev/null || r=$?
   echo "$r $([ -f "$DIR/files-x.tar" ] && echo 1 || echo 0)"
 }
 eq "tar exit 0: archive kept" "$(tar_step 0 whole)" "0 1"
 eq "tar exit 1, archive whole: warning, archive kept" "$(tar_step 1 whole)" "0 1"
 eq "tar exit 1, archive broken: backup fails" "$(tar_step 1 truncated)" "1 0"
+eq "tar exit 1, cut at a member boundary (no end marker): backup fails" "$(tar_step 1 boundary)" "1 0"
 eq "tar exit 2: backup fails" "$(tar_step 2 whole)" "2 0"
 
 exit "$fail"

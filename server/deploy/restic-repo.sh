@@ -23,15 +23,54 @@ kfh_find_restic_repo() {
   return 0
 }
 
-# Prints, one per line, the secret files a restic env file relies on (RESTIC_PASSWORD_FILE=..., `. file`)
-# that do not exist or cannot be read.
+# Prints "required <file>" / "optional <file>" for each file a restic env file relies on: RESTIC_PASSWORD_FILE=...
+# and `. file` / `source file` are required; a guarded `... && . file` is optional. Commented lines, trailing
+# ` # comments` and quotes are dropped (paths with spaces are not supported).
+kfh__restic_env_files() {
+  local line kind file
+  while IFS= read -r line || [ -n "$line" ]; do
+    line="$(printf '%s' "$line" | sed -E 's/^[[:space:]]+//; s/[[:space:]]+#.*$//; s/[[:space:]]+$//')"
+    case "$line" in ''|'#'*) continue ;; esac
+    kind=""; file=""
+    if printf '%s' "$line" | grep -qE '&&[[:space:]]*(\.|source)[[:space:]]+'; then
+      kind=optional
+      file="$(printf '%s' "$line" | sed -E 's/^.*&&[[:space:]]*(\.|source)[[:space:]]+//')"
+    elif printf '%s' "$line" | grep -qE '^(\.|source)[[:space:]]+'; then
+      kind=required
+      file="$(printf '%s' "$line" | sed -E 's/^(\.|source)[[:space:]]+//')"
+    elif printf '%s' "$line" | grep -qE '^(export[[:space:]]+)?RESTIC_PASSWORD_FILE='; then
+      kind=required
+      file="$(printf '%s' "$line" | sed -E 's/^(export[[:space:]]+)?RESTIC_PASSWORD_FILE=//')"
+    fi
+    [ -n "$kind" ] || continue
+    file="$(printf '%s' "$file" | sed -E 's/[[:space:]].*$//; s/;$//; s/^["'"'"']//; s/["'"'"']$//')"
+    [ -n "$file" ] && printf '%s %s\n' "$kind" "$file"
+  done < "$1"
+  return 0
+}
+
+# Prints, one per line, the required files of a restic env file that do not exist or cannot be read.
 kfh_restic_env_missing_files() {
-  local env="$1" s
-  for s in $(sed -nE 's/^RESTIC_PASSWORD_FILE=//p; s/^\.[[:space:]]+//p' "$env"); do
-    [ -r "$s" ] || printf '%s\n' "$s"
+  local kind f
+  kfh__restic_env_files "$1" | while read -r kind f; do
+    [ "$kind" = required ] && [ ! -r "$f" ] && printf '%s\n' "$f"
   done
   return 0
 }
 
-# The address with the bucket path cut off, for logs.
-kfh_mask_repo() { sed -E 's#(s3:https?://[^/]+/[^/]+).*#\1/...#'; }
+# Prints the optional (guarded) files of a restic env file that are not there: worth a look, not a failure.
+kfh_restic_env_optional_missing_files() {
+  local kind f
+  kfh__restic_env_files "$1" | while read -r kind f; do
+    [ "$kind" = optional ] && [ ! -r "$f" ] && printf '%s\n' "$f"
+  done
+  return 0
+}
+
+# The address for logs: credentials (user:pass@) of any scheme hidden, the path cut off (s3 keeps the bucket).
+kfh_mask_repo() {
+  sed -E 's#(://)[^@/]*@#\1***@#; s#^(sftp:)[^@/:]*@#\1***@#' \
+    | sed -E 's#^(s3:https?://[^/]+/[^/]+).*#\1/...#; t
+              s#^(([a-z0-9+.-]+:)?[a-z][a-z0-9+.-]*://[^/]+)/.+#\1/...#; t
+              s#^(sftp:[^:/]+:)/.+#\1/...#'
+}

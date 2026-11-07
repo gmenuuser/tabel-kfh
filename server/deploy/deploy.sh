@@ -133,6 +133,8 @@ if [ "$FIRST" = 1 ]; then
     echo "$MISSING" | sed 's/^/  /' >&2
     exit 1
   fi
+  OPTIONAL="$(kfh_restic_env_optional_missing_files /etc/kfh/restic.env)"
+  [ -z "$OPTIONAL" ] || echo "optional, missing (guarded in restic.env): $(echo "$OPTIONAL" | tr '\n' ' ')" >&2
   echo "repository: $(grep '^RESTIC_REPOSITORY=' /etc/kfh/restic.env | kfh_mask_repo)"
 
   echo "==> nginx site"
