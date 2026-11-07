@@ -42,8 +42,8 @@ enum RefusedChanges {
     /// «Удалить»: the refused change goes. A record the server never had (no shadow, or version 0) goes from the
     /// phone with all its changes, and so do the records that cannot be without it (`dependents`: an employee's
     /// hours marks, attendance and timesheet versions, a driver's payments, a category's operations, an operation's
-    /// slaughter record), which would otherwise reach the server pointing at nothing; a sale keeps its driver's name
-    /// but loses the link (queued as an ordinary change). For a record the server has, the next pull starts over
+    /// slaughter record), which would otherwise reach the server pointing at nothing. A new driver with coal sales
+    /// is not removed (`RefusedChangeError.driverHasSales`). For a record the server has, the next pull starts over
     /// (cursor 0), so the server's values come back — also for any removed dependent the server has.
     static func discard(_ op: SyncOp, in context: ModelContext) throws {
         if context.hasChanges { try context.syncedSave() }
@@ -59,11 +59,11 @@ enum RefusedChanges {
             neverOnServer = shadow == nil || shadow?.version == 0
         }
         if neverOnServer, entity == .driver {
-            // The sales stay (they are the farm's money); their link to the driver goes, as a change to send.
+            // Sales are the farm's money and a hired sale needs its driver (the server refuses one without): the
+            // person moves them to another driver first, nothing is unlinked here.
             let driverId: UUID? = recordId
-            let sales = try context.fetch(FetchDescriptor<CoalSale>(predicate: #Predicate { $0.driverId == driverId }))
-            for sale in sales { sale.driverId = nil }
-            if !sales.isEmpty { try context.syncedSave() }
+            let sales = try context.fetchCount(FetchDescriptor<CoalSale>(predicate: #Predicate { $0.driverId == driverId }))
+            if sales > 0 { throw RefusedChangeError.driverHasSales(sales) }
         }
         SyncedSave.isApplyingRemote = true
         defer { SyncedSave.isApplyingRemote = false }
@@ -155,5 +155,17 @@ enum RefusedChanges {
             break
         }
         return ids
+    }
+}
+
+enum RefusedChangeError: LocalizedError, Equatable {
+    case driverHasSales(Int)
+
+    var errorDescription: String? {
+        switch self {
+        case .driverHasSales(let n):
+            return "У этого водителя \(CoalText.sales(n)) угля. "
+                + "Сначала выберите в них другого водителя, потом удалите."
+        }
     }
 }

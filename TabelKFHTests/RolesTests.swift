@@ -177,8 +177,8 @@ final class RolesTests: XCTestCase {
         XCTAssertFalse(context.hasChanges)
     }
 
-    /// A refused new driver goes with his payments; his sale stays, unlinked, and the unlinking is sent.
-    func testDeleteRefusedNewDriverRemovesPaymentsAndUnlinksSales() throws {
+    /// A refused new driver with coal sales is not removed: the sales keep their driver, nothing is queued.
+    func testDeleteRefusedNewDriverWithSalesIsRefused() throws {
         let moment = Date(timeIntervalSince1970: 1_800_000_000)
         let driver = Driver(lastName: "Мунгалов", createdAt: moment)
         context.insert(driver)
@@ -190,6 +190,27 @@ final class RolesTests: XCTestCase {
                             driverId: driver.id, driverNameSnapshot: "Мунгалов", driverPaymentAmount: 500,
                             createdAt: moment, updatedAt: moment)
         context.insert(sale)
+        try context.syncedSave()
+        let opsBefore = try count(SyncOp.self)
+
+        XCTAssertThrowsError(try RefusedChanges.discard(op, in: context)) { error in
+            XCTAssertEqual(error as? RefusedChangeError, .driverHasSales(1))
+        }
+
+        XCTAssertEqual(try count(Driver.self), 1)
+        XCTAssertEqual(try context.fetch(FetchDescriptor<CoalSale>()).first?.driverId, driver.id)
+        XCTAssertEqual(try count(SyncOp.self), opsBefore)
+        XCTAssertFalse(context.hasChanges)
+    }
+
+    /// A refused new driver without sales goes with his payments.
+    func testDeleteRefusedNewDriverRemovesPayments() throws {
+        let moment = Date(timeIntervalSince1970: 1_800_000_000)
+        let driver = Driver(lastName: "Мунгалов", createdAt: moment)
+        context.insert(driver)
+        try context.syncedSave()
+        let op = try XCTUnwrap(context.fetch(FetchDescriptor<SyncOp>()).first)
+        op.state = "error"
         context.insert(DriverPayment(driverId: driver.id, driverNameSnapshot: "Мунгалов", paymentDate: moment, amount: 500,
                                      createdAt: moment))
         try context.syncedSave()
@@ -198,12 +219,7 @@ final class RolesTests: XCTestCase {
 
         XCTAssertEqual(try count(Driver.self), 0)
         XCTAssertEqual(try count(DriverPayment.self), 0)
-        let kept = try XCTUnwrap(context.fetch(FetchDescriptor<CoalSale>()).first)
-        XCTAssertNil(kept.driverId)
-        XCTAssertEqual(kept.driverNameSnapshot, "Мунгалов")
-        let ops = try context.fetch(FetchDescriptor<SyncOp>())
-        XCTAssertEqual(ops.map(\.entityName), ["coalSale"])
-        XCTAssertEqual(ops.first?.fields["driverId"], .null, "the unsent sale goes without the link")
+        XCTAssertEqual(try count(SyncOp.self), 0)
         XCTAssertFalse(context.hasChanges)
     }
 
