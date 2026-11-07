@@ -34,12 +34,18 @@ echo -n "records in live base: "; dc exec -T db psql -U kfh -d kfh -Atc 'select 
 [ -r /etc/kfh/restic.env ] || { echo "/etc/kfh/restic.env missing - restic not checked" >&2; exit 1; }
 set -a; . /etc/kfh/restic.env; set +a
 restic snapshots --retry-lock 30m --tag kfh --latest 3
+# One snapshot for both the listing and the restore (a nightly backup may land in between).
+# shellcheck disable=SC1091
+. deploy/restic-repo.sh
+SNAP="$(restic snapshots --retry-lock 30m --tag kfh --latest 1 --json | kfh_snapshot_id)"
+[ -n "$SNAP" ] || { echo "no kfh snapshot found in restic" >&2; exit 1; }
+echo "snapshot: $SNAP"
 # Only the newest dump and files archive of the snapshot (it holds 14 of each): the names sort by their stamp.
-LISTING="$(restic ls latest --retry-lock 30m --tag kfh)"
+LISTING="$(restic ls "$SNAP" --retry-lock 30m)"
 S_DUMP="$(printf '%s\n' "$LISTING" | grep -E '^/var/backups/kfh/kfh-[^/]*\.dump$' | sort | tail -n 1 || true)"
 S_TAR="$(printf '%s\n' "$LISTING" | grep -E '^/var/backups/kfh/files-[^/]*\.tar$' | sort | tail -n 1 || true)"
 [ -n "$S_DUMP" ] && [ -n "$S_TAR" ] || { echo "no dump or files archive in the latest kfh snapshot" >&2; exit 1; }
-restic restore latest --retry-lock 30m --tag kfh --target "$TMPDIR_R" --include "$S_DUMP" --include "$S_TAR"
+restic restore "$SNAP" --retry-lock 30m --target "$TMPDIR_R" --include "$S_DUMP" --include "$S_TAR"
 R_DUMP="$TMPDIR_R$S_DUMP"
 R_TAR="$TMPDIR_R$S_TAR"
 check "restic" "$R_DUMP" "$R_TAR"

@@ -88,5 +88,12 @@ eq "tar exit 1, archive broken: backup fails" "$(tar_step 1 truncated)" "1 0"
 eq "tar exit 1, cut at a member boundary (no end marker): backup fails" "$(tar_step 1 boundary)" "1 0"
 eq "tar exit 2: backup fails" "$(tar_step 2 whole)" "2 0"
 
+# The newest kfh snapshot id from `restic snapshots --json --latest 1` (jq when present, else sed).
+SNAP='[{"time":"2026-11-08T03:00:01Z","parent":"1111aaaa","tree":"2222bbbb","paths":["/var/backups/kfh"],"hostname":"vds","tags":["kfh"],"id":"9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08","short_id":"9f86d081"}]'
+eq "snapshot id from json" "$(printf '%s' "$SNAP" | kfh_snapshot_id)" "9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08"
+eq "snapshot id without jq" "$(printf '%s' "$SNAP" | KFH_NO_JQ=1 kfh_snapshot_id)" "9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08"
+eq "no snapshot: nothing" "$(printf '[]' | kfh_snapshot_id)" ""
+eq "no snapshot without jq: nothing" "$(printf 'null' | KFH_NO_JQ=1 kfh_snapshot_id)" ""
+
 exit "$fail"
 
