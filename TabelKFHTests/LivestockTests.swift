@@ -313,4 +313,15 @@ final class LivestockTests: XCTestCase {
         try s.save(d)
         XCTAssertEqual(try s.total(.cattle), 20)
     }
+
+    func testDefaultCategoryIdsAreStable() throws {
+        let otherContext = ModelContext(try makeModelContainer(inMemory: true))
+        let other = LivestockService(context: otherContext, calendar: calendar, now: { [unowned self] in self.clock })
+        let mine = try service.categories().map(\.id)
+        let theirs = try other.categories().map(\.id)
+        XCTAssertEqual(Set(mine), Set(theirs))
+        XCTAssertEqual(Set(mine).count, 15)
+        XCTAssertEqual(try category(.cattle, "Коровы").id, StableId.livestockCategory(species: "cattle", name: "Коровы"))
+        XCTAssertEqual(try context.fetch(FetchDescriptor<LivestockSettings>()).first?.id, StableId.livestockSettings)
+    }
 }

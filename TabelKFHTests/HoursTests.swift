@@ -190,4 +190,13 @@ final class HoursTests: XCTestCase {
         XCTAssertEqual(hours.hours(of: b, on: day(6)), 8)
         XCTAssertEqual(try marks(), 2)
     }
+
+    func testMarkIdIsStable() throws {
+        let e = try employee("Сидоров")
+        try hours.set(8, for: e, on: day(5))
+        try hours.set(nil, for: e, on: day(5))
+        try hours.set(4, for: e, on: day(5))
+        let mark = try XCTUnwrap(try context.fetch(FetchDescriptor<WorkHoursMark>()).first)
+        XCTAssertEqual(mark.id, StableId.hoursMark(employeeId: e.id, day: day(5), calendar: calendar))
+    }
 }

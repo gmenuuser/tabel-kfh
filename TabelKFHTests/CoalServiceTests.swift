@@ -378,4 +378,16 @@ final class CoalServiceTests: XCTestCase {
         let december = try days.monthReport(month: 12, year: 2026)
         XCTAssertEqual(december.drivers.first { $0.driverId == mungalov.id }?.debtBefore, 60_000)
     }
+
+    func testWorkDayIdIsStable() throws {
+        try sellScenarioDay()
+        let day = try days.close(today)
+        XCTAssertEqual(day.id, StableId.coalWorkDay(today, calendar: calendar))
+    }
+
+    func testLocationIdsAreStable() throws {
+        XCTAssertEqual(try location("Приаргунск").id, StableId.deliveryLocation("Приаргунск"))
+        let added = try settings.addLocation(name: "Луговое", deliveryKopecks: 90_000, driverPaymentKopecks: nil)
+        XCTAssertEqual(added.id, StableId.deliveryLocation("Луговое"))
+    }
 }
