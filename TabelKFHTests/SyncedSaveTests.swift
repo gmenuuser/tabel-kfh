@@ -150,13 +150,13 @@ final class SyncedSaveTests: XCTestCase {
         try hours.set(8, for: e, on: day)
         try markSent()
         try hours.set(nil, for: e, on: day)
-        try hours.set(6, for: e, on: day)
+        try hours.set(4, for: e, on: day)
         let markId = StableId.hoursMark(employeeId: e.id, day: day, calendar: calendar)
         let markOps = try ops().filter { $0.recordId == markId }
         XCTAssertEqual(markOps.count, 2, "the removal not sent yet takes the new mark")
-        XCTAssertEqual(try fields(try XCTUnwrap(markOps.last))["hours"], .int(6))
+        XCTAssertEqual(try fields(try XCTUnwrap(markOps.last))["hours"], .int(4))
         XCTAssertEqual(markOps.last?.kind, "upsert")
-        XCTAssertEqual(try context.fetch(FetchDescriptor<WorkHoursMark>()).map(\.hours), [6])
+        XCTAssertEqual(try context.fetch(FetchDescriptor<WorkHoursMark>()).map(\.hours), [4])
         XCTAssertEqual(try shadow(.hoursMark, markId)?.wasDeleted, false)
     }
 
