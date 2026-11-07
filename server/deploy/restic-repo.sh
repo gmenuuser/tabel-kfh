@@ -78,9 +78,6 @@ kfh_mask_repo() {
 # Reads `restic snapshots --json --latest 1 ...` on stdin and prints the id of the first snapshot, or nothing.
 # Uses jq when it is installed (KFH_NO_JQ=1 forces the sed fallback); "short_id" is never taken for "id".
 kfh_snapshot_id() {
-  if [ -z "${KFH_NO_JQ:-}" ] && command -v jq >/dev/null 2>&1; then
-    jq -r 'if type == "array" and length > 0 then .[0].id // empty else empty end'
-  else
-    { grep -oE '"id"[[:space:]]*:[[:space:]]*"[0-9a-f]+"' || true; } | head -n 1 | sed -E 's/.*"([0-9a-f]+)"$/\1/'
-  fi
+  # The first "id" in restic's JSON: works for the flat list and the grouped form (--latest may group by host/paths).
+  { grep -oE '"id"[[:space:]]*:[[:space:]]*"[0-9a-f]{64}"' || true; } | head -n 1 | sed -E 's/.*"([0-9a-f]+)"$/\1/'
 }
