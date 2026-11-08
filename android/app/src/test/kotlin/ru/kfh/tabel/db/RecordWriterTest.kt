@@ -234,7 +234,7 @@ class RecordWriterTest {
 
     @Test
     fun baseVersionIsTheStoredVersion() = runTest {
-        RoomLocalStore(db).applyPulled(listOf(RemoteRecord("driver", driverId, 5, RecordCodec.encode(driver), false)))
+        RoomLocalStore(db, PhotoStore(tmp.newFolder("photos"))).applyPulled(listOf(RemoteRecord("driver", driverId, 5, RecordCodec.encode(driver), false)))
         writer.save("driver", driverId, RecordCodec.encode(driver.copy(phone = "1")))
         assertEquals(5L, ops().single().baseVersion)
         assertEquals(5L, row("driver", driverId)!!.version)

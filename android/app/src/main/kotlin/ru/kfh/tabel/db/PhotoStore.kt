@@ -28,8 +28,6 @@ class PhotoStore(val dir: File) {
         file(employeeId).delete()
     }
 
-    /** Sign-out: every photo goes. */
-    fun wipe() {
-        dir.deleteRecursively()
-    }
+    /** Sign-out: every photo goes. False when something could not be deleted. */
+    fun wipe(): Boolean = dir.deleteRecursively() && !dir.exists()
 }

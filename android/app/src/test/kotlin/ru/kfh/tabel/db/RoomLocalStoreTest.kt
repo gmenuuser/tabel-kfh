@@ -174,6 +174,8 @@ class RoomLocalStoreTest {
         store.setCursor(10)
         store.saveMe(Me("u-1", Role.owner, "КФХ", null, null, ZoneId.of("Asia/Chita")))
         photos.save("7d1e4c2a-1b3f-4e5d-8a9b-0c1d2e3f4a5b", byteArrayOf(1, 2, 3))
+        photos.save("8e2f5d3b-2c4a-4f6e-9b0c-1d2e3f4a5b6c", byteArrayOf(4))
+        assertTrue(photos.file("7d1e4c2a-1b3f-4e5d-8a9b-0c1d2e3f4a5b").exists())
         store.wipe()
         assertEquals(emptyList<RecordRow>(), db.records().all())
         assertEquals(0, store.pendingCount())
@@ -182,7 +184,8 @@ class RoomLocalStoreTest {
         assertNull(store.me())
         assertNull(store.role())
         assertNull(photos.load("7d1e4c2a-1b3f-4e5d-8a9b-0c1d2e3f4a5b"))
-        assertEquals(0, photos.dir.listFiles()?.size ?: 0)
+        assertNull(photos.load("8e2f5d3b-2c4a-4f6e-9b0c-1d2e3f4a5b6c"))
+        assertFalse("the photos folder is gone", photos.dir.exists())
     }
 
     @Test

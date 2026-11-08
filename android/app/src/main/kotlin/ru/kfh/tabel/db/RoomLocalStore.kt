@@ -17,7 +17,8 @@ import java.time.ZoneId
 /** [LocalStore] over Room, behaving as `ru.kfh.core.sync.FakeStore` (core tests). Also keeps the role and `Me`. */
 class RoomLocalStore(
     private val db: TabelDb,
-    private val photos: PhotoStore? = null,
+    /** Required: sign-out must take the employee photos too. */
+    private val photos: PhotoStore,
     private val clock: () -> Long = System::currentTimeMillis,
 ) : LocalStore {
     override suspend fun pendingOps(limit: Int): List<Op> = db.outbox().oldest(limit).map { it.toOp() }
@@ -100,13 +101,15 @@ class RoomLocalStore(
 
     /** Sign-out: records, queue, refused ops, cursor, role, Me and photos go. */
     override suspend fun wipe() {
+        // Photos first: a sign-out never leaves them behind a wiped database; a failed delete is tried again after.
+        val photosGone = photos.wipe()
         db.withWriteTransaction {
             db.records().clear()
             db.outbox().clear()
             db.outbox().clearRefused()
             db.meta().clear()
         }
-        photos?.wipe()
+        if (!photosGone) photos.wipe()
     }
 
     private fun OutboxRow.toOp() = Op(opId, entity, recordId, kind, baseVersion, fieldsJson())
