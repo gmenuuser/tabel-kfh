@@ -5,4 +5,7 @@ Wants=network-online.target
 
 [Service]
 Type=oneshot
+# systemd gives no HOME, so restic finds no cache folder and warns; give it its own.
+CacheDirectory=kfh-restic
+Environment=RESTIC_CACHE_DIR=/var/cache/kfh-restic
 ExecStart=/usr/local/sbin/kfh-backup
