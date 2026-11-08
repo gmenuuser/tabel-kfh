@@ -1,0 +1,12 @@
+{
+  "comment": "Stable ids as the site computes them (web/src/lib/ids.ts); the same pairs as TabelKFHTests/StableIdTests.swift::testMatchesSite.",
+  "pairs": [
+    { "name": "coalSettings", "id": "95dedd13-e1ca-8a22-b8f7-dd380554b776" },
+    { "name": "farmSettings", "id": "6f0e626d-d54f-8197-8901-1a4905a531de" },
+    { "name": "livestockSettings", "id": "0a989983-1107-8b34-84d3-14c31f0c93ae" },
+    { "name": "hoursMark:6f1c2a3e-0000-4000-8000-000000000001:2026-11-07", "id": "5337ef8b-89b1-8bd3-96e9-a27e67205ff7" },
+    { "name": "coalWorkDay:2026-11-07", "id": "267e507b-3bc5-81c8-b4ad-a44028534672" },
+    { "name": "deliveryLocation:Луговое", "id": "3f9d5530-0b6d-86ce-9ec5-b392829d9df5" },
+    { "name": "livestockCategory:cattle:Коровы", "id": "37093837-97e0-8515-af51-f22c98ee7499" }
+  ]
+}

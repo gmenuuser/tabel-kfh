@@ -16,3 +16,8 @@ dependencies {
     testImplementation(libs.okhttp.mockwebserver)
     testImplementation(libs.kotlinx.coroutines.test)
 }
+
+tasks.test {
+    // shared/ lives at the repository root, one level above android/.
+    systemProperty("kfh.repoRoot", rootProject.projectDir.parentFile.absolutePath)
+}

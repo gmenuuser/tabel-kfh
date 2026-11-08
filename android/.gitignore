@@ -6,3 +6,4 @@ build/
 *.keystore
 keystore.properties
 *.iml
+.kotlin/
