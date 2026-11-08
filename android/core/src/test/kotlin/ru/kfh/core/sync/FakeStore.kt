@@ -18,6 +18,8 @@ class FakeStore : LocalStore {
     var wipes = 0
     /** Every page handed to [applyPulled], in order. */
     val pulled = mutableListOf<List<RemoteRecord>>()
+    /** Runs at the start of [applyPulled] and [acknowledge]: a test can hold the engine right before a write. */
+    @Volatile var beforeWrite: suspend () -> Unit = {}
 
     private fun key(entity: String, id: String) = "$entity:$id"
 
@@ -47,6 +49,7 @@ class FakeStore : LocalStore {
     override suspend fun refusedCount(): Int = refused.size
 
     override suspend fun acknowledge(results: List<OpResult>) {
+        beforeWrite()
         for (r in results) {
             val op = queue.firstOrNull { it.opId == r.opId } ?: continue
             queue.remove(op)
@@ -68,6 +71,7 @@ class FakeStore : LocalStore {
     }
 
     override suspend fun applyPulled(changes: List<RemoteRecord>) {
+        beforeWrite()
         pulled += changes
         for (c in changes) {
             val mine = queue.filter { it.entity == c.entity && it.recordId == c.id }

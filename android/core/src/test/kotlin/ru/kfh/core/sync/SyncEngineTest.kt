@@ -445,6 +445,54 @@ class SyncEngineTest {
         assertEquals(1, server.seen.size)
     }
 
+    /**
+     * The window `stop()` alone cannot close: the engine is past its check and about to write when sign-out comes.
+     * `stopAndWait()` returns only after that write, so the wipe after it leaves nothing of the farm.
+     */
+    @Test
+    fun stopAndWaitWaitsForTheWriteInFlight() = runBlocking {
+        for (window in listOf("pull", "push")) {
+            store.wipe()
+            store.pulled.clear()
+            server.seen.clear()
+            val e = newEngine()
+            if (window == "push") localDriver()
+            server.addPages(TestServer.page(listOf(TestServer.change("driver", id(), 1, """{"lastName":"Поздний"}""")), next = 9))
+            val atWrite = CountDownLatch(1)
+            val release = CountDownLatch(1)
+            store.beforeWrite = {
+                atWrite.countDown()
+                release.await(5, TimeUnit.SECONDS)
+            }
+            val run = async(kotlinx.coroutines.Dispatchers.Default) { e.syncNow() }
+            assertTrue(atWrite.await(5, TimeUnit.SECONDS), window)
+            val signOut = async(kotlinx.coroutines.Dispatchers.Default) { e.stopAndWait() }
+            Thread.sleep(150)
+            assertFalse(signOut.isCompleted, "$window: stopAndWait must wait for the write in flight")
+            release.countDown()
+            signOut.await()
+            store.beforeWrite = {}
+            store.wipe()
+            run.await()
+
+            assertEquals(0, store.records.size, window)
+            assertEquals(0, store.queue.size, window)
+            assertEquals(0L, store.cursorValue, window)
+            assertTrue(e.stopped)
+            val asked = server.seen.size
+            e.syncNow()
+            assertEquals(asked, server.seen.size, window)
+        }
+    }
+
+    @Test
+    fun stopAndWaitWithNoRunReturnsAtOnce() = runBlocking {
+        engine.stopAndWait()
+        assertTrue(engine.stopped)
+        engine.syncNow()
+        assertEquals(0, server.seen.size)
+    }
+
     @Test
     fun statusLines() {
         val owner = ru.kfh.core.roles.Role.owner

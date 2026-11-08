@@ -45,9 +45,22 @@ class SyncEngine(
         }
     }
 
-    /** Sign-out: the run on its way writes nothing more, no new run starts. Call before wiping the store. */
+    /**
+     * No new run starts and the run on its way writes nothing after its next check. Does not wait: a store write
+     * already past its check may still land, so before wiping use [stopAndWait].
+     */
     fun stop() {
         stopped = true
+    }
+
+    /**
+     * Sign-out: stops, then waits until the run on its way (if any) has finished its last store write. After it
+     * returns nothing of this engine touches the store again, so the caller can `store.wipe()` safely.
+     * The app must call this (not [stop]) before wiping on sign-out.
+     */
+    suspend fun stopAndWait() {
+        stopped = true
+        mutex.withLock { }
     }
 
     /** The status from the store alone, without the network (at start, after a refused change was removed). */
