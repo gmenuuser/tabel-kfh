@@ -1,0 +1,82 @@
+name: android
+
+on:
+  push:
+    paths: ['android/**', 'shared/**', '.github/workflows/android.yml']
+  pull_request:
+    paths: ['android/**', 'shared/**', '.github/workflows/android.yml']
+  workflow_dispatch:
+
+concurrency:
+  group: android-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    defaults:
+      run:
+        working-directory: android
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: gradle/actions/setup-gradle@v4
+      - name: Unit tests
+        run: ./gradlew :core:test :app:testDebugUnitTest
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: test-reports
+          path: |
+            android/core/build/reports/tests
+            android/app/build/reports/tests
+          if-no-files-found: ignore
+
+  build:
+    needs: test
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    defaults:
+      run:
+        working-directory: android
+    env:
+      KFH_KEYSTORE_B64: ${{ secrets.KFH_KEYSTORE_B64 }}
+      KFH_KEYSTORE_PASSWORD: ${{ secrets.KFH_KEYSTORE_PASSWORD }}
+      KFH_KEY_ALIAS: ${{ secrets.KFH_KEY_ALIAS }}
+      KFH_KEY_PASSWORD: ${{ secrets.KFH_KEY_PASSWORD }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: gradle/actions/setup-gradle@v4
+      - name: Decode keystore
+        run: |
+          if [ -n "$KFH_KEYSTORE_B64" ]; then
+            echo "$KFH_KEYSTORE_B64" | base64 -d > "$RUNNER_TEMP/kfh.jks"
+            echo "KFH_KEYSTORE_FILE=$RUNNER_TEMP/kfh.jks" >> "$GITHUB_ENV"
+            echo "SIGNED=true" >> "$GITHUB_ENV"
+          else
+            echo "SIGNED=false" >> "$GITHUB_ENV"
+          fi
+      - name: Assemble
+        run: |
+          if [ "$SIGNED" = "true" ]; then
+            ./gradlew :app:assembleRelease
+          else
+            ./gradlew :app:assembleDebug
+          fi
+        env:
+          GITHUB_RUN_NUMBER: ${{ github.run_number }}
+      - uses: actions/upload-artifact@v4
+        with:
+          name: tabel-kfh-apk
+          path: |
+            android/app/build/outputs/apk/release/app-release.apk
+            android/app/build/outputs/apk/debug/app-debug.apk
+          if-no-files-found: error
