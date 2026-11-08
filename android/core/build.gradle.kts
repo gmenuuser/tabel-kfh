@@ -8,9 +8,10 @@ kotlin {
 }
 
 dependencies {
-    implementation(libs.kotlinx.serialization.json)
-    implementation(libs.kotlinx.coroutines.core)
-    implementation(libs.okhttp)
+    // In the public API of :core (Op.fields, Api(OkHttpClient), SyncEngine.status): the app gets them too.
+    api(libs.kotlinx.serialization.json)
+    api(libs.kotlinx.coroutines.core)
+    api(libs.okhttp)
 
     testImplementation(libs.junit)
     testImplementation(libs.okhttp.mockwebserver)
