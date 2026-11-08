@@ -56,6 +56,11 @@ android {
         compose = true
     }
 
+    testOptions {
+        // Room's Android runtime touches android.util.Log etc.; on the JVM those stubs return defaults.
+        unitTests.isReturnDefaultValues = true
+    }
+
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
@@ -83,7 +88,10 @@ dependencies {
     implementation(libs.kotlinx.serialization.json)
 
     implementation(libs.androidx.room3.runtime)
+    implementation(libs.androidx.sqlite.framework)
     ksp(libs.androidx.room3.compiler)
 
     testImplementation(libs.junit)
+    testImplementation(libs.kotlinx.coroutines.test)
+    testImplementation(libs.androidx.sqlite.bundled.jvm)
 }
