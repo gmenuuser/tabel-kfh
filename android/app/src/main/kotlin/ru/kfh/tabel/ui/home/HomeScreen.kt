@@ -32,6 +32,7 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import ru.kfh.core.coal.CoalText
 import ru.kfh.core.roles.Module
 import ru.kfh.core.roles.Role
 import ru.kfh.core.roles.modules
@@ -74,12 +75,7 @@ fun moduleTitle(m: Module): String = when (m) {
 }
 
 /** «Воскресенье, 8 ноября 2026» (`CoalText.longDate(...).capitalizedFirst`). */
-fun longDate(d: LocalDate): String {
-    val weekdays = listOf("понедельник", "вторник", "среда", "четверг", "пятница", "суббота", "воскресенье")
-    val months = listOf("января", "февраля", "марта", "апреля", "мая", "июня", "июля", "августа", "сентября",
-                        "октября", "ноября", "декабря")
-    return "${weekdays[d.dayOfWeek.value - 1]}, ${d.dayOfMonth} ${months[d.monthValue - 1]} ${d.year}".capitalizedFirst()
-}
+fun longDate(d: LocalDate): String = CoalText.longDate(d).capitalizedFirst()
 
 private fun String.capitalizedFirst(): String = if (isEmpty()) this else substring(0, 1).uppercase(RU) + substring(1)
 

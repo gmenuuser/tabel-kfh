@@ -1,6 +1,8 @@
 package ru.kfh.core.coal
 
+import java.time.Instant
 import java.time.LocalDate
+import java.time.ZoneId
 import java.util.Locale
 
 /** Every refusal of the coal module, in Russian. Port of `CoalErrors.swift`. */
@@ -29,10 +31,30 @@ sealed class CoalError(message: String) : Exception(message) {
     data class PaymentTooLarge(val debt: Long) : CoalError("Сумма больше долга перед водителем (${CoalMath.rubles(debt)})")
 }
 
-/** Dates and plurals of the coal module. */
+/** Dates, times and plurals of the coal module, on the farm's calendar (port of `CoalText` in CoalErrors.swift). */
 object CoalText {
     /** «06.11.2026». */
     fun date(d: LocalDate): String = String.format(Locale.ROOT, "%02d.%02d.%04d", d.dayOfMonth, d.monthValue, d.year)
+
+    /** «06.11.2026»: the moment's day at the farm ([zone]). */
+    fun date(i: Instant, zone: ZoneId): String = date(i.atZone(zone).toLocalDate())
+
+    /** «14:05» on the farm's clock. */
+    fun time(i: Instant, zone: ZoneId): String {
+        val t = i.atZone(zone)
+        return String.format(Locale.ROOT, "%02d:%02d", t.hour, t.minute)
+    }
+
+    /** «06.11.2026 14:05». */
+    fun dateTime(i: Instant, zone: ZoneId): String = date(i, zone) + " " + time(i, zone)
+
+    /** «пятница, 6 ноября 2026» (lowercase, as the Swift original; screens capitalise the first letter). */
+    fun longDate(d: LocalDate): String {
+        val weekdays = listOf("понедельник", "вторник", "среда", "четверг", "пятница", "суббота", "воскресенье")
+        val months = listOf("января", "февраля", "марта", "апреля", "мая", "июня", "июля", "августа", "сентября",
+                            "октября", "ноября", "декабря")
+        return "${weekdays[d.dayOfWeek.value - 1]}, ${d.dayOfMonth} ${months[d.monthValue - 1]} ${d.year}"
+    }
 
     /** «3 доставки». */
     fun deliveries(n: Int): String = "$n " + plural(n, "доставка", "доставки", "доставок")

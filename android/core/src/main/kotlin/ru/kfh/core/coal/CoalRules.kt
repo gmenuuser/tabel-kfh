@@ -17,8 +17,7 @@ object CoalDefaults {
     val locations: List<Pair<String, Long>> = listOf("Новоцурухайтуй" to 100_000L, "Приаргунск" to 120_000L)
 }
 
-private val SPACES = Regex("\\s+")
-private fun collapse(s: String) = s.split(SPACES).filter { it.isNotEmpty() }.joinToString(" ")
+private fun collapse(s: String) = collapseSpaces(s)
 
 /** The «Новая продажа» form. Amounts are recomputed from it on every change. */
 data class CoalSaleDraft(

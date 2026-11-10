@@ -58,12 +58,11 @@ import ru.kfh.core.timesheet.fullName
 import ru.kfh.core.timesheet.initials
 import ru.kfh.tabel.ui.common.BigButton
 import ru.kfh.tabel.ui.common.Card
+import ru.kfh.tabel.ui.common.LiveFarmToday
 import ru.kfh.tabel.ui.common.TitledScreen
 import ru.kfh.tabel.ui.home.longDate
 import ru.kfh.tabel.ui.theme.Tabel
-import androidx.lifecycle.compose.LifecycleResumeEffect
 import kotlinx.coroutines.ExperimentalCoroutinesApi
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.flatMapLatest
 import java.time.LocalDate
 
@@ -86,19 +85,8 @@ fun DayScreen(
     val today by vm.todayFlow.collectAsState()
     // One flow across day changes: the previous day's rows stay until the new day's arrive (no blank frame).
     val state by remember(vm) { vm.day.flatMapLatest { vm.dayState(it) } }.collectAsState(initial = null)
-    // «Сегодня» is live, as the iPhone's: refreshed when the screen comes back (the app slept past midnight) and
-    // at the farm's next midnight while it stays open.
-    LifecycleResumeEffect(vm) {
-        vm.refreshToday()
-        onPauseOrDispose { }
-    }
-    // A loop, not a one-shot: an early wake (same day) or a zone change recomputes the next midnight and waits on.
-    LaunchedEffect(vm) {
-        while (true) {
-            delay(vm.millisUntilNextFarmDay())
-            vm.refreshToday()
-        }
-    }
+    // «Сегодня» is live, as the iPhone's: refreshed on resume and at the farm's next midnight.
+    LiveFarmToday(vm, vm::refreshToday, vm::millisUntilNextFarmDay)
     var search by remember { mutableStateOf("") }
     var more by remember { mutableStateOf(false) }
     var picking by remember { mutableStateOf(false) }

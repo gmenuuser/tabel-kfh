@@ -3,22 +3,15 @@ package ru.kfh.tabel.ui.timesheet
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.async
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
-import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.distinctUntilChanged
-import kotlinx.coroutines.flow.drop
-import kotlinx.coroutines.flow.filter
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.flow.map
-import kotlinx.coroutines.launch
-import kotlinx.coroutines.sync.Mutex
-import kotlinx.coroutines.sync.withLock
 import kotlinx.serialization.json.JsonObject
 import ru.kfh.core.model.AttendanceRecord
 import ru.kfh.core.model.Employee
@@ -46,6 +39,8 @@ import ru.kfh.tabel.db.RecordDao
 import ru.kfh.tabel.db.RecordWriter
 import ru.kfh.tabel.db.observe
 import ru.kfh.tabel.session.SessionState
+import ru.kfh.tabel.ui.common.ActionQueue
+import ru.kfh.tabel.ui.common.FarmToday
 import java.io.File
 import java.time.Instant
 import java.time.LocalDate
@@ -86,70 +81,54 @@ class TimesheetViewModel(
     /** One employee's month: the days of employment, newest first, and the totals of the marked ones. */
     data class History(val employee: Employee, val days: List<HistoryDay>, val totals: HoursTotals, val photo: File?)
 
-    val farm: FarmTime get() = farmTime.value
-
-    /** The farm's day of this moment (the clock, not the cached [todayFlow]). */
-    fun today(): LocalDate = farm.dayOf(now())
-
-    private val _today = MutableStateFlow(today())
-
     /**
      * «Сегодня» as the screens see it. The iPhone recomputes it on every render and on scene activation; here the
-     * day screen calls [refreshToday] when it resumes and at the farm's next midnight, and the sign-in resets it.
+     * day screen refreshes it when it resumes and at the farm's next midnight, and the sign-in resets it. When the
+     * day advanced and the screen was on the old today, it follows to the new today (as the iPhone's `HomeView`,
+     * whose `today` is live); a day chosen by hand stays.
      */
-    val todayFlow: StateFlow<LocalDate> = _today.asStateFlow()
+    private val farmToday: FarmToday = FarmToday(farmTime, scope, now) { old, fresh -> if (day.value == old) day.value = fresh }
+
+    val farm: FarmTime get() = farmToday.farm
+
+    /** The farm's day of this moment (the clock, not the cached [todayFlow]). */
+    fun today(): LocalDate = farmToday.today()
+
+    val todayFlow: StateFlow<LocalDate> get() = farmToday.flow
 
     /** The chosen day of the day screen; kept while the person walks to the month or the employees and back. */
-    val day = MutableStateFlow(_today.value)
+    val day: MutableStateFlow<LocalDate> = MutableStateFlow(farmToday.flow.value)
 
     /** The month of the month screen, kept between visits (the iPhone's `timesheetMonth`). */
-    val month = MutableStateFlow(YearMonth.from(_today.value))
+    val month: MutableStateFlow<YearMonth> = MutableStateFlow(YearMonth.from(farmToday.flow.value))
 
     /** Hours (the current timesheet) or the status codes. */
     val kind = MutableStateFlow(TimesheetKind.HOURS)
 
-    /**
-     * Recomputes «Сегодня» from the clock and the farm's zone. When the day advanced and the screen was on the old
-     * today, it follows to the new today (as the iPhone's `HomeView`, whose `today` is live); a day chosen by hand stays.
-     */
+    /** Recomputes «Сегодня» from the clock and the farm's zone (see [farmToday]). */
     fun refreshToday() {
-        val fresh = today()
-        val old = _today.value
-        if (fresh == old) return
-        if (day.value == old) day.value = fresh
-        _today.value = fresh
+        farmToday.refresh()
     }
 
     /** A sign-in (a farm, maybe another zone): the day screen opens on today and the month screen on this month. */
     fun resetDays() {
-        val fresh = today()
-        _today.value = fresh
-        day.value = fresh
+        val fresh = farmToday.reset()
+        // The month first: a screen (or a test) that waits for the day then sees the month already reset.
         month.value = YearMonth.from(fresh)
+        day.value = fresh
     }
 
     /**
-     * [resetDays] on every sign-in — the step from «not signed in» to «signed in» — and never on the `SignedIn(me)`
-     * the session re-emits after a sync when the role, the farm's name or its zone changed: a day or month picked by
-     * hand must survive that (a zone change is followed through [farmTime] by [refreshToday] alone).
+     * [resetDays] on every sign-in and never on the `SignedIn(me)` the session re-emits after a sync: a day or month
+     * picked by hand must survive that (a zone change is followed through [farmToday] alone).
      */
-    fun resetOnSignIn(states: Flow<SessionState>) {
-        scope.launch {
-            states.map { it is SessionState.SignedIn }.distinctUntilChanged().filter { it }.collect { resetDays() }
-        }
-    }
+    fun resetOnSignIn(states: Flow<SessionState>) = farmToday.onSignIn(scope, states) { resetDays() }
 
     /** Milliseconds until the farm's next midnight after [todayFlow]'s day (at least one second): when to refresh. */
-    fun millisUntilNextFarmDay(): Long =
-        (farm.startOf(_today.value.plusDays(1)).toEpochMilli() - now().toEpochMilli()).coerceAtLeast(1_000L)
+    fun millisUntilNextFarmDay(): Long = farmToday.millisUntilNextFarmDay()
 
     /** Writes one at a time: a second tap reads what the first one wrote. */
-    private val actions = Mutex()
-
-    init {
-        // The farm's zone changed (another farm, or the server corrected it): the same moment may be another day.
-        scope.launch { farmTime.drop(1).collect { refreshToday() } }
-    }
+    private val actions = ActionQueue(scope)
 
     val canEditMarks: Boolean get() = writer.canWrite(Entities.hoursMark) && writer.canWrite(Entities.attendanceRecord)
     val canEditEmployees: Boolean get() = writer.canWrite(Entities.employee)
@@ -280,8 +259,8 @@ class TimesheetViewModel(
      */
     suspend fun saveEmployee(
         existing: Employee?, draft: EmployeeDraft, photo: ByteArray?, removePhoto: Boolean,
-    ): Result<Employee> = scope.async {
-        actions.withLock {
+    ): Result<Employee> = actions.run {
+        run {
             try {
                 val e = if (existing == null) {
                     EmployeeRules.create(draft, RecordWriter.newId(), farm)
@@ -313,7 +292,7 @@ class TimesheetViewModel(
                 Result.failure(ex)
             }
         }
-    }.await()
+    }
 
     /** Archiving only hides the employee from the day screen; the marks and timesheets stay. */
     suspend fun archive(e: Employee): String? = action {
@@ -327,19 +306,17 @@ class TimesheetViewModel(
     // MARK: Running
 
     /** Runs the change in the app's scope; the domain's refusal (or the role's) comes back as the text to show. */
-    private suspend fun action(block: suspend () -> Unit): String? = scope.async {
-        actions.withLock {
-            try {
-                block()
-                null
-            } catch (e: Exception) {
-                when (e) {
-                    is CancellationException -> throw e
-                    is AttendanceError, is HoursError, is EmployeeError -> e.message
-                    is IllegalStateException -> e.message ?: "Не получилось"
-                    else -> "Не получилось: ${e.message ?: e::class.java.simpleName}"
-                }
+    private suspend fun action(block: suspend () -> Unit): String? = actions.run {
+        try {
+            block()
+            null
+        } catch (e: Exception) {
+            when (e) {
+                is CancellationException -> throw e
+                is AttendanceError, is HoursError, is EmployeeError -> e.message
+                is IllegalStateException -> e.message ?: "Не получилось"
+                else -> "Не получилось: ${e.message ?: e::class.java.simpleName}"
             }
         }
-    }.await()
+    }
 }

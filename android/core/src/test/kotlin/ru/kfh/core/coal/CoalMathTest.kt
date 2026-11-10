@@ -123,4 +123,27 @@ class CoalMathTest {
         assertEquals("Сумма больше долга перед водителем (1${NB}000${NB}₽)", CoalError.PaymentTooLarge(100_000).message)
         assertEquals("а\nб", CoalError.Invalid(listOf("а", "б")).message)
     }
+
+    @Test fun nameSpacesCollapseIncludingNoBreakSpaces() {
+        // Task 11 (a): any Unicode whitespace, U+00A0 included, is one space; nothing is left at the ends.
+        val d = Driver(id = "d", lastName = " Мунгалов  ", firstName = " Сергей	", middleName = " Иванович ")
+        assertEquals("Мунгалов Сергей Иванович", d.fullName)
+        assertEquals("Мунгалов Сергей", Driver(id = "d", lastName = "Мунгалов", firstName = "  Сергей").fullName)
+        assertEquals("", Driver(id = "d", lastName = "  	").fullName)
+        assertFalse(DriverDraft(lastName = "  ").isValid)
+        assertEquals("Мун галов", CoalRules.createDriver(DriverDraft(lastName = " Мун галов "), "x", Instant.EPOCH).lastName)
+    }
+
+    @Test fun timeTextsOnTheFarmClock() {
+        // Task 11 (b): CoalText.time / dateTime / longDate as CoalErrors.swift, on the farm's zone (Asia/Chita, UTC+9).
+        val chita = java.time.ZoneId.of("Asia/Chita")
+        val moment = Instant.parse("2026-11-06T05:05:00Z") // 14:05 in Chita, 6 November
+        assertEquals("14:05", CoalText.time(moment, chita))
+        assertEquals("06.11.2026 14:05", CoalText.dateTime(moment, chita))
+        assertEquals("06.11.2026", CoalText.date(moment, chita))
+        // 23:30 UTC on the 6th is already 08:30 of the 7th at the farm.
+        assertEquals("07.11.2026 08:30", CoalText.dateTime(Instant.parse("2026-11-06T23:30:00Z"), chita))
+        assertEquals("пятница, 6 ноября 2026", CoalText.longDate(LocalDate.of(2026, 11, 6)))
+        assertEquals("воскресенье, 1 марта 2026", CoalText.longDate(LocalDate.of(2026, 3, 1)))
+    }
 }

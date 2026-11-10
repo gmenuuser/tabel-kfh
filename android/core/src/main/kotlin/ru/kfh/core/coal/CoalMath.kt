@@ -116,10 +116,28 @@ val CoalSale.isPriceAdjusted: Boolean get() = totalAmount != listTotal
 /** The hired driver's pay for one delivery here. */
 val DeliveryLocation.effectiveDriverPaymentKopecks: Long get() = driverPaymentKopecks ?: deliveryPriceKopecks
 
+/**
+ * Runs of any Unicode whitespace (a no-break space U+00A0 included, which `\s` misses) become one space; none
+ * stays at the ends: « Мун галов » -> «Мун галов».
+ */
+fun collapseSpaces(s: String): String {
+    val sb = StringBuilder(s.length)
+    var pendingSpace = false
+    for (c in s) {
+        if (c.isWhitespace()) {
+            pendingSpace = sb.isNotEmpty()
+        } else {
+            if (pendingSpace) sb.append(' ')
+            sb.append(c)
+            pendingSpace = false
+        }
+    }
+    return sb.toString()
+}
+
 /** «Мунгалов Сергей Иванович», empty parts skipped. */
 val Driver.fullName: String
-    get() = listOf(lastName, firstName, middleName).joinToString(" ").split(Regex("\\s+")).filter { it.isNotEmpty() }
-        .joinToString(" ")
+    get() = collapseSpaces(listOf(lastName, firstName, middleName).joinToString(" "))
 
 /** The first letter of the surname, «М». */
 val Driver.letter: String

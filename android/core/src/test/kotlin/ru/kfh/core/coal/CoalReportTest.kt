@@ -60,4 +60,22 @@ class CoalReportTest {
         assertEquals(50_000L, b.paid)
         assertEquals(170_000L, b.debt)
     }
+
+    @Test fun booksLookUpSalesAndPaymentsOfAPeriod() {
+        // Task 11 (d): the ports of CoalSaleService.sales(on:) / sales(from:to:) and DriverPaymentService.payments(from:to:).
+        val first = w.sell("2", "Новоцурухайтуй", mungalov)
+        val second = w.sell("1", "Приаргунск", null)
+        w.pay(mungalov, 40_000)
+        w.clock = w.farm.startOf(day(7)).plusSeconds(10 * 3600)
+        val third = w.sell("1", "Приаргунск", kaydolov)
+        w.pay(kaydolov, 50_000)
+        val books = w.books
+        assertEquals(listOf(first.id, second.id), books.sales(day(6)).map { it.id })
+        assertEquals(listOf(third.id), books.sales(day(7)).map { it.id })
+        assertEquals(emptyList<String>(), books.sales(day(8)).map { it.id })
+        assertEquals(listOf(first.id, second.id, third.id), books.sales(day(6), day(8)).map { it.id })
+        assertEquals(listOf(40_000L), books.payments(day(6), day(7)).map { it.amount })
+        assertEquals(listOf(40_000L, 50_000L), books.payments(day(6), day(8)).map { it.amount })
+        assertEquals(emptyList<Long>(), books.payments(day(8), day(9)).map { it.amount })
+    }
 }

@@ -19,6 +19,7 @@ import ru.kfh.tabel.session.EncryptedTokenStore
 import ru.kfh.tabel.session.SessionManager
 import ru.kfh.tabel.session.SyncScheduler
 import ru.kfh.tabel.session.TokenStore
+import ru.kfh.tabel.ui.coal.CoalViewModel
 import ru.kfh.tabel.ui.timesheet.TimesheetViewModel
 import java.io.File
 import java.util.concurrent.TimeUnit
@@ -67,6 +68,9 @@ class AppGraph(
     /** «Табель работников»: its flows and actions, over the store and the farm's time. */
     val timesheet: TimesheetViewModel by lazy { TimesheetViewModel(db.records(), writer, session.farmTime, scope, photos) }
 
+    /** «Продажа угля»: its flows and actions, over the store and the farm's time. */
+    val coal: CoalViewModel by lazy { CoalViewModel(db.records(), writer, session.farmTime, scope) }
+
     init {
         scope.launch {
             session.restore()
@@ -76,6 +80,7 @@ class AppGraph(
         // Every sign-in opens the timesheet on the farm's today and this month (another farm may be in another zone);
         // a refreshed `Me` of the same sign-in does not touch a day picked by hand.
         timesheet.resetOnSignIn(session.state)
+        coal.resetOnSignIn(scope, session.state)
     }
 
     /** Tests only (a graph per test): the triggers go, the coroutines are cancelled, the database is closed. */

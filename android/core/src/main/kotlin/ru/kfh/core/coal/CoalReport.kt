@@ -24,6 +24,25 @@ class CoalBooks(
     fun isClosed(day: LocalDate): Boolean = workDays.any { it.isClosed && farm.dayOf(it.date) == day }
 
     fun workDay(day: LocalDate): CoalWorkDay? = workDays.firstOrNull { farm.dayOf(it.date) == day }
+
+    /** The sales of the farm day [day], in time order (`CoalSaleService.sales(on:)`). */
+    fun sales(day: LocalDate): List<CoalSale> = sales(day, day.plusDays(1))
+
+    /** Sales with `start <= saleDate < end` (farm days, [endDay] exclusive), in time order (`sales(from:to:)`). */
+    fun sales(startDay: LocalDate, endDay: LocalDate): List<CoalSale> {
+        val start = farm.startOf(startDay)
+        val end = farm.startOf(endDay)
+        return sales.filter { it.saleDate >= start && it.saleDate < end }
+            .sortedWith(compareBy<CoalSale>({ it.saleDate }, { it.createdAt }))
+    }
+
+    /** Payments with `start <= paymentDate < end`, oldest first (`DriverPaymentService.payments(from:to:)`). */
+    fun payments(startDay: LocalDate, endDay: LocalDate): List<DriverPayment> {
+        val start = farm.startOf(startDay)
+        val end = farm.startOf(endDay)
+        return payments.filter { it.paymentDate >= start && it.paymentDate < end }
+            .sortedWith(compareBy<DriverPayment>({ it.paymentDate }, { it.createdAt }))
+    }
 }
 
 /** One line of the sales table. */

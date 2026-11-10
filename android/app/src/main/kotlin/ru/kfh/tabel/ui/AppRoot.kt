@@ -17,6 +17,14 @@ import ru.kfh.core.sync.Me
 import ru.kfh.core.sync.SyncStatus
 import ru.kfh.tabel.AppGraph
 import ru.kfh.tabel.session.SessionState
+import ru.kfh.tabel.ui.coal.CloseDayScreen
+import ru.kfh.tabel.ui.coal.CoalDaySummaryScreen
+import ru.kfh.tabel.ui.coal.CoalHistoryScreen
+import ru.kfh.tabel.ui.coal.CoalSaleFormScreen
+import ru.kfh.tabel.ui.coal.CoalSaleScreen
+import ru.kfh.tabel.ui.coal.CoalSettingsScreen
+import ru.kfh.tabel.ui.coal.DriverDetailScreen
+import ru.kfh.tabel.ui.coal.DriversScreen
 import ru.kfh.tabel.ui.common.TitledScreen
 import ru.kfh.tabel.ui.home.HomeScreen
 import ru.kfh.tabel.ui.home.LoadingScreen
@@ -28,6 +36,7 @@ import ru.kfh.tabel.ui.timesheet.EmployeeFormScreen
 import ru.kfh.tabel.ui.timesheet.EmployeeHistoryScreen
 import ru.kfh.tabel.ui.timesheet.EmployeesScreen
 import ru.kfh.tabel.ui.timesheet.MonthGridScreen
+import java.time.LocalDate
 
 /** Navigation routes inside a sign-in. Signed out / loading are not routes: [AppRoot] switches on the session. */
 object Routes {
@@ -39,8 +48,28 @@ object Routes {
     const val EMPLOYEES = "employees"
     const val EMPLOYEE = "employee/{id}"
     const val EMPLOYEE_FORM = "employeeForm?id={id}"
+    const val COAL = "coal"
+    const val COAL_CLOSE = "coal/close/{day}"
+    const val COAL_SUMMARY = "coal/summary/{day}"
+    const val COAL_SALE = "coal/sale/{id}"
+    const val COAL_DRIVERS = "coal/drivers"
+    const val COAL_DRIVER = "coal/driver/{id}"
+    const val COAL_SETTINGS = "coal/settings"
+    const val COAL_HISTORY = "coal/history"
 
-    fun module(m: Module) = if (m == Module.timesheet) TIMESHEET_DAY else "module/${m.name}"
+    fun module(m: Module) = when (m) {
+        Module.timesheet -> TIMESHEET_DAY
+        Module.coal -> COAL
+        else -> "module/${m.name}"
+    }
+
+    fun coalClose(day: LocalDate) = "coal/close/$day"
+
+    fun coalSummary(day: LocalDate) = "coal/summary/$day"
+
+    fun coalSale(id: String) = "coal/sale/$id"
+
+    fun coalDriver(id: String) = "coal/driver/$id"
 
     fun employee(id: String) = "employee/$id"
 
@@ -96,7 +125,7 @@ private fun FarmRoot(graph: AppGraph, me: Me) {
         }
         composable(Routes.MODULE, arguments = listOf(navArgument("name") { type = NavType.StringType })) { entry ->
             val m = entry.arguments?.getString("name")?.let { n -> Module.entries.firstOrNull { it.name == n } }
-            // The other modules come with Tasks 11–15: until then only the title and «Назад».
+            // The other modules come with Tasks 12–15: until then only the title and «Назад».
             TitledScreen(m?.let(::moduleTitle).orEmpty(), onBack = { nav.popBackStack() })
         }
         composable(Routes.TIMESHEET_DAY) {
@@ -132,6 +161,48 @@ private fun FarmRoot(graph: AppGraph, me: Me) {
             arguments = listOf(navArgument("id") { type = NavType.StringType; nullable = true; defaultValue = null }),
         ) { entry ->
             EmployeeFormScreen(graph.timesheet, entry.arguments?.getString("id"), onDone = { nav.popBackStack() })
+        }
+        composable(Routes.COAL) {
+            CoalSaleScreen(
+                vm = graph.coal,
+                onBack = { nav.popBackStack() },
+                openSummary = { day -> nav.navigate(Routes.coalSummary(day)) },
+                openHistory = { nav.navigate(Routes.COAL_HISTORY) },
+                openDrivers = { nav.navigate(Routes.COAL_DRIVERS) },
+                openPrices = { nav.navigate(Routes.COAL_SETTINGS) },
+                openSale = { id -> nav.navigate(Routes.coalSale(id)) },
+                closeDay = { day -> nav.navigate(Routes.coalClose(day)) },
+            )
+        }
+        composable(Routes.COAL_CLOSE, arguments = listOf(navArgument("day") { type = NavType.StringType })) { entry ->
+            CloseDayScreen(graph.coal, LocalDate.parse(entry.arguments?.getString("day")), onDone = { nav.popBackStack() })
+        }
+        composable(Routes.COAL_SUMMARY, arguments = listOf(navArgument("day") { type = NavType.StringType })) { entry ->
+            CoalDaySummaryScreen(
+                graph.coal, LocalDate.parse(entry.arguments?.getString("day")),
+                onBack = { nav.popBackStack() },
+                closeDay = { day -> nav.navigate(Routes.coalClose(day)) },
+            )
+        }
+        composable(Routes.COAL_SALE, arguments = listOf(navArgument("id") { type = NavType.StringType })) { entry ->
+            CoalSaleFormScreen(graph.coal, entry.arguments?.getString("id").orEmpty(), onDone = { nav.popBackStack() })
+        }
+        composable(Routes.COAL_DRIVERS) {
+            DriversScreen(graph.coal, onBack = { nav.popBackStack() }, open = { id -> nav.navigate(Routes.coalDriver(id)) })
+        }
+        composable(Routes.COAL_DRIVER, arguments = listOf(navArgument("id") { type = NavType.StringType })) { entry ->
+            DriverDetailScreen(graph.coal, entry.arguments?.getString("id").orEmpty(), onBack = { nav.popBackStack() })
+        }
+        composable(Routes.COAL_SETTINGS) {
+            CoalSettingsScreen(graph.coal, onBack = { nav.popBackStack() })
+        }
+        composable(Routes.COAL_HISTORY) {
+            CoalHistoryScreen(
+                graph.coal,
+                onBack = { nav.popBackStack() },
+                openSummary = { day -> nav.navigate(Routes.coalSummary(day)) },
+                openSale = { id -> nav.navigate(Routes.coalSale(id)) },
+            )
         }
     }
 }
