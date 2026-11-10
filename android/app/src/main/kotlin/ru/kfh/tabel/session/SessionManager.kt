@@ -256,18 +256,7 @@ class SessionManager(
         val me = try {
             api.me()
         } catch (e: Unauthorized) {
-            // Revoked between the sync and /me. Not inside a run of the engine: stopAndWait is safe here.
-            mutex.withLock {
-                if (!current()) return
-                engine.stopAndWait()
-                closeGate()
-                try {
-                    wipeQuietly()
-                    clearTokenQuietly()
-                } finally {
-                    endSession(notice = REVOKED)
-                }
-            }
+            revoked(engine)
             return
         } catch (e: Exception) {
             // Offline or a server error: the role and the farm stay as they were.
@@ -287,6 +276,83 @@ class SessionManager(
         }
     }
 
+    /**
+     * The server refused the device outside a run of the engine (`/me`, or an owner's request): not inside a run,
+     * so stopAndWait is safe. The sign-in screen says how many unsent changes went with the wipe.
+     */
+    private suspend fun revoked(engine: SyncEngine) {
+        mutex.withLock {
+            if (_engine.value !== engine || engine.stopped || _state.value !is SessionState.SignedIn) return
+            engine.stopAndWait()
+            closeGate()
+            val lost = try { store.pendingCount() } catch (e: Exception) { if (e is CancellationException) throw e; 0 }
+            try {
+                wipeQuietly()
+                clearTokenQuietly()
+            } finally {
+                endSession(notice = revokedNotice(lost))
+            }
+        }
+    }
+
+    // MARK: Owner's requests
+
+    /**
+     * A request of this sign-in besides the sync (the owner's lists `/members`, `/devices`, `/conflicts`,
+     * `/backups`, `PATCH /farm`), as `SessionStore.send`: a 401 signs the phone out the way the sync does, and is
+     * rethrown as [Unauthorized]. Not signed in: [Unauthorized] at once.
+     */
+    suspend fun <T> request(block: suspend (Api) -> T): T {
+        val engine = _engine.value
+        val api = engineApi
+        if (_state.value !is SessionState.SignedIn || engine == null || api == null || engine.stopped) throw Unauthorized()
+        try {
+            return block(api)
+        } catch (e: Unauthorized) {
+            revoked(engine)
+            throw e
+        }
+    }
+
+    /**
+     * The owner renames the farm or its manager (`PATCH /farm`). The server has the names once it answers, so `Me`
+     * carries them at once (queuing nothing: they are not synced fields); `/me` then brings the rest, and a `/me`
+     * that fails leaves the new names shown. Returns the error text, or null.
+     */
+    suspend fun updateFarm(name: String, managerName: String): String? = off {
+        try {
+            request { it.patchFarm(name = name, managerName = managerName) }
+        } catch (e: Exception) {
+            return@off errorText(e)
+        }
+        mutex.withLock {
+            val s = _state.value as? SessionState.SignedIn ?: return@withLock
+            val me = s.me.copy(farmName = name, managerName = managerName)
+            try {
+                store.saveMe(me)
+            } catch (e: Exception) {
+                if (e is CancellationException) throw e
+            }
+            _state.value = SessionState.SignedIn(me)
+        }
+        _engine.value?.let { refreshMe(it) }
+        null
+    }
+
+    /**
+     * The next pull starts from the first change (after a server restore, or a refused change removed), so every
+     * record takes the server's version again; then a sync now.
+     */
+    suspend fun resyncFromStart() = off {
+        if (_state.value !is SessionState.SignedIn) return@off
+        try {
+            store.setCursor(0)
+        } catch (e: Exception) {
+            if (e is CancellationException) throw e
+        }
+        syncNow()
+    }
+
     // MARK: Engine
 
     private fun makeEngine(): SyncEngine {
@@ -295,7 +361,7 @@ class SessionManager(
         val open = AtomicBoolean(true)
         val api = Api(base, client) { if (open.get()) tokens.get() else null }
         var self: SyncEngine? = null
-        val engine = SyncEngine(api, store) {
+        val engine = SyncEngine(api, store) { lost ->
             // Inside the engine's run, under its lock, after it stopped and wiped: never stopAndWait here.
             val me = self
             if (me != null && _engine.value === me) {
@@ -303,7 +369,7 @@ class SessionManager(
                 try {
                     clearTokenQuietly()
                 } finally {
-                    endSession(notice = REVOKED)
+                    endSession(notice = revokedNotice(lost))
                 }
             }
         }
@@ -343,16 +409,27 @@ class SessionManager(
 
     private fun message(e: Exception): String = when (e) {
         is CancellationException -> throw e
+        is Unauthorized, is ApiError, is IOException -> errorText(e)
+        else -> "Не удалось войти"
+    }
+
+    /** The text of a failed request, as the iPhone's `error.localizedDescription`. */
+    fun errorText(e: Exception): String = when (e) {
+        is CancellationException -> throw e
         is Unauthorized -> e.message!!
         is ApiError -> e.text
         is SSLException -> "Ошибка соединения с сервером"
         is IOException -> "Нет связи с сервером"
-        else -> "Не удалось войти"
+        else -> e.message ?: e::class.java.simpleName
     }
 
     override fun toString(): String = "SessionManager(${_state.value::class.simpleName})"
 
     companion object {
         const val REVOKED = "Доступ к хозяйству отключён."
+
+        /** The iPhone's notice: with the unsent changes that were lost, when there were any. */
+        fun revokedNotice(lost: Int): String =
+            if (lost > 0) "Доступ к хозяйству отключён. Неотправленных изменений удалено: $lost." else REVOKED
     }
 }

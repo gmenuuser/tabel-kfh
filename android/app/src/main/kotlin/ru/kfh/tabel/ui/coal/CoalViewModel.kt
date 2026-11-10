@@ -224,7 +224,7 @@ class CoalViewModel(
     /** The edited form over the sale (its own date). */
     suspend fun updateSale(sale: CoalSale, draft: CoalSaleDraft): String? = action {
         val updated = CoalRules.updateSale(sale, draft, books.first(), now())
-        writer.save(Entities.coalSale, updated.id, RecordCodec.encode(updated))
+        writer.update(Entities.coalSale, updated.id, RecordCodec.encode(updated))
     }
 
     /** «Отменить продажу»: a delete op (the site's `engine.remove`); refused on a closed day. */
@@ -274,17 +274,17 @@ class CoalViewModel(
             val changes = mutableListOf(Triple(Entities.driver, change.driver.id, RecordCodec.encode(change.driver)))
             for (s in change.sales) changes += Triple(Entities.coalSale, s.id, RecordCodec.encode(s))
             for (p in change.payments) changes += Triple(Entities.driverPayment, p.id, RecordCodec.encode(p))
-            writer.saveAll(changes)
+            writer.saveAll(changes, edited = setOf(Entities.driver to existing.id))
             change.driver
         }
     }
 
     suspend fun archiveDriver(d: Driver): String? = action {
-        writer.save(Entities.driver, d.id, RecordCodec.encode(CoalRules.archive(d)))
+        writer.update(Entities.driver, d.id, RecordCodec.encode(CoalRules.archive(d)))
     }
 
     suspend fun restoreDriver(d: Driver): String? = action {
-        writer.save(Entities.driver, d.id, RecordCodec.encode(CoalRules.restore(d)))
+        writer.update(Entities.driver, d.id, RecordCodec.encode(CoalRules.restore(d)))
     }
 
     /** Only a driver without deliveries and payments is deleted; the others are archived instead. */

@@ -7,6 +7,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import java.io.IOException
+import java.time.Instant
 import javax.net.ssl.SSLException
 
 /**
@@ -21,10 +22,15 @@ import javax.net.ssl.SSLException
 class SyncEngine(
     private val api: Api,
     private val store: LocalStore,
-    private val onSignedOut: suspend () -> Unit,
+    /** After a 401: the store is wiped; [lost] is how many changes were waiting to be sent and went with it. */
+    private val onSignedOut: suspend (lost: Int) -> Unit,
 ) {
     private val _status = MutableStateFlow<SyncStatus>(SyncStatus.Synced)
     val status: StateFlow<SyncStatus> = _status.asStateFlow()
+
+    private val _lastSyncAt = MutableStateFlow<Instant?>(null)
+    /** When a run last reached the server and finished («Последняя синхронизация» in the settings). */
+    val lastSyncAt: StateFlow<Instant?> = _lastSyncAt.asStateFlow()
 
     private val mutex = Mutex()
 
@@ -79,6 +85,7 @@ class SyncEngine(
             pullAll()
             val open = api.conflicts().size
             check()
+            _lastSyncAt.value = Instant.now()
             _status.value = settled(open)
         } catch (e: CancellationException) {
             // Cancelled from outside (the app's scope ended): the queue is as it was, so is the line.
@@ -89,8 +96,10 @@ class SyncEngine(
         } catch (e: Unauthorized) {
             stopped = true
             _status.value = SyncStatus.Failed(e.message!!)
+            // Counted before the wipe: the sign-in screen tells how many unsent changes were lost.
+            val lost = try { store.pendingCount() } catch (_: Exception) { 0 }
             store.wipe()
-            onSignedOut()
+            onSignedOut(lost)
         } catch (e: SSLException) {
             // TLS, certificate: the network is there, the connection is wrong.
             _status.value = SyncStatus.Failed("Ошибка соединения с сервером")

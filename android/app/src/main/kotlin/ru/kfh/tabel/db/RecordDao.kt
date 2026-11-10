@@ -16,6 +16,13 @@ interface RecordDao {
     @Query("SELECT * FROM records ORDER BY entity, id")
     suspend fun all(): List<RecordRow>
 
+    @Query("SELECT * FROM records WHERE entity = :entity ORDER BY id")
+    suspend fun ofEntity(entity: String): List<RecordRow>
+
+    /** The row goes (a record the server never had, dropped with its refused change). */
+    @Query("DELETE FROM records WHERE entity = :entity AND id = :id")
+    suspend fun delete(entity: String, id: String)
+
     /** Every record of the entity that is not deleted (removed hours marks still in; use [observe]). */
     @Query("SELECT * FROM records WHERE entity = :entity AND deleted = 0 ORDER BY id")
     fun observeStored(entity: String): Flow<List<RecordRow>>

@@ -37,6 +37,13 @@ interface OutboxDao {
     @Query("UPDATE outbox SET baseVersion = :version WHERE entity = :entity AND recordId = :recordId")
     suspend fun setBaseVersion(entity: String, recordId: String, version: Long)
 
+    /** Every queued op of the record (dropped with a refused change of a record the server never had). */
+    @Query("DELETE FROM outbox WHERE entity = :entity AND recordId = :recordId")
+    suspend fun deleteOfRecord(entity: String, recordId: String)
+
+    @Query("SELECT * FROM outbox WHERE entity = :entity ORDER BY seq")
+    suspend fun ofEntity(entity: String): List<OutboxRow>
+
     @Query("DELETE FROM outbox")
     suspend fun clear()
 
@@ -51,6 +58,16 @@ interface OutboxDao {
 
     @Query("SELECT COUNT(*) FROM refused")
     suspend fun refusedCount(): Int
+
+    @Query("SELECT * FROM refused WHERE opId = :opId")
+    suspend fun refusedByOpId(opId: String): RefusedRow?
+
+    @Query("DELETE FROM refused WHERE opId = :opId")
+    suspend fun deleteRefused(opId: String)
+
+    /** Every refused op of the record (gone with the record the server never had). */
+    @Query("DELETE FROM refused WHERE entity = :entity AND recordId = :recordId")
+    suspend fun deleteRefusedOfRecord(entity: String, recordId: String)
 
     @Query("DELETE FROM refused")
     suspend fun clearRefused()

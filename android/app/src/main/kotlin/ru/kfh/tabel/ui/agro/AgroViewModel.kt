@@ -136,7 +136,8 @@ class AgroViewModel(
                 if (stored != null && !stored.deleted) throw IllegalStateException("Эта запись уже сохранена")
             }
             val c = AgroEngine.record(kind, inputs, title, id.lowercase(), now(), over)
-            writer.save(Entities.agroCalculation, c.id, RecordCodec.encode(c))
+            if (over == null) writer.save(Entities.agroCalculation, c.id, RecordCodec.encode(c))
+            else writer.update(Entities.agroCalculation, c.id, RecordCodec.encode(c))
             if (clearDraft) clearDraft(kind)
             Result.success(c)
         } catch (e: Exception) {

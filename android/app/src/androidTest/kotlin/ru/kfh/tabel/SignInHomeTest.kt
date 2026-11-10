@@ -13,6 +13,7 @@ import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.onRoot
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.performTextInput
 import androidx.compose.ui.test.printToLog
 import androidx.test.core.app.ActivityScenario
@@ -159,7 +160,7 @@ class SignInHomeTest {
         // Settings for every role: «Выйти» asks, then the sign-in screen comes back.
         compose.onNodeWithTag("openSettings").performClick()
         compose.waitUntilExactlyOneExists(hasTestTag("signOut"), 5_000)
-        compose.onNodeWithTag("signOut").performClick()
+        compose.onNodeWithTag("signOut").performScrollTo().performClick()
         compose.waitUntilExactlyOneExists(hasText("Выйти из хозяйства?"), 5_000)
         compose.onNodeWithTag("confirm").performClick()
         compose.waitUntilExactlyOneExists(hasTestTag("signInLogin"), 10_000)

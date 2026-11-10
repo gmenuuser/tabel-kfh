@@ -40,16 +40,30 @@ class RecordWriter internal constructor(
     suspend fun save(entity: String, id: String, newData: JsonObject) = saveAll(listOf(Triple(entity, id, newData)))
 
     /**
+     * An edit of a record the screen showed: as [save], but a record that is not on the phone any more (deleted on
+     * another device while the form was open) is not brought back — [IllegalStateException] with
+     * «Запись уже удалена на другом устройстве» and nothing written.
+     */
+    suspend fun update(entity: String, id: String, newData: JsonObject) =
+        saveAll(listOf(Triple(entity, id, newData)), edited = setOf(entity to id))
+
+    /**
      * One user action that changes several records (closing a coal day; a slaughter with its details; an operation
      * that stops being a slaughter and loses its details): all records and ops — the upserts of [changes] and the
-     * `delete` ops of [deletes] — in one transaction.
+     * `delete` ops of [deletes] — in one transaction. The records in [edited] (entity to id) are edits of what a
+     * screen showed: each must still be on the phone and not deleted (see [update]), else nothing is written.
      */
-    suspend fun saveAll(changes: List<Triple<String, String, JsonObject>>, deletes: List<Pair<String, String>> = emptyList()) {
+    suspend fun saveAll(
+        changes: List<Triple<String, String, JsonObject>>,
+        deletes: List<Pair<String, String>> = emptyList(),
+        edited: Set<Pair<String, String>> = emptySet(),
+    ) {
         for ((entity, _, _) in changes) requireWrite(entity)
         for ((entity, _) in deletes) requireWrite(entity)
+        val mustExist = edited.mapTo(HashSet()) { (entity, id) -> entity to lower(id) }
         var queued = false
         db.withWriteTransaction {
-            for ((entity, id, data) in changes) if (write(entity, lower(id), data)) queued = true
+            for ((entity, id, data) in changes) if (write(entity, lower(id), data, (entity to lower(id)) in mustExist)) queued = true
             for ((entity, id) in deletes) if (remove(entity, lower(id))) queued = true
         }
         if (queued) onQueued()
@@ -75,8 +89,9 @@ class RecordWriter internal constructor(
     }
 
     /** True when an op was queued. */
-    private suspend fun write(entity: String, id: String, newData: JsonObject): Boolean {
+    private suspend fun write(entity: String, id: String, newData: JsonObject, mustExist: Boolean = false): Boolean {
         val old = db.records().get(entity, id)
+        if (mustExist && (old == null || old.deleted)) throw IllegalStateException(GONE)
         val known = old?.takeUnless { it.deleted }?.json()
         val fields = RecordCodec.diff(known, newData)
         if (fields.isEmpty()) return false
@@ -100,6 +115,9 @@ class RecordWriter internal constructor(
     companion object {
         private const val HOURS_MARK = "hoursMark"
         private const val EMPTY = "{}"
+
+        /** The refusal of [update] over a record that is gone. */
+        const val GONE = "Запись уже удалена на другом устройстве"
 
         /** A new record id or opId: a random UUID, lowercase. */
         fun newId(): String = UUID.randomUUID().toString().lowercase(Locale.ROOT)

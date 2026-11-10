@@ -160,7 +160,7 @@ class LivestockViewModel(
     /** «СОХРАНИТЬ ИЗМЕНЕНИЯ»: the corrected operation; the herd is recounted from the corrected history. */
     suspend fun update(o: LivestockOperation, d: LivestockDraft): String? = action {
         // A fresh id is needed only when an operation without details becomes a slaughter.
-        write(LivestockRules.update(o, d, books.first(), now(), RecordWriter.newId()))
+        write(LivestockRules.update(o, d, books.first(), now(), RecordWriter.newId()), edited = o)
     }
 
     /** «Удалить операцию»: the operation and its details go in one transaction; refused when the herd would go below zero. */
@@ -171,11 +171,11 @@ class LivestockViewModel(
         writer.saveAll(emptyList(), deletes)
     }
 
-    private suspend fun write(change: LivestockChange) {
+    private suspend fun write(change: LivestockChange, edited: LivestockOperation? = null) {
         val changes = mutableListOf(Triple(Entities.livestockOperation, change.operation.id, RecordCodec.encode(change.operation)))
         change.slaughter?.let { changes += Triple(Entities.slaughterRecord, it.id, RecordCodec.encode(it)) }
         val deletes = listOfNotNull(change.removedSlaughter?.let { Entities.slaughterRecord to it.id })
-        writer.saveAll(changes, deletes)
+        writer.saveAll(changes, deletes, edited = setOfNotNull(edited?.let { Entities.livestockOperation to it.id }))
     }
 
     // MARK: Categories

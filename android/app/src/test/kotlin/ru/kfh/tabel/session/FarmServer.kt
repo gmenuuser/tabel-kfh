@@ -3,6 +3,7 @@ package ru.kfh.tabel.session
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonArray
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.jsonArray
@@ -18,15 +19,24 @@ import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
 
 /** One request the fake farm server saw. */
-data class Seen(val method: String, val path: String, val authorization: String?, val body: String) {
+data class Seen(
+    val method: String,
+    val path: String,
+    val authorization: String?,
+    val body: String,
+    val query: Map<String, String> = emptyMap(),
+) {
     val json: JsonObject get() = Json.parseToJsonElement(body).jsonObject
+
+    fun query(name: String): String? = query[name]
 }
 
 /**
  * The farm server for the session tests: `/auth/login` (password [password]), `/me` ([role], [timezone]),
- * `/sync/pull` (one page with [records], then empty), `/sync/push` (everything applied), `/conflicts` (none),
- * `/auth/logout`. [unauthorized] answers every signed-in request with 401; while [pullGate] is set, every pull
- * waits for it to be counted down.
+ * `/sync/pull` (one page with [records], then empty), `/sync/push` (everything applied, or everything `rejected`
+ * with [rejectPush]), `/conflicts` ([conflicts], resolved away by `POST /conflicts/{id}/resolve`), `/auth/logout`,
+ * the owner's lists (`/members`, `/devices`, `/backups`) with canned rows, `PATCH /farm`. [unauthorized] answers
+ * every signed-in request with 401; while [pullGate] is set, every pull waits for it to be counted down.
  */
 class FarmServer {
     val server = MockWebServer()
@@ -36,8 +46,15 @@ class FarmServer {
     @Volatile var role = "owner"
     @Volatile var timezone = "Asia/Chita"
     @Volatile var farmName = "КФХ Зубахин"
+    @Volatile var managerName = "Зубахин А. В."
     @Volatile var unauthorized = false
+    /** Every pushed op is answered `rejected` with «Нет прав на изменение». */
+    @Volatile var rejectPush = false
+    /** `GET /sync/pull` answers 500 (a push before it went through). */
+    @Volatile var pullFails = false
     @Volatile var records: List<JsonObject> = emptyList()
+    /** `GET /conflicts`; a resolve removes the conflict. */
+    @Volatile var conflicts: List<JsonObject> = emptyList()
     @Volatile var pullGate: CountDownLatch? = null
     /** Counted down when a pull arrives (before it waits for [pullGate]). */
     @Volatile var pullStarted = CountDownLatch(1)
@@ -48,7 +65,8 @@ class FarmServer {
         server.dispatcher = object : Dispatcher() {
             override fun dispatch(request: RecordedRequest): MockResponse {
                 val u = request.requestUrl!!
-                val s = Seen(request.method!!, u.encodedPath, request.getHeader("Authorization"), request.body.readUtf8())
+                val query = u.queryParameterNames.associateWith { u.queryParameter(it).orEmpty() }
+                val s = Seen(request.method!!, u.encodedPath, request.getHeader("Authorization"), request.body.readUtf8(), query)
                 seen += s
                 if (s.path == "/auth/login") {
                     val ok = s.json["password"]!!.jsonPrimitive.content == password
@@ -64,12 +82,13 @@ class FarmServer {
                         put("role", role)
                         put("farm", buildJsonObject {
                             put("id", "f1"); put("name", farmName); put("region", "Приаргунский район")
-                            put("managerName", "Зубахин А. В."); put("timezone", timezone)
+                            put("managerName", managerName); put("timezone", timezone)
                         })
                     }.toString())
                     "/sync/pull" -> {
                         pullStarted.countDown()
                         pullGate?.await(10, TimeUnit.SECONDS)
+                        if (pullFails) return MockResponse().setResponseCode(500).setBody("""{"error":"Сервер недоступен"}""")
                         json(buildJsonObject {
                             put("changes", JsonArray(records))
                             put("next", 10)
@@ -80,14 +99,57 @@ class FarmServer {
                         put("results", buildJsonArray {
                             for (op in s.json["ops"]!!.jsonArray) add(buildJsonObject {
                                 put("opId", op.jsonObject["opId"]!!.jsonPrimitive.content)
-                                put("status", "applied")
-                                put("version", 1)
+                                if (rejectPush) {
+                                    put("status", "rejected")
+                                    put("errors", buildJsonArray { add(JsonPrimitive("Нет прав на изменение")) })
+                                } else {
+                                    put("status", "applied")
+                                    put("version", 1)
+                                }
                             })
                         })
                     }.toString())
-                    "/conflicts" -> json("""{"conflicts":[]}""")
-                    "/auth/logout" -> json("""{"ok":true}""")
-                    else -> MockResponse().setResponseCode(404).setBody("""{"error":"Не найдено"}""")
+                    "/conflicts" -> json(buildJsonObject { put("conflicts", JsonArray(conflicts)) }.toString())
+                    "/auth/logout" -> ok()
+                    "/farm" -> if (s.method == "PATCH") {
+                        s.json["name"]?.jsonPrimitive?.content?.let { farmName = it }
+                        s.json["managerName"]?.jsonPrimitive?.content?.let { managerName = it }
+                        ok()
+                    } else notFound()
+                    "/members" -> when (s.method) {
+                        "GET" -> json(
+                            """[{"id":"o1","login":"zubakhin","email":null,"name":null,"role":"owner"},""" +
+                                """{"id":"m1","login":"anna","email":null,"name":null,"role":"timesheet"}]""",
+                        )
+                        "POST" -> json("""{"id":"m2","login":"petya","email":null,"name":null,"role":"coal"}""")
+                        else -> notFound()
+                    }
+                    "/devices" -> json(
+                        """[{"id":"d1","name":"Google Pixel 9","platform":"android","login":"zubakhin",""" +
+                            """"createdAt":"2026-11-01T00:00:00.000Z","lastSeenAt":"2026-11-06T03:00:00.000Z","revoked":false,"current":true},""" +
+                            """{"id":"d2","name":"iPhone","platform":"ios","login":"anna",""" +
+                            """"createdAt":"2026-11-01T00:00:00.000Z","lastSeenAt":"2026-11-05T03:00:00.000Z","revoked":false,"current":false}]""",
+                    )
+                    "/backups" -> when (s.method) {
+                        "GET" -> json("""[{"id":"b1","records":120,"created_at":"2026-11-06T01:00:00.000Z"}]""")
+                        "POST" -> json("""{"id":"b2","records":121,"createdAt":"2026-11-06T03:00:00.000Z"}""")
+                        else -> notFound()
+                    }
+                    else -> {
+                        val resolve = Regex("^/conflicts/([^/]+)/resolve$").find(s.path)
+                        when {
+                            resolve != null && s.method == "POST" -> {
+                                val id = resolve.groupValues[1]
+                                conflicts = conflicts.filter { it["id"]!!.jsonPrimitive.content != id }
+                                ok()
+                            }
+                            s.path.startsWith("/members/") && s.method in setOf("PATCH", "DELETE", "POST") -> ok()
+                            s.path.startsWith("/devices/") && s.path.endsWith("/revoke") -> ok()
+                            s.path.startsWith("/backups/") && s.path.endsWith("/verify") -> ok()
+                            s.path.startsWith("/backups/") && s.path.endsWith("/restore") -> json("""{"ok":true,"records":120}""")
+                            else -> notFound()
+                        }
+                    }
                 }
             }
         }
@@ -102,6 +164,10 @@ class FarmServer {
     }
 
     private fun json(body: String) = MockResponse().setHeader("Content-Type", "application/json").setBody(body)
+
+    private fun ok() = json("""{"ok":true}""")
+
+    private fun notFound() = MockResponse().setResponseCode(404).setBody("""{"error":"Не найдено"}""")
 
     companion object {
         fun driver(id: String, version: Long = 3) = buildJsonObject {

@@ -160,6 +160,27 @@ class RecordWriterTest {
         assertFalse(row("driver", driverId)!!.deleted)
     }
 
+    /** An edit form over a record another device deleted meanwhile must not bring it back (Task 11, `CoalSaleFormScreen`). */
+    @Test
+    fun editOfADeletedRecordIsRefused() = runTest {
+        writer.save("driver", driverId, RecordCodec.encode(driver))
+        writer.delete("driver", driverId)
+        val e = runCatching { writer.update("driver", driverId, RecordCodec.encode(driver.copy(phone = "1"))) }.exceptionOrNull()
+        assertEquals("Запись уже удалена на другом устройстве", e?.message)
+        assertTrue(row("driver", driverId)!!.deleted)
+        assertEquals(listOf("upsert", "delete"), ops().map { it.kind })
+
+        // The same for a record the phone never had.
+        val gone = runCatching { writer.update("driver", "0b6f3a52-7c1e-4d7a-9a51-3f2c8e7d1a99", RecordCodec.encode(driver)) }.exceptionOrNull()
+        assertEquals("Запись уже удалена на другом устройстве", gone?.message)
+        assertNull(row("driver", "0b6f3a52-7c1e-4d7a-9a51-3f2c8e7d1a99"))
+
+        // A real edit goes through as a save does: only the changed fields.
+        writer.save("driver", driverId, RecordCodec.encode(driver))
+        writer.update("driver", driverId, RecordCodec.encode(driver.copy(phone = "1")))
+        assertEquals(JsonObject(mapOf("phone" to JsonPrimitive("1"))), ops().last().fieldsJson())
+    }
+
     private val employeeId = "7d1e4c2a-1b3f-4e5d-8a9b-0c1d2e3f4a5b"
     private val markId = "5e0b8f4d-2c6a-4a1e-9f3b-7d8c9e0a1b2c"
     private fun mark(hours: Int) = HoursMark(id = markId, employeeId = employeeId, day = created, hours = hours,

@@ -232,7 +232,8 @@ class SessionManagerTest {
         wiped()
         assertNull(tokens.get())
         assertNull(session.engine.value)
-        assertEquals("Доступ к хозяйству отключён.", session.signOutNotice.value)
+        // The unsent change was lost with the wipe: the sign-in screen says how many (as the iPhone's notice).
+        assertEquals("Доступ к хозяйству отключён. Неотправленных изменений удалено: 1.", session.signOutNotice.value)
         assertTrue(first!!.stopped)
 
         // A new sign-in gets a new engine (a stopped one never restarts) and the notice goes.

@@ -286,7 +286,7 @@ class TimesheetViewModel(
                 } else {
                     // An existing one: the record first, so a refused write keeps the old photo; the same id is
                     // written again on a retry (no duplicate, no second op when nothing changed).
-                    writer.save(Entities.employee, e.id, RecordCodec.encode(e))
+                    writer.update(Entities.employee, e.id, RecordCodec.encode(e))
                     applyPhoto()
                 }
                 Result.success(e)
@@ -299,11 +299,11 @@ class TimesheetViewModel(
 
     /** Archiving only hides the employee from the day screen; the marks and timesheets stay. */
     suspend fun archive(e: Employee): String? = action {
-        writer.save(Entities.employee, e.id, RecordCodec.encode(EmployeeRules.archive(e)))
+        writer.update(Entities.employee, e.id, RecordCodec.encode(EmployeeRules.archive(e)))
     }
 
     suspend fun restore(e: Employee): String? = action {
-        writer.save(Entities.employee, e.id, RecordCodec.encode(EmployeeRules.restore(e)))
+        writer.update(Entities.employee, e.id, RecordCodec.encode(EmployeeRules.restore(e)))
     }
 
     // MARK: Running

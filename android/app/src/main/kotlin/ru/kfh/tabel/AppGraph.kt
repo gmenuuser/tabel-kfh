@@ -22,10 +22,12 @@ import ru.kfh.tabel.session.EncryptedTokenStore
 import ru.kfh.tabel.session.SessionManager
 import ru.kfh.tabel.session.SyncScheduler
 import ru.kfh.tabel.session.TokenStore
+import ru.kfh.tabel.export.LocalBackup
 import ru.kfh.tabel.ui.agro.AgroViewModel
 import ru.kfh.tabel.ui.agro.PrefsAgroDraftStore
 import ru.kfh.tabel.ui.coal.CoalViewModel
 import ru.kfh.tabel.ui.livestock.LivestockViewModel
+import ru.kfh.tabel.ui.settings.SettingsViewModel
 import ru.kfh.tabel.ui.timesheet.TimesheetViewModel
 import java.io.File
 import java.util.concurrent.TimeUnit
@@ -86,6 +88,11 @@ class AppGraph(
     /** «Агрономические калькуляторы»: the saved calculations and the drafts (in `SharedPreferences`). */
     val agro: AgroViewModel by lazy { AgroViewModel(db.records(), writer, session.farmTime, scope, PrefsAgroDraftStore(app), farmInfo = farmInfo) }
 
+    /** «Настройки»: the farm's details, the sync, the owner's lists, the copy to a file, «Выйти». */
+    val settings: SettingsViewModel by lazy {
+        SettingsViewModel(session, db, writer, scope, photos, backupDir = LocalBackup.dir(app), appVersion = appVersion(app))
+    }
+
     init {
         scope.launch {
             session.restore()
@@ -110,5 +117,14 @@ class AppGraph(
         private const val TAG = "TabelKFH"
 
         fun deviceName(): String = "${Build.MANUFACTURER} ${Build.MODEL}"
+
+        /** «1.0.7 (7)»: the installed version's name and code (`CFBundleShortVersionString (CFBundleVersion)`). */
+        fun appVersion(context: Context): String = try {
+            val info = context.packageManager.getPackageInfo(context.packageName, 0)
+            val code = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) info.longVersionCode else @Suppress("DEPRECATION") info.versionCode.toLong()
+            "${info.versionName ?: "1.0"} ($code)"
+        } catch (e: Exception) {
+            "1.0"
+        }
     }
 }

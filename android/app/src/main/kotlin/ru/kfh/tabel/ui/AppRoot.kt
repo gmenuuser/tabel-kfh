@@ -11,7 +11,6 @@ import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
 import kotlinx.coroutines.async
 import kotlinx.coroutines.flow.MutableStateFlow
-import kotlinx.coroutines.launch
 import ru.kfh.core.agro.AgroKind
 import ru.kfh.core.roles.Module
 import ru.kfh.core.sync.Me
@@ -43,6 +42,11 @@ import ru.kfh.tabel.ui.reports.DriverPaymentsReportScreen
 import ru.kfh.tabel.ui.reports.LivestockReportsScreen
 import ru.kfh.tabel.ui.reports.ReportsScreen
 import ru.kfh.tabel.ui.reports.TimesheetReportScreen
+import ru.kfh.tabel.ui.settings.ConflictsScreen
+import ru.kfh.tabel.ui.settings.DevicesScreen
+import ru.kfh.tabel.ui.settings.HelpersScreen
+import ru.kfh.tabel.ui.settings.ServerBackupsScreen
+import ru.kfh.tabel.ui.settings.SettingsLinks
 import ru.kfh.tabel.ui.settings.SettingsScreen
 import ru.kfh.tabel.ui.signin.SignInScreen
 import ru.kfh.tabel.ui.timesheet.DayScreen
@@ -56,6 +60,10 @@ import java.time.LocalDate
 object Routes {
     const val HOME = "home"
     const val SETTINGS = "settings"
+    const val SETTINGS_HELPERS = "settings/helpers"
+    const val SETTINGS_DEVICES = "settings/devices"
+    const val SETTINGS_CONFLICTS = "settings/conflicts"
+    const val SETTINGS_BACKUPS = "settings/backups"
     const val MODULE = "module/{name}"
     const val TIMESHEET_DAY = "timesheet/day"
     const val TIMESHEET_MONTH = "timesheet/month"
@@ -158,12 +166,23 @@ private fun FarmRoot(graph: AppGraph, me: Me) {
         }
         composable(Routes.SETTINGS) {
             SettingsScreen(
+                vm = graph.settings,
                 me = me,
-                unsent = graph.session::unsent,
-                signOut = { graph.scope.launch { graph.session.signOut(force = true) } },
+                links = SettingsLinks(
+                    openConflicts = { nav.navigate(Routes.SETTINGS_CONFLICTS) },
+                    openCoalPrices = { nav.navigate(Routes.COAL_SETTINGS) },
+                    openDrivers = { nav.navigate(Routes.COAL_DRIVERS) },
+                    openHelpers = { nav.navigate(Routes.SETTINGS_HELPERS) },
+                    openDevices = { nav.navigate(Routes.SETTINGS_DEVICES) },
+                    openServerBackups = { nav.navigate(Routes.SETTINGS_BACKUPS) },
+                ),
                 onBack = { nav.popBackStack() },
             )
         }
+        composable(Routes.SETTINGS_HELPERS) { HelpersScreen(graph.settings, onBack = { nav.popBackStack() }) }
+        composable(Routes.SETTINGS_DEVICES) { DevicesScreen(graph.settings, onBack = { nav.popBackStack() }) }
+        composable(Routes.SETTINGS_CONFLICTS) { ConflictsScreen(graph.settings, onBack = { nav.popBackStack() }) }
+        composable(Routes.SETTINGS_BACKUPS) { ServerBackupsScreen(graph.settings, onBack = { nav.popBackStack() }) }
         composable(Routes.MODULE, arguments = listOf(navArgument("name") { type = NavType.StringType })) { entry ->
             val m = entry.arguments?.getString("name")?.let { n -> Module.entries.firstOrNull { it.name == n } }
             // A module without a screen of its own: only the title and «Назад».
