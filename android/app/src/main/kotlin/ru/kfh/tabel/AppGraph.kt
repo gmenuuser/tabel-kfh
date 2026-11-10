@@ -19,6 +19,7 @@ import ru.kfh.tabel.session.EncryptedTokenStore
 import ru.kfh.tabel.session.SessionManager
 import ru.kfh.tabel.session.SyncScheduler
 import ru.kfh.tabel.session.TokenStore
+import ru.kfh.tabel.ui.timesheet.TimesheetViewModel
 import java.io.File
 import java.util.concurrent.TimeUnit
 
@@ -62,6 +63,9 @@ class AppGraph(
 
     /** Every change of the screens goes through here; a queued change syncs 1 s later. */
     val writer = RecordWriter(db, { session.role ?: Role.viewer }, scheduler::changed)
+
+    /** «Табель работников»: its flows and actions, over the store and the farm's time. */
+    val timesheet: TimesheetViewModel by lazy { TimesheetViewModel(db.records(), writer, session.farmTime, scope, photos) }
 
     init {
         scope.launch {

@@ -23,14 +23,29 @@ import ru.kfh.tabel.ui.home.LoadingScreen
 import ru.kfh.tabel.ui.home.moduleTitle
 import ru.kfh.tabel.ui.settings.SettingsScreen
 import ru.kfh.tabel.ui.signin.SignInScreen
+import ru.kfh.tabel.ui.timesheet.DayScreen
+import ru.kfh.tabel.ui.timesheet.EmployeeFormScreen
+import ru.kfh.tabel.ui.timesheet.EmployeeHistoryScreen
+import ru.kfh.tabel.ui.timesheet.EmployeesScreen
+import ru.kfh.tabel.ui.timesheet.MonthGridScreen
 
 /** Navigation routes inside a sign-in. Signed out / loading are not routes: [AppRoot] switches on the session. */
 object Routes {
     const val HOME = "home"
     const val SETTINGS = "settings"
     const val MODULE = "module/{name}"
+    const val TIMESHEET_DAY = "timesheet/day"
+    const val TIMESHEET_MONTH = "timesheet/month"
+    const val EMPLOYEES = "employees"
+    const val EMPLOYEE = "employee/{id}"
+    const val EMPLOYEE_FORM = "employeeForm?id={id}"
 
-    fun module(m: Module) = "module/${m.name}"
+    fun module(m: Module) = if (m == Module.timesheet) TIMESHEET_DAY else "module/${m.name}"
+
+    fun employee(id: String) = "employee/$id"
+
+    /** The form of [id], or of a new employee without one. */
+    fun employeeForm(id: String?) = if (id == null) "employeeForm" else "employeeForm?id=$id"
 }
 
 /** Signed out: the sign-in screen; loading: «Загрузка данных…»; signed in: the farm (`AppRootView`). */
@@ -81,8 +96,42 @@ private fun FarmRoot(graph: AppGraph, me: Me) {
         }
         composable(Routes.MODULE, arguments = listOf(navArgument("name") { type = NavType.StringType })) { entry ->
             val m = entry.arguments?.getString("name")?.let { n -> Module.entries.firstOrNull { it.name == n } }
-            // The modules come with Tasks 10–15: until then only the title and «Назад».
+            // The other modules come with Tasks 11–15: until then only the title and «Назад».
             TitledScreen(m?.let(::moduleTitle).orEmpty(), onBack = { nav.popBackStack() })
+        }
+        composable(Routes.TIMESHEET_DAY) {
+            DayScreen(
+                vm = graph.timesheet,
+                onBack = { nav.popBackStack() },
+                openMonth = { nav.navigate(Routes.TIMESHEET_MONTH) },
+                openEmployees = { nav.navigate(Routes.EMPLOYEES) },
+                addEmployee = { nav.navigate(Routes.employeeForm(null)) },
+            )
+        }
+        composable(Routes.TIMESHEET_MONTH) {
+            MonthGridScreen(graph.timesheet, onBack = { nav.popBackStack() })
+        }
+        composable(Routes.EMPLOYEES) {
+            EmployeesScreen(
+                graph.timesheet,
+                onBack = { nav.popBackStack() },
+                open = { id -> nav.navigate(Routes.employee(id)) },
+                add = { nav.navigate(Routes.employeeForm(null)) },
+            )
+        }
+        composable(Routes.EMPLOYEE, arguments = listOf(navArgument("id") { type = NavType.StringType })) { entry ->
+            val id = entry.arguments?.getString("id").orEmpty()
+            EmployeeHistoryScreen(
+                graph.timesheet, id,
+                onBack = { nav.popBackStack() },
+                edit = { nav.navigate(Routes.employeeForm(id)) },
+            )
+        }
+        composable(
+            Routes.EMPLOYEE_FORM,
+            arguments = listOf(navArgument("id") { type = NavType.StringType; nullable = true; defaultValue = null }),
+        ) { entry ->
+            EmployeeFormScreen(graph.timesheet, entry.arguments?.getString("id"), onDone = { nav.popBackStack() })
         }
     }
 }
