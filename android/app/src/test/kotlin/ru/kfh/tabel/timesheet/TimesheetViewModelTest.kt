@@ -53,6 +53,9 @@ class TimesheetViewModelTest {
     private lateinit var vm: TimesheetViewModel
     private var role = Role.owner
     private lateinit var defaultZone: TimeZone
+    /** The controllable clock of the view model (tests move it across the farm's midnight). */
+    private var clockNow: Instant = moment
+    private lateinit var photos: PhotoStore
 
     @Before
     fun setUp() {
@@ -60,13 +63,14 @@ class TimesheetViewModelTest {
         TimeZone.setDefault(TimeZone.getTimeZone("Europe/Moscow"))
         db = openTestDb(tmp.newFile("t.db").also { it.delete() })
         scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+        photos = PhotoStore(tmp.newFolder("photos"))
         vm = TimesheetViewModel(
             dao = db.records(),
             writer = RecordWriter(db) { role },
             farmTime = MutableStateFlow(farm),
             scope = scope,
-            photos = PhotoStore(tmp.newFolder("photos")),
-            now = { moment },
+            photos = photos,
+            now = { clockNow },
         )
     }
 
@@ -219,5 +223,130 @@ class TimesheetViewModelTest {
         val bad = vm.saveEmployee(null, EmployeeDraft(hireDate = farmDay), photo = null, removePhoto = false)
         assertEquals("Укажи фамилию\nУкажи имя", bad.exceptionOrNull()?.message)
         assertEquals(0, ops().size)
+    }
+
+    @Test
+    fun todayFollowsTheFarmMidnight() = runTest {
+        val id = addEmployee()
+        assertEquals(farmDay, vm.todayFlow.value)
+        assertEquals(farmDay, vm.dayState(farmDay).first().today)
+        // 00:10 of 8 November at the farm (15:10 UTC on the 7th; Moscow still has the 7th).
+        clockNow = Instant.parse("2026-11-07T15:10:00Z")
+        // Nothing changed in the store: the cached today is still the 7th until the screen refreshes it...
+        assertEquals(farmDay, vm.dayState(farmDay).first().today)
+        assertTrue(vm.millisUntilNextFarmDay() in 1_000L..24 * 3_600_000L)
+        // ...and on refresh «Сегодня» and the day screen (which sat on the old today) move to the 8th.
+        vm.refreshToday()
+        val eighth = farmDay.plusDays(1)
+        assertEquals(eighth, vm.todayFlow.value)
+        assertEquals(eighth, vm.day.value)
+        val state = vm.dayState(eighth).first()
+        assertEquals(eighth, state.today)
+        assertTrue("«Я» is allowed on the new today", state.canPresent)
+        assertNull(vm.togglePresence(employee(id), eighth))
+        assertEquals("2026-11-07T15:00:00.000Z", ops().last().fieldsJson()["day"]!!.let { (it as JsonPrimitive).content })
+
+        // A day chosen by hand stays where it is when midnight passes again.
+        vm.day.value = farmDay
+        clockNow = Instant.parse("2026-11-08T15:10:00Z")
+        vm.refreshToday()
+        assertEquals(farmDay.plusDays(2), vm.todayFlow.value)
+        assertEquals(farmDay, vm.day.value)
+        // The next midnight is computed from the fresh today.
+        assertEquals(farm.startOf(farmDay.plusDays(3)).toEpochMilli() - clockNow.toEpochMilli(), vm.millisUntilNextFarmDay())
+
+        // A sign-in opens on today and this month again.
+        vm.resetDays()
+        assertEquals(farmDay.plusDays(2), vm.day.value)
+        assertEquals(YearMonth.of(2026, 11), vm.month.value)
+    }
+
+    @Test
+    fun markUnmarkedGivesEightHoursToEveryoneWithoutAMark() = runTest {
+        val a = addEmployee()
+        val b = addEmployee("Мунгалов", "Сергей")
+        val c = addEmployee("Иванов", "Пётр")
+        vm.tapHours(employee(a), farmDay, 4)
+        val before = ops().size
+        assertNull(vm.markUnmarked(farmDay))
+        val all = ops()
+        // Two new marks in one go, the 4 h of the first one untouched.
+        assertEquals(before + 2, all.size)
+        assertEquals(setOf(StableId.hoursMark(b, farmDay), StableId.hoursMark(c, farmDay)), all.takeLast(2).map { it.recordId }.toSet())
+        assertTrue(all.takeLast(2).all { it.fieldsJson()["hours"] == JsonPrimitive(8) })
+        val rows = vm.dayState(farmDay).first().rows.associate { it.employee.id to it.hours }
+        assertEquals(mapOf(a to 4, b to 8, c to 8), rows)
+        // Nothing left to mark: nothing written.
+        assertNull(vm.markUnmarked(farmDay))
+        assertEquals(before + 2, ops().size)
+    }
+
+    @Test
+    fun setHoursByIdFromTheMonthAndTheHistory() = runTest {
+        val id = addEmployee()
+        assertNull(vm.setHours(id, farmDay, 12))
+        assertEquals(12, vm.history(id, YearMonth.of(2026, 11)).first()!!.days.first { it.day == farmDay }.hours)
+        // «Снять отметку» from the history: `hours: null` on the same id.
+        assertNull(vm.setHours(id, farmDay, null))
+        val op = ops().last()
+        assertEquals(StableId.hoursMark(id, farmDay), op.recordId)
+        assertEquals(JsonNull, op.fieldsJson()["hours"])
+        assertNull(vm.history(id, YearMonth.of(2026, 11)).first()!!.days.first { it.day == farmDay }.hours)
+        // The status by id as well, and an id nobody has is refused with a message, not silently.
+        assertNull(vm.setStatus(id, farmDay, DayStatus.SICK))
+        assertEquals(DayStatus.SICK, vm.dayState(farmDay).first().rows.single().status)
+        val before = ops().size
+        assertEquals("Сотрудник удалён", vm.setHours("00000000-0000-4000-8000-000000000000", farmDay, 8))
+        assertEquals(before, ops().size)
+    }
+
+    @Test
+    fun updateKeepsTheIdAndHandlesThePhoto() = runTest {
+        val id = addEmployee()
+        val e = employee(id)
+        val jpeg = byteArrayOf(1, 2, 3)
+        val draft = EmployeeDraft.from(e, farm).copy(position = "Тракторист", defaultBreakMinutes = 30)
+        val updated = vm.saveEmployee(e, draft, photo = jpeg, removePhoto = false).getOrThrow()
+        assertEquals(id, updated.id)
+        assertEquals("Тракторист", employee(id).position)
+        assertEquals(30, employee(id).defaultBreakMinutes)
+        // Only the changed fields are queued; the photo is on the phone, never in the op.
+        val op = ops().last()
+        assertEquals(setOf("position", "defaultBreakMinutes"), op.fieldsJson().keys)
+        assertTrue(jpeg.contentEquals(photos.load(id)))
+        assertNotNull(vm.photo(id))
+        // «Убрать фото» with nothing else changed: no op, the file goes.
+        val before = ops().size
+        vm.saveEmployee(employee(id), EmployeeDraft.from(employee(id), farm), photo = null, removePhoto = true).getOrThrow()
+        assertEquals(before, ops().size)
+        assertNull(photos.load(id))
+        assertNull(vm.photo(id))
+    }
+
+    @Test
+    fun failedRecordWriteLeavesNoHalfSavedEmployee() = runTest {
+        // The viewer's save is refused by the writer after the photo was written: the photo must not stay behind,
+        // and the form, retried by an owner, creates the employee once.
+        role = Role.viewer
+        val draft = EmployeeDraft(lastName = "Зубахин", firstName = "Иван", hireDate = farmDay)
+        val refused = vm.saveEmployee(null, draft, photo = byteArrayOf(9), removePhoto = false)
+        assertTrue(refused.isFailure)
+        assertEquals(0, ops().size)
+        assertEquals(emptyList<String>(), photos.dir.list()?.toList().orEmpty())
+        role = Role.owner
+        val saved = vm.saveEmployee(null, draft, photo = byteArrayOf(9), removePhoto = false).getOrThrow()
+        assertEquals(1, ops().size)
+        assertNotNull(photos.load(saved.id))
+    }
+
+    @Test
+    fun employmentNotes() {
+        val hiredLater = ru.kfh.core.model.Employee(id = "a", hireDate = farm.startOf(farmDay.plusDays(3)))
+        val dismissed = ru.kfh.core.model.Employee(id = "b", hireDate = farm.startOf(farmDay.minusDays(30)),
+                                                   dismissalDate = farm.startOf(farmDay.minusDays(2)))
+        val working = ru.kfh.core.model.Employee(id = "c", hireDate = farm.startOf(farmDay), dismissalDate = farm.startOf(farmDay))
+        assertEquals("Принят с 10.11.2026", ru.kfh.tabel.ui.timesheet.employmentNote(hiredLater, farmDay, farm))
+        assertEquals("Уволен 05.11.2026", ru.kfh.tabel.ui.timesheet.employmentNote(dismissed, farmDay, farm))
+        assertNull("hired today, dismissed today: still employed today", ru.kfh.tabel.ui.timesheet.employmentNote(working, farmDay, farm))
     }
 }

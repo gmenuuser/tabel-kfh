@@ -71,9 +71,7 @@ import ru.kfh.tabel.ui.theme.Tabel
 import java.time.DayOfWeek
 import java.time.LocalDate
 import java.time.YearMonth
-import java.util.Locale
 
-private val RU: Locale = Locale.forLanguageTag("ru")
 private const val MIN_SCALE = 0.6f
 private const val MAX_SCALE = 1.8f
 
@@ -148,7 +146,7 @@ fun MonthGridScreen(vm: TimesheetViewModel, onBack: () -> Unit) {
     editing?.let { target ->
         val isHours = kind == TimesheetKind.HOURS
         val current = document?.rows?.firstOrNull { it.employee.id == target.employeeId }?.cells?.getOrNull(target.day.dayOfMonth - 1)
-        val employees by vm.employees.collectAsState(initial = emptyList())
+        val id = target.employeeId
         fun apply(block: suspend () -> String?) {
             editing = null
             scope.launch { message = block() }
@@ -158,24 +156,21 @@ fun MonthGridScreen(vm: TimesheetViewModel, onBack: () -> Unit) {
             title = { Text("${target.name}, ${dateText(target.day)}") },
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
-                    val e = employees.firstOrNull { it.id == target.employeeId }
                     if (isHours) {
                         for (h in HoursRules.allowed) {
-                            ChoiceButton(HoursStyle.title(h), HoursStyle.fill(h), "choose-$h") {
-                                apply { e?.let { vm.setHours(it, target.day, h) } }
-                            }
+                            ChoiceButton(HoursStyle.title(h), HoursStyle.fill(h), "choose-$h") { apply { vm.setHours(id, target.day, h) } }
                         }
                     } else {
                         for (s in DayMarkRules.statuses(target.day, vm.today())) {
                             ChoiceButton("${s.code} — ${s.title}", StatusStyle.fill(s), "choose-${s.code}") {
-                                apply { e?.let { vm.setStatus(it, target.day, s) } }
+                                apply { vm.setStatus(id, target.day, s) }
                             }
                         }
                     }
                     val marked = if (isHours) current?.hours != null else current?.status != null
                     if (marked) {
                         ChoiceButton("Снять отметку", Tabel.colors.error.copy(alpha = 0.15f), "choose-none", Tabel.colors.error) {
-                            apply { e?.let { if (isHours) vm.setHours(it, target.day, null) else vm.setStatus(it, target.day, null) } }
+                            apply { if (isHours) vm.setHours(id, target.day, null) else vm.setStatus(id, target.day, null) }
                         }
                     }
                 }
@@ -354,7 +349,7 @@ private fun HeaderCell(
 @Composable
 private fun DayHeader(date: LocalDate, width: androidx.compose.ui.unit.Dp, height: androidx.compose.ui.unit.Dp, scale: Float, separator: Color) {
     val weekend = date.dayOfWeek == DayOfWeek.SATURDAY || date.dayOfWeek == DayOfWeek.SUNDAY
-    val weekday = listOf("пн", "вт", "ср", "чт", "пт", "сб", "вс")[date.dayOfWeek.value - 1]
+    val weekday = ruWeekday(date)
     val color = if (weekend) Tabel.colors.accent else MaterialTheme.colorScheme.onBackground
     Column(
         modifier = Modifier.width(width).height(height).background(Tabel.colors.primary.copy(alpha = if (weekend) 0.08f else 0.15f))

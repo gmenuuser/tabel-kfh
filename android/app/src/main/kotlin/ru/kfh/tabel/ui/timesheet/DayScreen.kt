@@ -22,8 +22,6 @@ import androidx.compose.material.icons.automirrored.filled.List
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.DateRange
 import androidx.compose.material.icons.filled.MoreVert
-import androidx.compose.material3.DatePicker
-import androidx.compose.material3.DatePickerDialog
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -34,8 +32,8 @@ import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
-import androidx.compose.material3.rememberDatePickerState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -63,19 +61,18 @@ import ru.kfh.tabel.ui.common.Card
 import ru.kfh.tabel.ui.common.TitledScreen
 import ru.kfh.tabel.ui.home.longDate
 import ru.kfh.tabel.ui.theme.Tabel
-import java.time.Instant
+import androidx.lifecycle.compose.LifecycleResumeEffect
+import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.flatMapLatest
 import java.time.LocalDate
-import java.time.ZoneOffset
-import java.util.Locale
-
-private val RU: Locale = Locale.forLanguageTag("ru")
 
 /**
  * «Табель работников» (`HomeView`): the chosen day (Вчера / Сегодня / Завтра or any date) and everyone who works
  * then, each with the four buttons 0 ч, 4 ч, 8 ч, 12 ч, the large «Я» button and the menu of the other statuses.
  * No mark until one is pressed.
  */
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalCoroutinesApi::class)
 @Composable
 fun DayScreen(
     vm: TimesheetViewModel,
@@ -86,8 +83,19 @@ fun DayScreen(
 ) {
     val scope = rememberCoroutineScope()
     val day by vm.day.collectAsState()
-    val state by remember(day) { vm.dayState(day) }.collectAsState(initial = null)
-    val today = state?.today ?: vm.today()
+    val today by vm.todayFlow.collectAsState()
+    // One flow across day changes: the previous day's rows stay until the new day's arrive (no blank frame).
+    val state by remember(vm) { vm.day.flatMapLatest { vm.dayState(it) } }.collectAsState(initial = null)
+    // «Сегодня» is live, as the iPhone's: refreshed when the screen comes back (the app slept past midnight) and
+    // at the farm's next midnight while it stays open.
+    LifecycleResumeEffect(vm) {
+        vm.refreshToday()
+        onPauseOrDispose { }
+    }
+    LaunchedEffect(today) {
+        delay(vm.millisUntilNextFarmDay())
+        vm.refreshToday()
+    }
     var search by remember { mutableStateOf("") }
     var more by remember { mutableStateOf(false) }
     var picking by remember { mutableStateOf(false) }
@@ -161,19 +169,7 @@ fun DayScreen(
         }
     }
 
-    if (picking) {
-        val pickerState = rememberDatePickerState(initialSelectedDateMillis = day.atStartOfDay(ZoneOffset.UTC).toInstant().toEpochMilli())
-        DatePickerDialog(
-            onDismissRequest = { picking = false },
-            confirmButton = {
-                TextButton(onClick = {
-                    pickerState.selectedDateMillis?.let { vm.day.value = Instant.ofEpochMilli(it).atZone(ZoneOffset.UTC).toLocalDate() }
-                    picking = false
-                }) { Text("Готово") }
-            },
-            dismissButton = { TextButton(onClick = { picking = false }) { Text("Отмена") } },
-        ) { DatePicker(state = pickerState) }
-    }
+    if (picking) FarmDatePickerDialog(day, onDismiss = { picking = false }, onPick = { vm.day.value = it })
 
     ErrorDialog(message) { message = null }
 }

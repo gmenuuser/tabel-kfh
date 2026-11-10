@@ -21,12 +21,16 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.DatePicker
+import androidx.compose.material3.DatePickerDialog
+import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.SegmentedButtonColors
 import androidx.compose.material3.SegmentedButtonDefaults
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.material3.rememberDatePickerState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.produceState
@@ -51,10 +55,45 @@ import ru.kfh.core.timesheet.HoursRules
 import ru.kfh.tabel.ui.theme.Tabel
 import java.io.ByteArrayOutputStream
 import java.io.File
+import java.time.Instant
 import java.time.LocalDate
+import java.time.ZoneOffset
+import java.util.Locale
+
+val RU: Locale = Locale.forLanguageTag("ru")
 
 /** «06.11.2026» (`CoalText.date`, `EmployeeFormatting.date`). */
 fun dateText(d: LocalDate): String = "%02d.%02d.%04d".format(d.dayOfMonth, d.monthValue, d.year)
+
+/** «пн» … «вс». */
+fun ruWeekday(d: LocalDate): String = listOf("пн", "вт", "ср", "чт", "пт", "сб", "вс")[d.dayOfWeek.value - 1]
+
+/**
+ * Material's date picker speaks in UTC midnights (`selectedDateMillis`), not in any zone's instants: a farm day
+ * goes in and comes out as that calendar date, whatever zone the phone is in. Pure, so it is unit-tested.
+ */
+object PickerDates {
+    fun millis(d: LocalDate): Long = d.atStartOfDay(ZoneOffset.UTC).toInstant().toEpochMilli()
+
+    fun date(millis: Long): LocalDate = Instant.ofEpochMilli(millis).atZone(ZoneOffset.UTC).toLocalDate()
+}
+
+/** The one date picker of the module («Другая дата», «Дата приёма», «Дата увольнения»): Готово applies, Отмена closes. */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun FarmDatePickerDialog(date: LocalDate, onDismiss: () -> Unit, onPick: (LocalDate) -> Unit) {
+    val state = rememberDatePickerState(initialSelectedDateMillis = PickerDates.millis(date))
+    DatePickerDialog(
+        onDismissRequest = onDismiss,
+        confirmButton = {
+            TextButton(onClick = {
+                state.selectedDateMillis?.let { onPick(PickerDates.date(it)) }
+                onDismiss()
+            }, modifier = Modifier.testTag("pickerDone")) { Text("Готово") }
+        },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Отмена") } },
+    ) { DatePicker(state = state) }
+}
 
 /** Colours of the hours (`HoursStyle`): 0 grey, 4 yellow, 8 green, 12 blue. */
 object HoursStyle {

@@ -17,6 +17,7 @@ import ru.kfh.tabel.db.RoomLocalStore
 import ru.kfh.tabel.db.TabelDb
 import ru.kfh.tabel.session.EncryptedTokenStore
 import ru.kfh.tabel.session.SessionManager
+import ru.kfh.tabel.session.SessionState
 import ru.kfh.tabel.session.SyncScheduler
 import ru.kfh.tabel.session.TokenStore
 import ru.kfh.tabel.ui.timesheet.TimesheetViewModel
@@ -72,6 +73,10 @@ class AppGraph(
             session.restore()
             // ON_START comes at once once attached: the sync at app start.
             scheduler.attach(app)
+        }
+        // Every sign-in opens the timesheet on the farm's today and this month (another farm may be in another zone).
+        scope.launch {
+            session.state.collect { if (it is SessionState.SignedIn) timesheet.resetDays() }
         }
     }
 

@@ -23,8 +23,6 @@ import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Warning
-import androidx.compose.material3.DatePicker
-import androidx.compose.material3.DatePickerDialog
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -38,7 +36,6 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
-import androidx.compose.material3.rememberDatePickerState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -65,9 +62,8 @@ import ru.kfh.core.timesheet.WorkSchedule
 import ru.kfh.core.timesheet.initials
 import ru.kfh.tabel.ui.common.Card
 import ru.kfh.tabel.ui.theme.Tabel
-import java.time.Instant
 import java.time.LocalDate
-import java.time.ZoneOffset
+import java.util.Locale
 
 /**
  * Adds a new employee (`employeeId == null`) or edits one (`EmployeeFormView`). Closes itself after saving. The
@@ -236,7 +232,8 @@ fun EmployeeFormScreen(vm: TimesheetViewModel, employeeId: String?, onDone: () -
 }
 
 /** «8», «7,5». */
-fun hoursText(h: Double): String = if (h == Math.rint(h)) h.toInt().toString() else "%.1f".format(h).replace('.', ',')
+fun hoursText(h: Double): String =
+    if (h == Math.rint(h)) h.toInt().toString() else String.format(Locale.ROOT, "%.1f", h).replace('.', ',')
 
 private fun EmployeeDraft.initials(): String = Employee(firstName = firstName, lastName = lastName).initials
 
@@ -276,19 +273,7 @@ private fun DateRow(label: String, date: LocalDate, enabled: Boolean, onChange: 
         Text(label, modifier = Modifier.weight(1f))
         Text(dateText(date), color = Tabel.colors.primary, fontWeight = FontWeight.SemiBold)
     }
-    if (picking) {
-        val state = rememberDatePickerState(initialSelectedDateMillis = date.atStartOfDay(ZoneOffset.UTC).toInstant().toEpochMilli())
-        DatePickerDialog(
-            onDismissRequest = { picking = false },
-            confirmButton = {
-                TextButton(onClick = {
-                    state.selectedDateMillis?.let { onChange(Instant.ofEpochMilli(it).atZone(ZoneOffset.UTC).toLocalDate()) }
-                    picking = false
-                }) { Text("Готово") }
-            },
-            dismissButton = { TextButton(onClick = { picking = false }) { Text("Отмена") } },
-        ) { DatePicker(state = state) }
-    }
+    if (picking) FarmDatePickerDialog(date, onDismiss = { picking = false }, onPick = onChange)
 }
 
 @Composable

@@ -41,12 +41,10 @@ import ru.kfh.core.time.FarmTime
 import ru.kfh.core.timesheet.EmployeeRules
 import ru.kfh.core.timesheet.fullName
 import ru.kfh.core.timesheet.initials
+import ru.kfh.tabel.ui.common.ConfirmDialog
 import ru.kfh.tabel.ui.common.TitledScreen
 import ru.kfh.tabel.ui.theme.Tabel
 import java.time.LocalDate
-import java.util.Locale
-
-private val RU: Locale = Locale.forLanguageTag("ru")
 
 /** «Сотрудники» (`EmployeesView`): working and archived employees, search by ФИО, add, archive, restore. */
 @Composable
@@ -56,8 +54,9 @@ fun EmployeesScreen(vm: TimesheetViewModel, onBack: () -> Unit, open: (String) -
     var archive by remember { mutableStateOf(false) }
     var search by remember { mutableStateOf("") }
     var message by remember { mutableStateOf<String?>(null) }
+    var archiving by remember { mutableStateOf<Employee?>(null) }
     val canEdit = vm.canEditEmployees
-    val today = vm.today()
+    val today by vm.todayFlow.collectAsState()
 
     TitledScreen(
         "Сотрудники", onBack,
@@ -100,13 +99,27 @@ fun EmployeesScreen(vm: TimesheetViewModel, onBack: () -> Unit, open: (String) -
                         EmployeeListRow(
                             e, vm.photo(e.id), employmentNote(e, today, vm.farm), canEdit,
                             onOpen = { open(e.id) },
-                            onArchiveToggle = { scope.launch { message = if (e.isArchived) vm.restore(e) else vm.archive(e) } },
+                            // «Вернуть» is harmless; «В архив» asks, as the history screen does (a tap is easier to hit than a swipe).
+                            onArchiveToggle = { if (e.isArchived) scope.launch { message = vm.restore(e) } else archiving = e },
                         )
                         HorizontalDivider(color = separatorColor())
                     }
                 }
             }
         }
+    }
+
+    archiving?.let { e ->
+        ConfirmDialog(
+            title = "Убрать ${e.fullName} в архив?",
+            message = "Сотрудник пропадёт с Главной. Вернуть его можно здесь или во вкладке «Архив».",
+            confirm = "В архив",
+            onConfirm = {
+                archiving = null
+                scope.launch { message = vm.archive(e) }
+            },
+            onDismiss = { archiving = null },
+        )
     }
 
     ErrorDialog(message) { message = null }

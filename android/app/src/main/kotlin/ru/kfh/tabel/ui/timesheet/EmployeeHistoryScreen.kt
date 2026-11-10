@@ -119,7 +119,7 @@ fun EmployeeHistoryScreen(vm: TimesheetViewModel, employeeId: String, onBack: ()
                     for ((index, d) in h.days.withIndex()) {
                         if (index > 0) HorizontalDivider(color = separatorColor())
                         Row(
-                            modifier = Modifier.fillMaxWidth().clickable(role = Role.Button) { picking = d.day }
+                            modifier = Modifier.fillMaxWidth().clickable(enabled = vm.canEditMarks, role = Role.Button) { picking = d.day }
                                 .testTag("day-${d.day.dayOfMonth}").padding(vertical = 10.dp),
                             horizontalArrangement = Arrangement.spacedBy(12.dp),
                             verticalAlignment = Alignment.CenterVertically,
@@ -209,5 +209,4 @@ private fun LabeledValue(label: String, value: String, tag: String) {
 }
 
 /** «6, пт». */
-private fun shortDay(d: LocalDate): String =
-    "${d.dayOfMonth}, ${listOf("пн", "вт", "ср", "чт", "пт", "сб", "вс")[d.dayOfWeek.value - 1]}"
+private fun shortDay(d: LocalDate): String = "${d.dayOfMonth}, ${ruWeekday(d)}"

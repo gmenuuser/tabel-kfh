@@ -2,14 +2,22 @@ package ru.kfh.tabel.ui.timesheet
 
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.drop
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.flowOf
+import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.serialization.json.JsonObject
 import ru.kfh.core.model.AttendanceRecord
 import ru.kfh.core.model.Employee
@@ -78,41 +86,84 @@ class TimesheetViewModel(
 
     val farm: FarmTime get() = farmTime.value
 
+    /** The farm's day of this moment (the clock, not the cached [todayFlow]). */
     fun today(): LocalDate = farm.dayOf(now())
 
+    private val _today = MutableStateFlow(today())
+
+    /**
+     * «Сегодня» as the screens see it. The iPhone recomputes it on every render and on scene activation; here the
+     * day screen calls [refreshToday] when it resumes and at the farm's next midnight, and the sign-in resets it.
+     */
+    val todayFlow: StateFlow<LocalDate> = _today.asStateFlow()
+
     /** The chosen day of the day screen; kept while the person walks to the month or the employees and back. */
-    val day = MutableStateFlow(today())
+    val day = MutableStateFlow(_today.value)
 
     /** The month of the month screen, kept between visits (the iPhone's `timesheetMonth`). */
-    val month = MutableStateFlow(YearMonth.from(today()))
+    val month = MutableStateFlow(YearMonth.from(_today.value))
 
     /** Hours (the current timesheet) or the status codes. */
     val kind = MutableStateFlow(TimesheetKind.HOURS)
+
+    /**
+     * Recomputes «Сегодня» from the clock and the farm's zone. When the day advanced and the screen was on the old
+     * today, it follows to the new today (as the iPhone's `HomeView`, whose `today` is live); a day chosen by hand stays.
+     */
+    fun refreshToday() {
+        val fresh = today()
+        val old = _today.value
+        if (fresh == old) return
+        if (day.value == old) day.value = fresh
+        _today.value = fresh
+    }
+
+    /** A sign-in (a farm, maybe another zone): the day screen opens on today and the month screen on this month. */
+    fun resetDays() {
+        val fresh = today()
+        _today.value = fresh
+        day.value = fresh
+        month.value = YearMonth.from(fresh)
+    }
+
+    /** Milliseconds until the farm's next midnight after [todayFlow]'s day (at least one second): when to refresh. */
+    fun millisUntilNextFarmDay(): Long =
+        (farm.startOf(_today.value.plusDays(1)).toEpochMilli() - now().toEpochMilli()).coerceAtLeast(1_000L)
+
+    /** Writes one at a time: a second tap reads what the first one wrote. */
+    private val actions = Mutex()
+
+    init {
+        // The farm's zone changed (another farm, or the server corrected it): the same moment may be another day.
+        scope.launch { farmTime.drop(1).collect { refreshToday() } }
+    }
 
     val canEditMarks: Boolean get() = writer.canWrite(Entities.hoursMark) && writer.canWrite(Entities.attendanceRecord)
     val canEditEmployees: Boolean get() = writer.canWrite(Entities.employee)
 
     // MARK: What the screens show
 
+    // Decoding runs off the main thread (the screens collect with collectAsState).
     val employees: Flow<List<Employee>> = dao.observe(Entities.employee).map { rows ->
         rows.map { RecordCodec.decode<Employee>(it.entity, it.id, it.json()) }
-    }
+    }.flowOn(Dispatchers.Default)
 
     val marks: Flow<List<HoursMark>> = dao.observe(Entities.hoursMark).map { rows ->
         rows.map { RecordCodec.decode<HoursMark>(it.entity, it.id, it.json()) }
-    }
+    }.flowOn(Dispatchers.Default)
 
     val attendance: Flow<List<AttendanceRecord>> = dao.observe(Entities.attendanceRecord).map { rows ->
         rows.map { RecordCodec.decode<AttendanceRecord>(it.entity, it.id, it.json()) }
-    }
+    }.flowOn(Dispatchers.Default)
 
+    /** The employee with [id]; always null for a blank id (a new employee's form). */
     fun employee(id: String): Flow<Employee?> =
-        employees.map { list -> list.firstOrNull { it.id.equals(id, ignoreCase = true) } }.distinctUntilChanged()
+        if (id.isBlank()) flowOf(null)
+        else employees.map { list -> list.firstOrNull { it.id.equals(id, ignoreCase = true) } }.distinctUntilChanged()
 
     /** The people of [day] (not archived, employed that day), by name, with their marks. */
     fun dayState(day: LocalDate): Flow<DayState> =
-        combine(employees, marks, attendance, farmTime) { people, marks, records, farm ->
-            val today = farm.dayOf(now())
+        combine(employees, marks, attendance, farmTime, todayFlow) { people, marks, records, farm, today ->
             val hoursRules = HoursMarkRules(farm, now)
             val statusRules = AttendanceRules(farm, now)
             val rows = EmployeeRules.active(people, day, farm).map { e ->
@@ -159,6 +210,17 @@ class TimesheetViewModel(
         write(HoursMarkRules(farm, now).set(hours, e, marks.first(), day))
     }
 
+    /** The month grid knows only the employee's id (a row's snapshot). */
+    suspend fun setHours(employeeId: String, day: LocalDate, hours: Int?): String? = action {
+        write(HoursMarkRules(farm, now).set(hours, find(employeeId), marks.first(), day))
+    }
+
+    private suspend fun find(employeeId: String): Employee =
+        employees.first().firstOrNull { it.id.equals(employeeId, ignoreCase = true) } ?: throw EmployeeGone()
+
+    /** The employee was deleted on another device between the screen and the tap. */
+    private class EmployeeGone : IllegalStateException("Сотрудник удалён")
+
     /** «Всем неотмеченным — 8 ч»: everyone on the day screen without a mark. */
     suspend fun markUnmarked(day: LocalDate, hours: Int = 8): String? = action {
         val people = EmployeeRules.active(employees.first(), day, farm)
@@ -186,6 +248,10 @@ class TimesheetViewModel(
         write(AttendanceRules(farm, now).setStatus(e, attendance.first(), day, status))
     }
 
+    suspend fun setStatus(employeeId: String, day: LocalDate, status: DayStatus?): String? = action {
+        write(AttendanceRules(farm, now).setStatus(find(employeeId), attendance.first(), day, status))
+    }
+
     private suspend fun write(change: DayMarkChange) {
         when (change) {
             is DayMarkChange.Put -> writer.save(Entities.attendanceRecord, change.record.id, RecordCodec.encode(change.record))
@@ -202,18 +268,27 @@ class TimesheetViewModel(
     suspend fun saveEmployee(
         existing: Employee?, draft: EmployeeDraft, photo: ByteArray?, removePhoto: Boolean,
     ): Result<Employee> = scope.async {
-        try {
-            val e = if (existing == null) {
-                EmployeeRules.create(draft, RecordWriter.newId(), farm)
-            } else {
-                EmployeeRules.update(existing, draft, farm)
+        actions.withLock {
+            try {
+                val e = if (existing == null) {
+                    EmployeeRules.create(draft, RecordWriter.newId(), farm)
+                } else {
+                    EmployeeRules.update(existing, draft, farm)
+                }
+                // The photo first (local only): a failed record write then leaves no half-saved employee behind,
+                // and a retry of the form never queues a second one.
+                if (photo != null) photos.save(e.id, photo) else if (removePhoto) photos.delete(e.id)
+                try {
+                    writer.save(Entities.employee, e.id, RecordCodec.encode(e))
+                } catch (ex: Exception) {
+                    if (existing == null) photos.delete(e.id)
+                    throw ex
+                }
+                Result.success(e)
+            } catch (ex: Exception) {
+                if (ex is CancellationException) throw ex
+                Result.failure(ex)
             }
-            writer.save(Entities.employee, e.id, RecordCodec.encode(e))
-            if (photo != null) photos.save(e.id, photo) else if (removePhoto) photos.delete(e.id)
-            Result.success(e)
-        } catch (ex: Exception) {
-            if (ex is CancellationException) throw ex
-            Result.failure(ex)
         }
     }.await()
 
@@ -230,15 +305,17 @@ class TimesheetViewModel(
 
     /** Runs the change in the app's scope; the domain's refusal (or the role's) comes back as the text to show. */
     private suspend fun action(block: suspend () -> Unit): String? = scope.async {
-        try {
-            block()
-            null
-        } catch (e: Exception) {
-            when (e) {
-                is CancellationException -> throw e
-                is AttendanceError, is HoursError, is EmployeeError -> e.message
-                is IllegalStateException -> e.message ?: "Не получилось"
-                else -> "Не получилось: ${e.message ?: e::class.java.simpleName}"
+        actions.withLock {
+            try {
+                block()
+                null
+            } catch (e: Exception) {
+                when (e) {
+                    is CancellationException -> throw e
+                    is AttendanceError, is HoursError, is EmployeeError -> e.message
+                    is IllegalStateException -> e.message ?: "Не получилось"
+                    else -> "Не получилось: ${e.message ?: e::class.java.simpleName}"
+                }
             }
         }
     }.await()
