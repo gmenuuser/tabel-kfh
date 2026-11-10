@@ -3,6 +3,8 @@ package ru.kfh.tabel.session
 import android.content.Context
 import android.net.ConnectivityManager
 import android.net.Network
+import android.os.Handler
+import android.os.Looper
 import androidx.lifecycle.DefaultLifecycleObserver
 import androidx.lifecycle.LifecycleOwner
 import androidx.lifecycle.ProcessLifecycleOwner
@@ -123,11 +125,13 @@ class SyncScheduler(
         ProcessLifecycleOwner.get().lifecycle.addObserver(lifecycleObserver)
     }
 
-    suspend fun detach() = withContext(Dispatchers.Main.immediate) {
-        ProcessLifecycleOwner.get().lifecycle.removeObserver(lifecycleObserver)
+    /** Synchronous (a test's teardown): the lifecycle observer goes on the main thread, the rest right here. */
+    fun detach() {
         attached?.let { (cm, cb) -> runCatching { cm.unregisterNetworkCallback(cb) } }
         attached = null
         background()
+        val remove = Runnable { ProcessLifecycleOwner.get().lifecycle.removeObserver(lifecycleObserver) }
+        if (Looper.myLooper() == Looper.getMainLooper()) remove.run() else Handler(Looper.getMainLooper()).post(remove)
     }
 
     companion object {

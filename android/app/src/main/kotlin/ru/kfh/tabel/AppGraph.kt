@@ -2,6 +2,8 @@ package ru.kfh.tabel
 
 import android.content.Context
 import android.os.Build
+import android.util.Log
+import kotlinx.coroutines.CoroutineExceptionHandler
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -35,9 +37,15 @@ class AppGraph(
 
     /**
      * Lives as long as the graph; the launch, the sync triggers and the sign-out run in it, off the main thread
-     * (a pull page is parsed and written here). The screens only collect the session's flows.
+     * (a pull page is parsed and written here). The screens only collect the session's flows. Nothing launched here
+     * may take the process down: a failure is logged (its class and message, never a token) and the other
+     * coroutines go on.
      */
-    val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+    val scope = CoroutineScope(
+        SupervisorJob() + Dispatchers.Default + CoroutineExceptionHandler { _, e ->
+            Log.e(TAG, "unhandled in the app's scope: ${e::class.java.name}: ${e.message}")
+        },
+    )
 
     val db: TabelDb = TabelDb.open(app, dbName)
     val photos = PhotoStore(photosDir)
@@ -63,15 +71,16 @@ class AppGraph(
         }
     }
 
+    /** Tests only (a graph per test): the triggers go, the coroutines are cancelled, the database is closed. */
     fun close() {
-        scope.launch { scheduler.detach() }.invokeOnCompletion {
-            scope.cancel()
-            db.close()
-        }
+        scheduler.detach()
+        scope.cancel()
+        db.close()
     }
 
     companion object {
         const val BASE_URL = "https://kfh.cubely.ru"
+        private const val TAG = "TabelKFH"
 
         fun deviceName(): String = "${Build.MANUFACTURER} ${Build.MODEL}"
     }

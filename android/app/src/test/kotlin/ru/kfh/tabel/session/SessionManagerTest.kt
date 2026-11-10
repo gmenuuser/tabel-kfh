@@ -278,6 +278,82 @@ class SessionManagerTest {
         assertNotNull(again.engine.value)
     }
 
+    // MARK: A token store that fails (the Keystore's known failures)
+
+    /** Reads throw `SecurityException` (a value that no longer decrypts), writes throw when [broken]. */
+    private class BrokenTokenStore : TokenStore {
+        @Volatile var broken = false
+        @Volatile var token: String? = null
+
+        override fun get(): String? {
+            if (broken) throw SecurityException("Could not decrypt value")
+            return token
+        }
+
+        override fun set(token: String?) {
+            if (broken) throw IllegalStateException("token not saved")
+            this.token = token
+        }
+    }
+
+    @Test
+    fun launchWithABrokenTokenStoreSignsOutInsteadOfCrashing() = test {
+        val broken = BrokenTokenStore().apply { broken = true }
+        val again = SessionManager(store, broken, server.url, OkHttpClient(), "Google Pixel 9")
+        again.restore()
+        assertEquals(SessionState.SignedOut, again.state.value)
+        assertNull(again.engine.value)
+    }
+
+    @Test
+    fun signOutCompletesWhenTheTokenStoreFails() = test {
+        val broken = BrokenTokenStore()
+        val again = SessionManager(store, broken, server.url, OkHttpClient(), "Google Pixel 9")
+        again.restore()
+        server.role = "owner"
+        assertNull(again.signIn("zubakhin", "secret"))
+        val engine = again.engine.value!!
+        val w = RecordWriter(db, { again.role ?: Role.viewer })
+        w.save("driver", driverA, obj("lastName" to "Мунгалов"))
+        broken.broken = true
+
+        // Neither the token read nor its removal works: the phone still ends signed out, wiped, engine stopped.
+        assertEquals(0, again.signOut(force = true))
+        assertEquals(SessionState.SignedOut, again.state.value)
+        wiped()
+        assertTrue(engine.stopped)
+        assertNull(again.engine.value)
+        // No logout went: the token could not be read for it.
+        assertTrue(server.requests("/auth/logout").isEmpty())
+    }
+
+    @Test
+    fun tokenLostDuringTheFirstDownloadSignsOutWithANotice() = test {
+        val broken = BrokenTokenStore()
+        val again = SessionManager(store, broken, server.url, OkHttpClient(), "Google Pixel 9")
+        again.restore()
+        server.pullGate = CountDownLatch(1)
+        val signIn = async(Dispatchers.IO) { again.signIn("zubakhin", "secret") }
+        assertTrue(server.pullStarted.await(10, TimeUnit.SECONDS))
+        assertEquals(SessionState.Loading, again.state.value)
+        broken.broken = true
+        server.pullGate!!.countDown()
+
+        // The sign-in screen that comes back shows the reason (the one that started the sign-in is gone).
+        assertEquals("Не удалось сохранить вход на телефоне", signIn.await())
+        assertEquals(SessionState.SignedOut, again.state.value)
+        assertEquals("Не удалось сохранить вход на телефоне", again.signOutNotice.value)
+        assertNull(again.engine.value)
+        wiped()
+    }
+
+    @Test
+    fun signInWhileSignedInIsRefused() = test {
+        signedIn()
+        assertEquals("Вход уже выполнен", session.signIn("zubakhin", "secret"))
+        assertTrue(session.state.value is SessionState.SignedIn)
+    }
+
     @Test
     fun launchWithoutTokenWipesLeftovers() = test {
         signedIn()

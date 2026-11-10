@@ -64,6 +64,7 @@ class SignInHomeTest {
     private val seen = Collections.synchronizedList(mutableListOf<String>())
     @Volatile private var role = "timesheet"
     private lateinit var scenario: ActivityScenario<MainActivity>
+    private lateinit var graph: AppGraph
     private val app = ApplicationProvider.getApplicationContext<TabelApp>()
 
     @Before
@@ -92,8 +93,9 @@ class SignInHomeTest {
             }
         }
         server.start(InetAddress.getByName("127.0.0.1"), 0)
+        // The previous test closed its graph in tearDown: nothing holds this file any more.
         app.deleteDatabase(DB)
-        val graph = AppGraph(
+        graph = AppGraph(
             app,
             baseUrl = server.url("/").toString(),
             tokens = MemoryTokenStore(),
@@ -108,6 +110,8 @@ class SignInHomeTest {
     fun tearDown() {
         pullGate.countDown()
         scenario.close()
+        // Synchronous: the triggers, the coroutines and the database are gone before the next test deletes the file.
+        graph.close()
         server.shutdown()
     }
 

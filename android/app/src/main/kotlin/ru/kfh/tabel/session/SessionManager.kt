@@ -90,8 +90,9 @@ class SessionManager(
     suspend fun restore() = off { restoreLocked() }
 
     private suspend fun restoreLocked() = mutex.withLock {
-        val token = readToken()
-        val me = if (token != null) store.me() else null
+        // A token file or a store that cannot be read: the phone is signed out, never left on «Загрузка данных…».
+        val token = try { readToken() } catch (e: Exception) { if (e is CancellationException) throw e; null }
+        val me = if (token != null) try { store.me() } catch (e: Exception) { if (e is CancellationException) throw e; null } else null
         if (token != null && me != null) {
             _farmTime.value = FarmTime(me.timeZone, clock)
             val engine = makeEngine()
@@ -99,7 +100,7 @@ class SessionManager(
             engine.refreshStatus()
         } else {
             wipeQuietly()
-            saveToken(null)
+            clearTokenQuietly()
             _state.value = SessionState.SignedOut
         }
     }
@@ -114,7 +115,7 @@ class SessionManager(
     suspend fun signIn(login: String, password: String): String? = off { signInLocked(login, password) }
 
     private suspend fun signInLocked(login: String, password: String): String? = mutex.withLock {
-        if (_state.value != SessionState.SignedOut) return null
+        if (_state.value != SessionState.SignedOut) return "Вход уже выполнен"
         val token = try {
             Api(base, client) { null }.login(login.trim(), password, deviceName)
         } catch (e: ApiError) {
@@ -132,28 +133,43 @@ class SessionManager(
         val me = try {
             Api(base, client) { token }.me()
         } catch (e: Exception) {
-            saveToken(null)
             if (e is CancellationException) throw e
+            clearTokenQuietly()
             return message(e)
         }
         _notice.value = null
         _state.value = SessionState.Loading
+        // From here the sign-in screen is gone («Загрузка данных…»): an error is shown through the notice, which
+        // the fresh sign-in screen reads, not through the return value alone.
         try {
             store.wipe()
             store.saveMe(me)
         } catch (e: Exception) {
-            saveToken(null)
-            _state.value = SessionState.SignedOut
             if (e is CancellationException) throw e
-            return "Не удалось подготовить телефон к входу"
+            clearTokenQuietly()
+            return failLoading("Не удалось подготовить телефон к входу")
         }
         _farmTime.value = FarmTime(me.timeZone, clock)
         val engine = makeEngine()
         engine.syncNow()
-        // A 401 during the download signed the phone out again (onSignedOut).
-        if (_engine.value !== engine || readToken() == null) return "Нужно войти заново"
+        // A 401 during the download signed the phone out again (onSignedOut, with its own notice).
+        if (_engine.value !== engine) return "Нужно войти заново"
+        val still = try { readToken() } catch (e: Exception) { if (e is CancellationException) throw e; null }
+        if (still == null) {
+            // The token file broke during the download: not inside a run of the engine, stopAndWait is safe.
+            engine.stopAndWait()
+            closeGate()
+            wipeQuietly()
+            return failLoading("Не удалось сохранить вход на телефоне")
+        }
         _state.value = SessionState.SignedIn(me)
         null
+    }
+
+    /** A sign-in that failed after «Загрузка данных…» began: signed out, [text] on the sign-in screen and returned. */
+    private fun failLoading(text: String): String {
+        endSession(notice = text)
+        return text
     }
 
     // MARK: Sign out
@@ -181,18 +197,23 @@ class SessionManager(
         // The run on its way finishes its last write; nothing of this engine touches the store afterwards.
         engine?.stopAndWait()
         closeGate()
-        val token = readToken()
-        if (token != null) {
-            try {
-                Api(base, logoutClient) { token }.logout()
-            } catch (e: Exception) {
-                // Offline, or already revoked: the phone signs out all the same.
-                if (e is CancellationException) throw e
+        // From here the engine is dead: whatever fails below, the session ends as signed out (never «signed in»
+        // with an engine that will not sync again).
+        try {
+            val token = try { readToken() } catch (e: Exception) { if (e is CancellationException) throw e; null }
+            if (token != null) {
+                try {
+                    Api(base, logoutClient) { token }.logout()
+                } catch (e: Exception) {
+                    // Offline, or already revoked: the phone signs out all the same.
+                    if (e is CancellationException) throw e
+                }
             }
+            wipeQuietly()
+            clearTokenQuietly()
+        } finally {
+            endSession(notice = null)
         }
-        wipeQuietly()
-        saveToken(null)
-        endSession(notice = null)
         0
     }
 
@@ -215,7 +236,17 @@ class SessionManager(
 
     private suspend fun readToken(): String? = withContext(Dispatchers.IO) { tokens.get() }
 
-    private suspend fun saveToken(token: String?) = withContext(Dispatchers.IO) { tokens.set(token) }
+    /** Throws when the token could not be saved (the sign-in then fails with a message). */
+    private suspend fun saveToken(token: String) = withContext(Dispatchers.IO) { tokens.set(token) }
+
+    /** Sign-out: the token goes; a store that cannot even forget it must not stop the sign-out. */
+    private suspend fun clearTokenQuietly() {
+        try {
+            withContext(Dispatchers.IO) { tokens.set(null) }
+        } catch (e: Exception) {
+            if (e is CancellationException) throw e
+        }
+    }
 
     /** `GET /me` of the sign-in [engine] belongs to: nothing when that sign-in ended before or while it was asked. */
     private suspend fun refreshMe(engine: SyncEngine) {
@@ -230,9 +261,12 @@ class SessionManager(
                 if (!current()) return
                 engine.stopAndWait()
                 closeGate()
-                wipeQuietly()
-                saveToken(null)
-                endSession(notice = REVOKED)
+                try {
+                    wipeQuietly()
+                    clearTokenQuietly()
+                } finally {
+                    endSession(notice = REVOKED)
+                }
             }
             return
         } catch (e: Exception) {
@@ -266,8 +300,11 @@ class SessionManager(
             val me = self
             if (me != null && _engine.value === me) {
                 closeGate()
-                saveToken(null)
-                endSession(notice = REVOKED)
+                try {
+                    clearTokenQuietly()
+                } finally {
+                    endSession(notice = REVOKED)
+                }
             }
         }
         self = engine
