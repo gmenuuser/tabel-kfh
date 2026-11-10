@@ -21,9 +21,9 @@ abstract class TabelDb : RoomDatabase() {
     companion object {
         const val FILE = "tabel.db"
 
-        /** The app's database file (`databases/tabel.db`). */
-        fun open(context: Context): TabelDb = configure(
-            Room.databaseBuilder<TabelDb>(context.applicationContext, context.getDatabasePath(FILE).path)
+        /** The app's database file (`databases/tabel.db`); [name] differs only in instrumented tests. */
+        fun open(context: Context, name: String = FILE): TabelDb = configure(
+            Room.databaseBuilder<TabelDb>(context.applicationContext, context.getDatabasePath(name).path)
                 .setDriver(AndroidSQLiteDriver()),
         ).build()
 

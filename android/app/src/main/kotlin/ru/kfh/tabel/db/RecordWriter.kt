@@ -18,14 +18,20 @@ import java.util.UUID
  * - `baseVersion` is the stored record's version (0 for a new one).
  * - Ids are written lowercase.
  * - A role that may not write the entity (`Role.canWrite`) gets [IllegalStateException] and nothing is written.
+ * - [onQueued] is called after a transaction that queued at least one op has committed (the sync scheduler's
+ *   debounce); never inside the transaction, never when nothing was queued.
  */
 class RecordWriter internal constructor(
     private val db: TabelDb,
     private val role: () -> Role,
     private val opIds: () -> String,
     private val clock: () -> Long,
+    private val onQueued: () -> Unit = {},
 ) {
     constructor(db: TabelDb, role: () -> Role) : this(db, role, ::newId, System::currentTimeMillis)
+
+    constructor(db: TabelDb, role: () -> Role, onQueued: () -> Unit) :
+        this(db, role, ::newId, System::currentTimeMillis, onQueued)
 
     /** May the signed-in role change records of [entity]. Screens hide editing and seeding of defaults with it. */
     fun canWrite(entity: String): Boolean = role().canWrite(entity)
@@ -36,9 +42,11 @@ class RecordWriter internal constructor(
     /** One user action that changes several records (closing a coal day): all records and ops in one transaction. */
     suspend fun saveAll(changes: List<Triple<String, String, JsonObject>>) {
         for ((entity, _, _) in changes) requireWrite(entity)
+        var queued = false
         db.withWriteTransaction {
-            for ((entity, id, data) in changes) write(entity, lower(id), data)
+            for ((entity, id, data) in changes) if (write(entity, lower(id), data)) queued = true
         }
+        if (queued) onQueued()
     }
 
     /**
@@ -48,27 +56,32 @@ class RecordWriter internal constructor(
     suspend fun delete(entity: String, id: String) {
         requireWrite(entity)
         val key = lower(id)
+        var queued = false
         db.withWriteTransaction {
             if (entity == HOURS_MARK) {
                 val old = db.records().get(entity, key)
-                if (old != null && !old.deleted) write(entity, key, JsonObject(mapOf("hours" to JsonNull)))
+                if (old != null && !old.deleted) queued = write(entity, key, JsonObject(mapOf("hours" to JsonNull)))
                 return@withWriteTransaction
             }
             val old = db.records().get(entity, key) ?: return@withWriteTransaction
             if (old.deleted) return@withWriteTransaction
             db.records().upsert(old.copy(data = EMPTY, deleted = true))
             queue(entity, key, "delete", old.version, JsonObject(emptyMap()))
+            queued = true
         }
+        if (queued) onQueued()
     }
 
-    private suspend fun write(entity: String, id: String, newData: JsonObject) {
+    /** True when an op was queued. */
+    private suspend fun write(entity: String, id: String, newData: JsonObject): Boolean {
         val old = db.records().get(entity, id)
         val known = old?.takeUnless { it.deleted }?.json()
         val fields = RecordCodec.diff(known, newData)
-        if (fields.isEmpty()) return
+        if (fields.isEmpty()) return false
         val merged = JsonObject((known ?: JsonObject(emptyMap())) + newData)
         db.records().upsert(RecordRow(entity, id, old?.version ?: 0, merged.toString(), deleted = false))
         queue(entity, id, "upsert", old?.version ?: 0, fields)
+        return true
     }
 
     private suspend fun queue(entity: String, id: String, kind: String, baseVersion: Long, fields: JsonObject) {

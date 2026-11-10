@@ -1,0 +1,78 @@
+package ru.kfh.tabel
+
+import android.content.Context
+import android.os.Build
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
+import kotlinx.coroutines.launch
+import okhttp3.OkHttpClient
+import ru.kfh.core.roles.Role
+import ru.kfh.tabel.db.PhotoStore
+import ru.kfh.tabel.db.RecordWriter
+import ru.kfh.tabel.db.RoomLocalStore
+import ru.kfh.tabel.db.TabelDb
+import ru.kfh.tabel.session.EncryptedTokenStore
+import ru.kfh.tabel.session.SessionManager
+import ru.kfh.tabel.session.SyncScheduler
+import ru.kfh.tabel.session.TokenStore
+import java.io.File
+import java.util.concurrent.TimeUnit
+
+/**
+ * Everything the screens use, made once per process ([TabelApp.graph]). [baseUrl] is the farm server
+ * (`https://kfh.cubely.ru`); only tests pass another one (a MockWebServer), with their own [tokens] and [dbName].
+ */
+class AppGraph(
+    context: Context,
+    val baseUrl: String = BASE_URL,
+    val tokens: TokenStore = EncryptedTokenStore(context),
+    dbName: String = TabelDb.FILE,
+    photosDir: File = File(context.filesDir, "photos"),
+) {
+    private val app = context.applicationContext
+
+    /**
+     * Lives as long as the graph; the launch, the sync triggers and the sign-out run in it, off the main thread
+     * (a pull page is parsed and written here). The screens only collect the session's flows.
+     */
+    val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+
+    val db: TabelDb = TabelDb.open(app, dbName)
+    val photos = PhotoStore(photosDir)
+    val store = RoomLocalStore(db, photos)
+
+    private val client = OkHttpClient.Builder()
+        .connectTimeout(15, TimeUnit.SECONDS)
+        .readTimeout(60, TimeUnit.SECONDS)
+        .build()
+
+    val session = SessionManager(store, tokens, baseUrl, client, deviceName())
+
+    val scheduler = SyncScheduler(scope) { session.syncNow() }
+
+    /** Every change of the screens goes through here; a queued change syncs 1 s later. */
+    val writer = RecordWriter(db, { session.role ?: Role.viewer }, scheduler::changed)
+
+    init {
+        scope.launch {
+            session.restore()
+            // ON_START comes at once once attached: the sync at app start.
+            scheduler.attach(app)
+        }
+    }
+
+    fun close() {
+        scope.launch { scheduler.detach() }.invokeOnCompletion {
+            scope.cancel()
+            db.close()
+        }
+    }
+
+    companion object {
+        const val BASE_URL = "https://kfh.cubely.ru"
+
+        fun deviceName(): String = "${Build.MANUFACTURER} ${Build.MODEL}"
+    }
+}
