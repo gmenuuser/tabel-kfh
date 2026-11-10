@@ -20,6 +20,7 @@ import ru.kfh.tabel.session.SessionManager
 import ru.kfh.tabel.session.SyncScheduler
 import ru.kfh.tabel.session.TokenStore
 import ru.kfh.tabel.ui.coal.CoalViewModel
+import ru.kfh.tabel.ui.livestock.LivestockViewModel
 import ru.kfh.tabel.ui.timesheet.TimesheetViewModel
 import java.io.File
 import java.util.concurrent.TimeUnit
@@ -70,6 +71,9 @@ class AppGraph(
 
     /** «Продажа угля»: its flows and actions, over the store and the farm's time. */
     val coal: CoalViewModel by lazy { CoalViewModel(db.records(), writer, session.farmTime, scope) }
+
+    /** «Скот и забой»: its flows and actions, over the store and the farm's time. */
+    val livestock: LivestockViewModel by lazy { LivestockViewModel(db.records(), writer, session.farmTime, scope) }
 
     init {
         scope.launch {

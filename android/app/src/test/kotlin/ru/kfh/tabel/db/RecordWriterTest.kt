@@ -240,6 +240,27 @@ class RecordWriterTest {
         assertEquals(5L, row("driver", driverId)!!.version)
     }
 
+    @Test
+    fun upsertsAndDeletesOfOneActionGoInOneTransaction() = runTest {
+        val saleId = "1b6f3a52-7c1e-4d7a-9a51-3f2c8e7d1a02"
+        writer.save("driver", driverId, RecordCodec.encode(driver))
+        writer.save("coalSale", saleId, RecordCodec.encode(CoalSale(id = saleId, driverId = driverId, kilograms = 1000)))
+        // A changed sale and the driver's deletion together: one op each, a `delete` for the driver.
+        writer.saveAll(listOf(Triple("coalSale", saleId, JsonObject(mapOf("kilograms" to JsonPrimitive(2000))))), listOf("driver" to driverId))
+        val all = ops()
+        assertEquals(4, all.size)
+        assertEquals(listOf("upsert", "delete"), all.drop(2).map { it.kind })
+        assertEquals(JsonPrimitive(2000), all[2].fieldsJson()["kilograms"])
+        assertTrue(row("driver", driverId)!!.deleted)
+        assertFalse(row("coalSale", saleId)!!.deleted)
+        // An already deleted record queues nothing; a role without the right gets nothing written at all.
+        writer.saveAll(emptyList(), listOf("driver" to driverId))
+        assertEquals(4, ops().size)
+        role = Role.viewer
+        assertThrows { writer.saveAll(listOf(Triple("coalSale", saleId, JsonObject(mapOf("kilograms" to JsonPrimitive(3000))))), listOf("coalSale" to saleId)) }
+        assertEquals(4, ops().size)
+    }
+
     private suspend fun assertThrows(block: suspend () -> Unit) = assertThrowsOf<Exception>(block)
 
     private suspend inline fun <reified E : Exception> assertThrowsOf(block: suspend () -> Unit) {

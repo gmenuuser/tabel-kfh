@@ -29,6 +29,11 @@ import ru.kfh.tabel.ui.common.TitledScreen
 import ru.kfh.tabel.ui.home.HomeScreen
 import ru.kfh.tabel.ui.home.LoadingScreen
 import ru.kfh.tabel.ui.home.moduleTitle
+import ru.kfh.tabel.ui.livestock.HerdScreen
+import ru.kfh.tabel.ui.livestock.LivestockHistoryScreen
+import ru.kfh.tabel.ui.livestock.LivestockHomeScreen
+import ru.kfh.tabel.ui.livestock.OperationFormScreen
+import ru.kfh.tabel.ui.livestock.SlaughterScreen
 import ru.kfh.tabel.ui.settings.SettingsScreen
 import ru.kfh.tabel.ui.signin.SignInScreen
 import ru.kfh.tabel.ui.timesheet.DayScreen
@@ -56,12 +61,27 @@ object Routes {
     const val COAL_DRIVER = "coal/driver/{id}"
     const val COAL_SETTINGS = "coal/settings"
     const val COAL_HISTORY = "coal/history"
+    const val LIVESTOCK = "livestock"
+    const val LIVESTOCK_HERD = "livestock/herd"
+    const val LIVESTOCK_OPERATION = "livestock/operation?id={id}&category={category}&adding={adding}"
+    const val LIVESTOCK_SLAUGHTER = "livestock/slaughter?category={category}"
+    const val LIVESTOCK_HISTORY = "livestock/history?category={category}"
+    const val LIVESTOCK_REPORTS = "livestock/reports"
 
     fun module(m: Module) = when (m) {
         Module.timesheet -> TIMESHEET_DAY
         Module.coal -> COAL
+        Module.livestock -> LIVESTOCK
         else -> "module/${m.name}"
     }
+
+    /** The form of the saved operation [id], or of a new one for [category]: «Добавить» ([adding]) or «Уменьшить». */
+    fun livestockOperation(id: String?, category: String? = null, adding: Boolean = false) =
+        if (id != null) "livestock/operation?id=$id" else "livestock/operation?category=$category&adding=$adding"
+
+    fun livestockSlaughter(category: String? = null) = if (category == null) "livestock/slaughter" else "livestock/slaughter?category=$category"
+
+    fun livestockHistory(category: String? = null) = if (category == null) "livestock/history" else "livestock/history?category=$category"
 
     fun coalClose(day: LocalDate) = "coal/close/$day"
 
@@ -203,6 +223,58 @@ private fun FarmRoot(graph: AppGraph, me: Me) {
                 openSummary = { day -> nav.navigate(Routes.coalSummary(day)) },
                 openSale = { id -> nav.navigate(Routes.coalSale(id)) },
             )
+        }
+        composable(Routes.LIVESTOCK) {
+            LivestockHomeScreen(
+                vm = graph.livestock,
+                onBack = { nav.popBackStack() },
+                openHerd = { nav.navigate(Routes.LIVESTOCK_HERD) },
+                openSlaughter = { nav.navigate(Routes.livestockSlaughter()) },
+                openHistory = { nav.navigate(Routes.livestockHistory()) },
+                openReports = { nav.navigate(Routes.LIVESTOCK_REPORTS) },
+            )
+        }
+        composable(Routes.LIVESTOCK_HERD) {
+            HerdScreen(
+                graph.livestock,
+                onBack = { nav.popBackStack() },
+                openForm = { category, adding -> nav.navigate(Routes.livestockOperation(null, category, adding)) },
+                openHistory = { category -> nav.navigate(Routes.livestockHistory(category)) },
+            )
+        }
+        composable(
+            Routes.LIVESTOCK_OPERATION,
+            arguments = listOf(
+                navArgument("id") { type = NavType.StringType; nullable = true; defaultValue = null },
+                navArgument("category") { type = NavType.StringType; nullable = true; defaultValue = null },
+                navArgument("adding") { type = NavType.BoolType; defaultValue = false },
+            ),
+        ) { entry ->
+            val args = entry.arguments
+            OperationFormScreen(
+                graph.livestock, args?.getString("id"), args?.getString("category"), args?.getBoolean("adding") ?: false,
+                onDone = { nav.popBackStack() },
+            )
+        }
+        composable(
+            Routes.LIVESTOCK_SLAUGHTER,
+            arguments = listOf(navArgument("category") { type = NavType.StringType; nullable = true; defaultValue = null }),
+        ) { entry ->
+            SlaughterScreen(graph.livestock, entry.arguments?.getString("category"), onBack = { nav.popBackStack() })
+        }
+        composable(
+            Routes.LIVESTOCK_HISTORY,
+            arguments = listOf(navArgument("category") { type = NavType.StringType; nullable = true; defaultValue = null }),
+        ) { entry ->
+            LivestockHistoryScreen(
+                graph.livestock, entry.arguments?.getString("category"),
+                onBack = { nav.popBackStack() },
+                openOperation = { id -> nav.navigate(Routes.livestockOperation(id)) },
+            )
+        }
+        composable(Routes.LIVESTOCK_REPORTS) {
+            // The livestock reports (PDF / Excel) come with the reports module (Task 15): until then only the title and «Назад».
+            TitledScreen("Отчёты по скоту", onBack = { nav.popBackStack() })
         }
     }
 }

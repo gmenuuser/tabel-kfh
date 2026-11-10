@@ -39,12 +39,18 @@ class RecordWriter internal constructor(
     /** [newData] is the record's JSON (`RecordCodec.encode`) or only some of its fields; it goes on top of the stored one. */
     suspend fun save(entity: String, id: String, newData: JsonObject) = saveAll(listOf(Triple(entity, id, newData)))
 
-    /** One user action that changes several records (closing a coal day): all records and ops in one transaction. */
-    suspend fun saveAll(changes: List<Triple<String, String, JsonObject>>) {
+    /**
+     * One user action that changes several records (closing a coal day; a slaughter with its details; an operation
+     * that stops being a slaughter and loses its details): all records and ops — the upserts of [changes] and the
+     * `delete` ops of [deletes] — in one transaction.
+     */
+    suspend fun saveAll(changes: List<Triple<String, String, JsonObject>>, deletes: List<Pair<String, String>> = emptyList()) {
         for ((entity, _, _) in changes) requireWrite(entity)
+        for ((entity, _) in deletes) requireWrite(entity)
         var queued = false
         db.withWriteTransaction {
             for ((entity, id, data) in changes) if (write(entity, lower(id), data)) queued = true
+            for ((entity, id) in deletes) if (remove(entity, lower(id))) queued = true
         }
         if (queued) onQueued()
     }
@@ -53,23 +59,19 @@ class RecordWriter internal constructor(
      * Deletes the record (a `delete` op). An hours mark is not deleted but removed: `hours: null` (the server keeps it).
      * A record that is not there or already deleted queues nothing.
      */
-    suspend fun delete(entity: String, id: String) {
-        requireWrite(entity)
-        val key = lower(id)
-        var queued = false
-        db.withWriteTransaction {
-            if (entity == HOURS_MARK) {
-                val old = db.records().get(entity, key)
-                if (old != null && !old.deleted) queued = write(entity, key, JsonObject(mapOf("hours" to JsonNull)))
-                return@withWriteTransaction
-            }
-            val old = db.records().get(entity, key) ?: return@withWriteTransaction
-            if (old.deleted) return@withWriteTransaction
-            db.records().upsert(old.copy(data = EMPTY, deleted = true))
-            queue(entity, key, "delete", old.version, JsonObject(emptyMap()))
-            queued = true
+    suspend fun delete(entity: String, id: String) = saveAll(emptyList(), listOf(entity to id))
+
+    /** True when an op was queued. */
+    private suspend fun remove(entity: String, key: String): Boolean {
+        if (entity == HOURS_MARK) {
+            val old = db.records().get(entity, key)
+            return old != null && !old.deleted && write(entity, key, JsonObject(mapOf("hours" to JsonNull)))
         }
-        if (queued) onQueued()
+        val old = db.records().get(entity, key) ?: return false
+        if (old.deleted) return false
+        db.records().upsert(old.copy(data = EMPTY, deleted = true))
+        queue(entity, key, "delete", old.version, JsonObject(emptyMap()))
+        return true
     }
 
     /** True when an op was queued. */
