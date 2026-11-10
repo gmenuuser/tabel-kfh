@@ -65,6 +65,9 @@ import ru.kfh.tabel.ui.common.ConfirmDialog
 import ru.kfh.tabel.ui.common.TitledScreen
 import ru.kfh.tabel.ui.livestock.ChipRow
 import ru.kfh.tabel.ui.livestock.LivestockCaption
+import ru.kfh.core.agro.AgroReportLayout
+import ru.kfh.core.timesheet.FarmInfo
+import ru.kfh.tabel.ui.reports.ReportExportActions
 import ru.kfh.tabel.ui.theme.Tabel
 import ru.kfh.tabel.ui.timesheet.ErrorDialog
 import ru.kfh.tabel.ui.timesheet.ReadOnlyNote
@@ -167,6 +170,10 @@ fun AgroHistoryScreen(vm: AgroViewModel, onBack: () -> Unit, open: (AgroCalculat
             for (c in shown) {
                 CalculationRow(c, zone, canEdit, onClick = { open(c) }, onDelete = { deleting = c })
             }
+            // The PDF / Excel of the shown list («АГРОНОМИЧЕСКИЕ РАСЧЁТЫ»), as the iPhone's `CoalExportActions` under the history.
+            val info by vm.farmInfo.collectAsState(initial = FarmInfo.DEFAULT)
+            val document = remember(shown, info) { AgroReportLayout.history(shown, info, vm.now(), vm.farm) }
+            ReportExportActions(document)
         }
     }
 

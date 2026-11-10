@@ -28,8 +28,10 @@ import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.launch
+import ru.kfh.core.coal.CoalReportLayout
 import ru.kfh.core.coal.CoalText
 import ru.kfh.core.model.Driver
+import ru.kfh.tabel.ui.reports.ReportExportActions
 import ru.kfh.tabel.ui.common.BigButton
 import ru.kfh.tabel.ui.common.Card
 import ru.kfh.tabel.ui.common.TitledScreen
@@ -64,6 +66,8 @@ fun CoalDaySummaryScreen(vm: CoalViewModel, initialDay: LocalDate, onBack: () ->
             // «Выплатить водителю» only for a role that may pay.
             val onPay: ((ru.kfh.core.coal.DriverSettlement) -> Unit)? =
                 if (vm.canPay) { s -> paying = drivers.firstOrNull { it.id == s.driverId } } else null
+            // «Скачать PDF», «Экспорт в Excel», «Распечатать», «Поделиться» of the day's report (`CoalExportActions`).
+            ReportExportActions(CoalReportLayout.document(r, vm.farm))
             CoalReportContent(r, vm.farm.zone, onPay)
             val closedAt = r.closedAt
             if (closedAt != null) {

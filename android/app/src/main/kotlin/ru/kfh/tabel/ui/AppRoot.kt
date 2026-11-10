@@ -38,6 +38,11 @@ import ru.kfh.tabel.ui.livestock.LivestockHistoryScreen
 import ru.kfh.tabel.ui.livestock.LivestockHomeScreen
 import ru.kfh.tabel.ui.livestock.OperationFormScreen
 import ru.kfh.tabel.ui.livestock.SlaughterScreen
+import ru.kfh.tabel.ui.reports.CoalSalesReportScreen
+import ru.kfh.tabel.ui.reports.DriverPaymentsReportScreen
+import ru.kfh.tabel.ui.reports.LivestockReportsScreen
+import ru.kfh.tabel.ui.reports.ReportsScreen
+import ru.kfh.tabel.ui.reports.TimesheetReportScreen
 import ru.kfh.tabel.ui.settings.SettingsScreen
 import ru.kfh.tabel.ui.signin.SignInScreen
 import ru.kfh.tabel.ui.timesheet.DayScreen
@@ -74,12 +79,17 @@ object Routes {
     const val AGRO = "agro"
     const val AGRO_HISTORY = "agro/history"
     const val AGRO_CALCULATOR = "agro/{kind}?id={id}"
+    const val REPORTS = "reports"
+    const val REPORTS_TIMESHEET = "reports/timesheet"
+    const val REPORTS_COAL = "reports/coal"
+    const val REPORTS_PAYMENTS = "reports/payments"
 
     fun module(m: Module) = when (m) {
         Module.timesheet -> TIMESHEET_DAY
         Module.coal -> COAL
         Module.livestock -> LIVESTOCK
         Module.agro -> AGRO
+        Module.reports -> REPORTS
         else -> "module/${m.name}"
     }
 
@@ -156,9 +166,22 @@ private fun FarmRoot(graph: AppGraph, me: Me) {
         }
         composable(Routes.MODULE, arguments = listOf(navArgument("name") { type = NavType.StringType })) { entry ->
             val m = entry.arguments?.getString("name")?.let { n -> Module.entries.firstOrNull { it.name == n } }
-            // The reports module comes with Task 15: until then only the title and «Назад».
+            // A module without a screen of its own: only the title and «Назад».
             TitledScreen(m?.let(::moduleTitle).orEmpty(), onBack = { nav.popBackStack() })
         }
+        composable(Routes.REPORTS) {
+            ReportsScreen(
+                role = me.role,
+                onBack = { nav.popBackStack() },
+                openTimesheet = { nav.navigate(Routes.REPORTS_TIMESHEET) },
+                openCoal = { nav.navigate(Routes.REPORTS_COAL) },
+                openPayments = { nav.navigate(Routes.REPORTS_PAYMENTS) },
+                openLivestock = { nav.navigate(Routes.LIVESTOCK_REPORTS) },
+            )
+        }
+        composable(Routes.REPORTS_TIMESHEET) { TimesheetReportScreen(graph.timesheet, onBack = { nav.popBackStack() }) }
+        composable(Routes.REPORTS_COAL) { CoalSalesReportScreen(graph.coal, onBack = { nav.popBackStack() }) }
+        composable(Routes.REPORTS_PAYMENTS) { DriverPaymentsReportScreen(graph.coal, onBack = { nav.popBackStack() }) }
         composable(Routes.TIMESHEET_DAY) {
             DayScreen(
                 vm = graph.timesheet,
@@ -283,10 +306,7 @@ private fun FarmRoot(graph: AppGraph, me: Me) {
                 openOperation = { id -> nav.navigate(Routes.livestockOperation(id)) },
             )
         }
-        composable(Routes.LIVESTOCK_REPORTS) {
-            // The livestock reports (PDF / Excel) come with the reports module (Task 15): until then only the title and «Назад».
-            TitledScreen("Отчёты по скоту", onBack = { nav.popBackStack() })
-        }
+        composable(Routes.LIVESTOCK_REPORTS) { LivestockReportsScreen(graph.livestock, onBack = { nav.popBackStack() }) }
         composable(Routes.AGRO) {
             AgroHomeScreen(
                 graph.agro,

@@ -1,47 +1,28 @@
 package ru.kfh.core.livestock
 
 import java.time.Instant
+import java.time.LocalDate
 import java.time.YearMonth
 import java.util.Locale
+import ru.kfh.core.coal.CoalReportLayout
 import ru.kfh.core.coal.CoalText
+import ru.kfh.core.report.ReportAlign
+import ru.kfh.core.report.ReportBlock
+import ru.kfh.core.report.ReportCell
+import ru.kfh.core.report.ReportColumn
+import ru.kfh.core.report.ReportDocument
+import ru.kfh.core.report.ReportPair
+import ru.kfh.core.report.ReportTable
 import ru.kfh.core.time.FarmTime
 import ru.kfh.core.timesheet.FarmInfo
 import ru.kfh.core.timesheet.RuMonths
 
 /**
- * The livestock reports as printable documents: the same blocks as on the iPhone (`LivestockReportLayout`), as
- * plain data. Rendering to PDF / XLSX belongs to the app layer.
+ * The livestock reports as printable documents (port of `LivestockReportLayout.swift`): the same blocks as the coal
+ * reports ([ReportDocument]); the PDF / XLSX are rendered from them.
  */
 object LivestockReport {
-    const val SIGNATURE_LABEL = "Руководитель КФХ: ___________________"
-
-    enum class Align { LEFT, CENTER, RIGHT }
-
-    /** `Count` is a whole number, `Tons` is grams shown as kilograms («120,5»); both stay numbers in a spreadsheet. */
-    sealed class Cell {
-        data class Text(val text: String) : Cell()
-        data class Count(val value: Long) : Cell()
-        data class Tons(val grams: Long) : Cell()
-    }
-
-    data class Column(val title: String, val weight: Int, val align: Align)
-
-    data class Table(val columns: List<Column>, val rows: List<List<Cell>>, val total: List<Cell>?)
-
-    data class Pair(val label: String, val value: Cell, val bold: Boolean)
-
-    sealed class Block {
-        data class Title(val text: String) : Block()
-        data class BoldText(val text: String) : Block()
-        data class Text(val text: String) : Block()
-        data class Heading(val text: String) : Block()
-        data class Table(val table: LivestockReport.Table) : Block()
-        data class Pairs(val pairs: List<LivestockReport.Pair>) : Block()
-        data class Note(val text: String) : Block()
-        data class Signature(val label: String, val name: String) : Block()
-    }
-
-    data class Document(val fileName: String, val runningHeader: String, val blocks: List<Block>)
+    const val SIGNATURE_LABEL = CoalReportLayout.SIGNATURE_LABEL
 
     data class HerdLine(val species: Species, val name: String, val heads: Long)
 
@@ -75,39 +56,39 @@ object LivestockReport {
         }
     }
 
-    /** «06.11.2026 14:05» at the farm. */
-    private fun dateTime(at: Instant, farm: FarmTime): String {
-        val z = at.atZone(farm.zone)
-        return CoalText.date(z.toLocalDate()) + String.format(Locale.ROOT, " %02d:%02d", z.hour, z.minute)
-    }
-
-    private fun footer(manager: String, createdAt: Instant, farm: FarmTime): List<Block> = listOf(
-        Block.Signature(SIGNATURE_LABEL, manager),
-        Block.Note("Дата формирования: ${dateTime(createdAt, farm)}"),
+    private fun footer(manager: String, createdAt: Instant, farm: FarmTime): List<ReportBlock> = listOf(
+        ReportBlock.Signature(SIGNATURE_LABEL, manager),
+        ReportBlock.Note("Дата формирования: ${CoalText.dateTime(createdAt, farm.zone)}"),
     )
+
+    /** Grams shown as kilograms («120,5»), a number in the spreadsheet. */
+    private fun kilograms(grams: Long): ReportCell = ReportCell.tons(grams)
 
     // ---- Остаток поголовья ----
 
-    fun herd(lines: List<HerdLine>, on: java.time.LocalDate, info: FarmInfo, createdAt: Instant, farm: FarmTime): Document {
-        val blocks = mutableListOf<Block>(
-            Block.Title("ОСТАТОК ПОГОЛОВЬЯ"), Block.BoldText(info.farmName), Block.Text("На дату: ${CoalText.date(on)}"),
+    fun herd(lines: List<HerdLine>, on: LocalDate, info: FarmInfo, createdAt: Instant, farm: FarmTime): ReportDocument {
+        val blocks = mutableListOf<ReportBlock>(
+            ReportBlock.Title("ОСТАТОК ПОГОЛОВЬЯ"), ReportBlock.BoldText(info.farmName), ReportBlock.Text("На дату: ${CoalText.date(on)}"),
         )
-        val columns = listOf(Column("Категория", 50, Align.LEFT), Column("Голов", 20, Align.RIGHT))
-        val pairs = mutableListOf<Pair>()
+        val columns = listOf(ReportColumn("Категория", 50.0, ReportAlign.LEFT), ReportColumn("Голов", 20.0, ReportAlign.RIGHT))
+        val pairs = mutableListOf<ReportPair>()
         for (species in Species.entries) {
             val rows = lines.filter { it.species == species }
             val total = rows.sumOf { it.heads }
-            blocks += Block.Heading(species.title)
-            blocks += Block.Table(
-                Table(columns, rows.map { listOf(Cell.Text(it.name), Cell.Count(it.heads)) }, listOf(Cell.Text("Итого ${species.title}"), Cell.Count(total))),
+            blocks += ReportBlock.Heading(species.title)
+            blocks += ReportBlock.Table(
+                ReportTable(
+                    columns, rows.map { listOf(ReportCell.text(it.name), ReportCell.count(it.heads)) },
+                    listOf(ReportCell.text("Итого ${species.title}"), ReportCell.count(total)),
+                ),
             )
-            pairs += Pair(species.title, Cell.Count(total), false)
+            pairs += ReportPair(species.title, ReportCell.count(total), false)
         }
-        pairs += Pair("Всего животных", Cell.Count(lines.sumOf { it.heads }), true)
-        blocks += Block.Heading("Итого")
-        blocks += Block.Pairs(pairs)
+        pairs += ReportPair("Всего животных", ReportCell.count(lines.sumOf { it.heads }), true)
+        blocks += ReportBlock.Heading("Итого")
+        blocks += ReportBlock.Pairs(pairs)
         blocks += footer(info.managerName, createdAt, farm)
-        return Document(
+        return ReportDocument(
             fileName = String.format(Locale.ROOT, "Поголовье_%04d-%02d-%02d", on.year, on.monthValue, on.dayOfMonth),
             runningHeader = "${info.farmName} · Остаток поголовья на ${CoalText.date(on)}",
             blocks = blocks,
@@ -119,51 +100,56 @@ object LivestockReport {
     fun slaughter(
         summary: List<SlaughterSummaryRow>, lines: List<SlaughterLine>, period: LivestockPeriod, start: Instant,
         info: FarmInfo, createdAt: Instant, farm: FarmTime,
-    ): Document {
+    ): ReportDocument {
         val title = periodTitle(period, start, farm)
-        val blocks = mutableListOf<Block>(Block.Title("ОТЧЁТ ПО ЗАБОЮ"), Block.BoldText(info.farmName), Block.Text("Период: $title"))
-        fun weight(g: Long): Cell = if (g == 0L) Cell.Text("—") else Cell.Tons(g)
+        val blocks = mutableListOf<ReportBlock>(ReportBlock.Title("ОТЧЁТ ПО ЗАБОЮ"), ReportBlock.BoldText(info.farmName), ReportBlock.Text("Период: $title"))
+        fun weight(g: Long): ReportCell = if (g == 0L) ReportCell.text("—") else kilograms(g)
         val columns = listOf(
-            Column("Вид", 10, Align.LEFT), Column("Категория", 22, Align.LEFT), Column("Голов", 10, Align.RIGHT),
-            Column("Живой вес, кг", 16, Align.RIGHT), Column("После забоя, кг", 16, Align.RIGHT), Column("Мясо, кг", 14, Align.RIGHT),
+            ReportColumn("Вид", 10.0, ReportAlign.LEFT), ReportColumn("Категория", 22.0, ReportAlign.LEFT), ReportColumn("Голов", 10.0, ReportAlign.RIGHT),
+            ReportColumn("Живой вес, кг", 16.0, ReportAlign.RIGHT), ReportColumn("После забоя, кг", 16.0, ReportAlign.RIGHT),
+            ReportColumn("Мясо, кг", 14.0, ReportAlign.RIGHT),
         )
-        blocks += Block.Heading("По категориям")
+        blocks += ReportBlock.Heading("По категориям")
         if (summary.isEmpty()) {
-            blocks += Block.Text("Забоя за период не было.")
+            blocks += ReportBlock.Text("Забоя за период не было.")
         } else {
-            blocks += Block.Table(
-                Table(
+            blocks += ReportBlock.Table(
+                ReportTable(
                     columns,
                     summary.map {
-                        listOf(Cell.Text(it.species.title), Cell.Text(it.name), Cell.Count(it.heads), weight(it.liveGrams), weight(it.carcassGrams), weight(it.meatGrams))
+                        listOf(
+                            ReportCell.text(it.species.title), ReportCell.text(it.name), ReportCell.count(it.heads), weight(it.liveGrams),
+                            weight(it.carcassGrams), weight(it.meatGrams),
+                        )
                     },
                     listOf(
-                        Cell.Text("Итого"), Cell.Text(""), Cell.Count(summary.sumOf { it.heads }), weight(summary.sumOf { it.liveGrams }),
+                        ReportCell.text("Итого"), ReportCell.text(""), ReportCell.count(summary.sumOf { it.heads }), weight(summary.sumOf { it.liveGrams }),
                         weight(summary.sumOf { it.carcassGrams }), weight(summary.sumOf { it.meatGrams }),
                     ),
                 ),
             )
-            blocks += Block.Pairs(
+            blocks += ReportBlock.Pairs(
                 Species.entries.map { s ->
-                    Pair("${s.title}: забито голов", Cell.Count(summary.filter { it.species == s }.sumOf { it.heads }), false)
+                    ReportPair("${s.title}: забито голов", ReportCell.count(summary.filter { it.species == s }.sumOf { it.heads }), false)
                 },
             )
-            blocks += Block.Note("Веса суммируются только по записям, где они указаны.")
+            blocks += ReportBlock.Note("Веса суммируются только по записям, где они указаны.")
         }
         if (lines.isNotEmpty()) {
-            blocks += Block.Heading("Записи забоя")
-            blocks += Block.Table(
-                Table(
+            blocks += ReportBlock.Heading("Записи забоя")
+            blocks += ReportBlock.Table(
+                ReportTable(
                     listOf(
-                        Column("Дата", 12, Align.CENTER), Column("Вид", 8, Align.LEFT), Column("Категория", 16, Align.LEFT),
-                        Column("Голов", 8, Align.RIGHT), Column("Причина", 16, Align.LEFT), Column("Живой, кг", 11, Align.RIGHT),
-                        Column("Мясо, кг", 11, Align.RIGHT), Column("Комментарий", 18, Align.LEFT),
+                        ReportColumn("Дата", 12.0, ReportAlign.CENTER), ReportColumn("Вид", 8.0, ReportAlign.LEFT),
+                        ReportColumn("Категория", 16.0, ReportAlign.LEFT), ReportColumn("Голов", 8.0, ReportAlign.RIGHT),
+                        ReportColumn("Причина", 16.0, ReportAlign.LEFT), ReportColumn("Живой, кг", 11.0, ReportAlign.RIGHT),
+                        ReportColumn("Мясо, кг", 11.0, ReportAlign.RIGHT), ReportColumn("Комментарий", 18.0, ReportAlign.LEFT),
                     ),
                     lines.map { l ->
                         listOf(
-                            Cell.Text(CoalText.date(farm.dayOf(l.date))), Cell.Text(l.species.title), Cell.Text(l.category),
-                            Cell.Count(l.heads), Cell.Text(l.reason), l.liveGrams?.let { Cell.Tons(it) } ?: Cell.Text("—"),
-                            l.meatGrams?.let { Cell.Tons(it) } ?: Cell.Text("—"), Cell.Text(l.comment),
+                            ReportCell.text(CoalText.date(farm.dayOf(l.date))), ReportCell.text(l.species.title), ReportCell.text(l.category),
+                            ReportCell.count(l.heads), ReportCell.text(l.reason), l.liveGrams?.let { kilograms(it) } ?: ReportCell.text("—"),
+                            l.meatGrams?.let { kilograms(it) } ?: ReportCell.text("—"), ReportCell.text(l.comment),
                         )
                     },
                     null,
@@ -171,26 +157,26 @@ object LivestockReport {
             )
         }
         blocks += footer(info.managerName, createdAt, farm)
-        return Document("Забой_${fileStamp(period, start, farm)}", "${info.farmName} · Отчёт по забою $title", blocks)
+        return ReportDocument("Забой_${fileStamp(period, start, farm)}", "${info.farmName} · Отчёт по забою $title", blocks)
     }
 
     // ---- Движение поголовья ----
 
     fun movement(
         rows: List<HerdMovementRow>, period: LivestockPeriod, start: Instant, info: FarmInfo, createdAt: Instant, farm: FarmTime,
-    ): Document {
+    ): ReportDocument {
         val title = periodTitle(period, start, farm)
-        val blocks = mutableListOf<Block>(Block.Title("ДВИЖЕНИЕ ПОГОЛОВЬЯ"), Block.BoldText(info.farmName), Block.Text("Период: $title"))
+        val blocks = mutableListOf<ReportBlock>(ReportBlock.Title("ДВИЖЕНИЕ ПОГОЛОВЬЯ"), ReportBlock.BoldText(info.farmName), ReportBlock.Text("Период: $title"))
         val columns = listOf(
-            Column("Категория", 20, Align.LEFT), Column("На начало", 9, Align.RIGHT), Column("Поступ-ло", 9, Align.RIGHT),
-            Column("Приплод", 9, Align.RIGHT), Column("Перевод +", 9, Align.RIGHT), Column("Перевод −", 9, Align.RIGHT),
-            Column("Забой", 8, Align.RIGHT), Column("Продажа", 9, Align.RIGHT), Column("Падёж", 8, Align.RIGHT),
-            Column("Прочее", 8, Align.RIGHT), Column("На конец", 9, Align.RIGHT),
+            ReportColumn("Категория", 20.0, ReportAlign.LEFT), ReportColumn("На начало", 9.0, ReportAlign.RIGHT), ReportColumn("Поступ-ло", 9.0, ReportAlign.RIGHT),
+            ReportColumn("Приплод", 9.0, ReportAlign.RIGHT), ReportColumn("Перевод +", 9.0, ReportAlign.RIGHT), ReportColumn("Перевод −", 9.0, ReportAlign.RIGHT),
+            ReportColumn("Забой", 8.0, ReportAlign.RIGHT), ReportColumn("Продажа", 9.0, ReportAlign.RIGHT), ReportColumn("Падёж", 8.0, ReportAlign.RIGHT),
+            ReportColumn("Прочее", 8.0, ReportAlign.RIGHT), ReportColumn("На конец", 9.0, ReportAlign.RIGHT),
         )
-        fun cells(r: HerdMovementRow, name: String): List<Cell> = listOf(
-            Cell.Text(name), Cell.Count(r.start), Cell.Count(r.initial + r.purchase), Cell.Count(r.birth), Cell.Count(r.transferIn),
-            Cell.Count(r.transferOut), Cell.Count(r.slaughter), Cell.Count(r.sale), Cell.Count(r.death), Cell.Count(r.other),
-            Cell.Count(r.end),
+        fun cells(r: HerdMovementRow, name: String): List<ReportCell> = listOf(
+            ReportCell.text(name), ReportCell.count(r.start), ReportCell.count(r.initial + r.purchase), ReportCell.count(r.birth), ReportCell.count(r.transferIn),
+            ReportCell.count(r.transferOut), ReportCell.count(r.slaughter), ReportCell.count(r.sale), ReportCell.count(r.death), ReportCell.count(r.other),
+            ReportCell.count(r.end),
         )
         var all: HerdMovementRow? = null
         for (species in Species.entries) {
@@ -198,29 +184,29 @@ object LivestockReport {
             val first = speciesRows.firstOrNull() ?: continue
             val total = speciesRows.drop(1).fold(first) { a, b -> a + b }
             all = all?.let { it + total } ?: total
-            blocks += Block.Heading(species.title)
-            blocks += Block.Table(Table(columns, speciesRows.map { cells(it, it.name) }, cells(total, "Итого ${species.title}")))
+            blocks += ReportBlock.Heading(species.title)
+            blocks += ReportBlock.Table(ReportTable(columns, speciesRows.map { cells(it, it.name) }, cells(total, "Итого ${species.title}")))
         }
         val sum = all
         if (sum != null) {
-            blocks += Block.Heading("Всё хозяйство")
-            blocks += Block.Pairs(
+            blocks += ReportBlock.Heading("Всё хозяйство")
+            blocks += ReportBlock.Pairs(
                 listOf(
-                    Pair("Остаток на начало периода", Cell.Count(sum.start), true),
-                    Pair("Поступление (и начальное поголовье)", Cell.Count(sum.initial + sum.purchase), false),
-                    Pair("Приплод", Cell.Count(sum.birth), false),
-                    Pair("Забой", Cell.Count(sum.slaughter), false),
-                    Pair("Продажи", Cell.Count(sum.sale), false),
-                    Pair("Падёж", Cell.Count(sum.death), false),
-                    Pair("Прочее списание", Cell.Count(sum.other), false),
-                    Pair("Остаток на конец периода", Cell.Count(sum.end), true),
+                    ReportPair("Остаток на начало периода", ReportCell.count(sum.start), true),
+                    ReportPair("Поступление (и начальное поголовье)", ReportCell.count(sum.initial + sum.purchase), false),
+                    ReportPair("Приплод", ReportCell.count(sum.birth), false),
+                    ReportPair("Забой", ReportCell.count(sum.slaughter), false),
+                    ReportPair("Продажи", ReportCell.count(sum.sale), false),
+                    ReportPair("Падёж", ReportCell.count(sum.death), false),
+                    ReportPair("Прочее списание", ReportCell.count(sum.other), false),
+                    ReportPair("Остаток на конец периода", ReportCell.count(sum.end), true),
                 ),
             )
-            blocks += Block.Note("Переводы между категориями не меняют общее поголовье.")
+            blocks += ReportBlock.Note("Переводы между категориями не меняют общее поголовье.")
         } else {
-            blocks += Block.Text("Животных и операций за период нет.")
+            blocks += ReportBlock.Text("Животных и операций за период нет.")
         }
         blocks += footer(info.managerName, createdAt, farm)
-        return Document("Движение_поголовья_${fileStamp(period, start, farm)}", "${info.farmName} · Движение поголовья $title", blocks)
+        return ReportDocument("Движение_поголовья_${fileStamp(period, start, farm)}", "${info.farmName} · Движение поголовья $title", blocks)
     }
 }

@@ -66,6 +66,7 @@ import ru.kfh.core.timesheet.TimesheetKind
 import ru.kfh.core.timesheet.TimesheetRow
 import ru.kfh.core.timesheet.TimesheetTotals
 import ru.kfh.tabel.ui.common.Card
+import ru.kfh.tabel.ui.reports.TimesheetExportActions
 import ru.kfh.tabel.ui.common.TitledScreen
 import ru.kfh.tabel.ui.theme.Tabel
 import java.time.DayOfWeek
@@ -132,6 +133,8 @@ fun MonthGridScreen(vm: TimesheetViewModel, onBack: () -> Unit) {
                 }
                 if (!canEdit) ReadOnlyNote()
                 Legend(d.isHours)
+                // «Скачать PDF», «Экспорт в Excel», «Распечатать», «Поделиться» of the shown month (`ExportActions`).
+                TimesheetExportActions(d, vm.farm, surname = null)
             }
         }
     }
@@ -411,8 +414,14 @@ private fun TotalsCells(
 
 // MARK: Totals and legend
 
+/** The farm's totals row of the shown kind. */
 @Composable
-private fun FarmHoursTotals(d: TimesheetDocument) {
+internal fun FarmTotals(d: TimesheetDocument) {
+    if (d.isHours) FarmHoursTotals(d) else FarmCodeTotals(d)
+}
+
+@Composable
+internal fun FarmHoursTotals(d: TimesheetDocument) {
     val t = d.farmHoursTotals ?: HoursTotals()
     Card {
         Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -441,7 +450,7 @@ private fun FarmHoursTotals(d: TimesheetDocument) {
 }
 
 @Composable
-private fun FarmCodeTotals(d: TimesheetDocument) {
+internal fun FarmCodeTotals(d: TimesheetDocument) {
     val t = d.farmTotals
     Card {
         Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -467,7 +476,7 @@ private fun FarmCodeTotals(d: TimesheetDocument) {
 }
 
 @Composable
-private fun Legend(isHours: Boolean) {
+internal fun Legend(isHours: Boolean) {
     Card {
         Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Text("Обозначения", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)

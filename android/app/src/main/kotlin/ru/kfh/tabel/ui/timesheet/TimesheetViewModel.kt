@@ -13,6 +13,7 @@ import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.flow.map
 import kotlinx.serialization.json.JsonObject
+import ru.kfh.core.timesheet.FarmInfo
 import ru.kfh.core.model.AttendanceRecord
 import ru.kfh.core.model.Employee
 import ru.kfh.core.model.Entities
@@ -63,6 +64,8 @@ class TimesheetViewModel(
     private val scope: CoroutineScope,
     val photos: PhotoStore,
     private val now: () -> Instant = { Instant.now() },
+    /** The farm's name and manager (from `Me`) and the settings row: the header of the timesheet. */
+    val farmInfo: Flow<FarmInfo> = kotlinx.coroutines.flow.flowOf(FarmInfo.DEFAULT),
 ) {
     /** One person of the day: their hours mark, their status mark, their photo (if any). */
     data class DayRow(val employee: Employee, val hours: Int?, val status: DayStatus?, val photo: File?)
@@ -164,12 +167,12 @@ class TimesheetViewModel(
             DayState(day, today, rows, DayMarkRules.statuses(day, today))
         }
 
-    /** The month's timesheet of [kind] for everyone employed in it, archived ones too. */
-    fun monthDocument(month: YearMonth, kind: TimesheetKind): Flow<TimesheetDocument> =
-        combine(employees, marks, attendance, farmTime) { people, marks, records, farm ->
+    /** The month's timesheet of [kind] for everyone employed in it, archived ones too, or for [onlyEmployeeId] alone. */
+    fun monthDocument(month: YearMonth, kind: TimesheetKind, onlyEmployeeId: String? = null): Flow<TimesheetDocument> =
+        combine(employees, marks, attendance, farmTime, farmInfo) { people, marks, records, farm, info ->
             TimesheetBuilder.build(
-                month = month, employees = people, marks = marks, attendance = records, onlyEmployeeId = null,
-                createdAt = now(), farm = farm, kind = kind,
+                month = month, employees = people, marks = marks, attendance = records, onlyEmployeeId = onlyEmployeeId,
+                settings = info, createdAt = now(), farm = farm, kind = kind,
             )
         }
 

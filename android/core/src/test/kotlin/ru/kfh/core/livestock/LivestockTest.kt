@@ -13,6 +13,9 @@ import ru.kfh.core.testing.assertTrue
 import ru.kfh.core.ids.StableId
 import ru.kfh.core.livestock.LivestockOperationKind.*
 import ru.kfh.core.livestock.Species.*
+import ru.kfh.core.report.ReportBlock
+import ru.kfh.core.report.ReportCell
+import ru.kfh.core.report.ReportPair
 import ru.kfh.core.timesheet.at
 import ru.kfh.core.timesheet.day
 
@@ -258,11 +261,11 @@ class LivestockTest {
 
         val doc = LivestockReport.movement(rows, LivestockPeriod.MONTH, p.start, w.info, w.clock, w.farm)
         assertEquals("Движение_поголовья_2026-12", doc.fileName)
-        assertTrue(LivestockReport.Block.Title("ДВИЖЕНИЕ ПОГОЛОВЬЯ") in doc.blocks)
-        assertTrue(LivestockReport.Block.Text("Период: Декабрь 2026") in doc.blocks)
-        val pairs = doc.blocks.filterIsInstance<LivestockReport.Block.Pairs>().single().pairs
+        assertTrue(ReportBlock.Title("ДВИЖЕНИЕ ПОГОЛОВЬЯ") in doc.blocks)
+        assertTrue(ReportBlock.Text("Период: Декабрь 2026") in doc.blocks)
+        val pairs = doc.blocks.filterIsInstance<ReportBlock.Pairs>().single().pairs
         assertTrue(pairs.any { it.label == "Остаток на конец периода" })
-        assertEquals(LivestockReport.Cell.Count(15), pairs.last().value)
+        assertEquals(ReportCell.count(15), pairs.last().value)
     }
 
     @Test fun movementRowsSkipCategoriesWithoutAnimalsAndMoves() {
@@ -283,12 +286,12 @@ class LivestockTest {
         val herd = LivestockReport.herd(lines, w.farm.dayOf(w.clock), w.info, w.clock, w.farm)
         assertEquals("Поголовье_2026-11-06", herd.fileName)
         assertTrue(
-            LivestockReport.Block.Pairs(
+            ReportBlock.Pairs(
                 listOf(
-                    LivestockReport.Pair("КРС", LivestockReport.Cell.Count(18), false),
-                    LivestockReport.Pair("Козы", LivestockReport.Cell.Count(0), false),
-                    LivestockReport.Pair("Свиньи", LivestockReport.Cell.Count(0), false),
-                    LivestockReport.Pair("Всего животных", LivestockReport.Cell.Count(18), true),
+                    ReportPair("КРС", ReportCell.count(18), false),
+                    ReportPair("Козы", ReportCell.count(0), false),
+                    ReportPair("Свиньи", ReportCell.count(0), false),
+                    ReportPair("Всего животных", ReportCell.count(18), true),
                 ),
             ) in herd.blocks,
         )
@@ -297,8 +300,8 @@ class LivestockTest {
             LivestockRules.slaughterSummary(w.books, p.start, p.end), emptyList(), LivestockPeriod.YEAR, p.start, w.info, w.clock, w.farm,
         )
         assertEquals("Забой_2026", doc.fileName)
-        val table = doc.blocks.filterIsInstance<LivestockReport.Block.Table>().first().table
-        assertTrue(LivestockReport.Cell.Tons(300_000) in table.rows.single(), "meat weight as a number")
+        val table = doc.blocks.filterIsInstance<ReportBlock.Table>().first().table
+        assertTrue(ReportCell.tons(300_000) in table.rows.single(), "meat weight as a number")
     }
 
     @Test fun periodTitles() {

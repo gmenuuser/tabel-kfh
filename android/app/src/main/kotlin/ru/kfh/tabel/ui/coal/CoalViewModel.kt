@@ -30,7 +30,6 @@ import ru.kfh.core.model.DeliveryLocation
 import ru.kfh.core.model.Driver
 import ru.kfh.core.model.DriverPayment
 import ru.kfh.core.model.Entities
-import ru.kfh.core.model.FarmSettings
 import ru.kfh.core.model.RecordCodec
 import ru.kfh.core.time.FarmTime
 import ru.kfh.core.timesheet.FarmInfo
@@ -61,6 +60,8 @@ class CoalViewModel(
     farmTime: StateFlow<FarmTime>,
     scope: CoroutineScope,
     private val now: () -> Instant = { Instant.now() },
+    /** The farm's name and manager (from `Me`) and the settings row: the header of the reports. */
+    val farmInfo: Flow<FarmInfo> = kotlinx.coroutines.flow.flowOf(FarmInfo.DEFAULT),
 ) {
     /** The sale screen: the day's sales (newest first), its figures, whether it is closed, the current price. */
     data class DayState(
@@ -140,9 +141,6 @@ class CoalViewModel(
 
     /** Closed days, newest first («Дни» of the history). */
     val closedDays: Flow<List<CoalWorkDay>> = workDays.map(CoalRules::closedDays)
-
-    private val farmInfo: Flow<FarmInfo> =
-        records<FarmSettings>(Entities.farmSettings).map { it.firstOrNull()?.let(FarmInfo::from) ?: FarmInfo.DEFAULT }
 
     /** Everything the rules read, rebuilt after any change. */
     val books: Flow<CoalBooks> = combine(sales, payments, drivers, workDays, farmTime) { s, p, d, w, farm ->

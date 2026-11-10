@@ -279,7 +279,7 @@ object TimesheetBuilder {
     }
 
     /** Employees whose employment overlaps `month`, by ФИО (equal names by id). */
-    internal fun workingIn(month: YearMonth, employees: List<EmployeeSnapshot>): List<EmployeeSnapshot> {
+    fun workingIn(month: YearMonth, employees: List<EmployeeSnapshot>): List<EmployeeSnapshot> {
         val first = month.atDay(1)
         val last = month.atEndOfMonth()
         return employees

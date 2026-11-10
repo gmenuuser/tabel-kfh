@@ -28,6 +28,8 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import ru.kfh.core.coal.CoalReportLayout
+import ru.kfh.tabel.ui.reports.ReportExportActions
 import ru.kfh.core.coal.CoalMath
 import ru.kfh.core.coal.CoalText
 import ru.kfh.core.coal.CoalTotals
@@ -121,6 +123,7 @@ fun CoalHistoryScreen(vm: CoalViewModel, onBack: () -> Unit, openSummary: (Local
                         val report by remember(month) { vm.monthReport(month) }.collectAsState(initial = null)
                         report?.let {
                             SectionHeader("Отчёт за месяц")
+                            ReportExportActions(CoalReportLayout.document(it, vm.farm))
                             CoalReportContent(it, zone, onPay = null)
                         }
                     }

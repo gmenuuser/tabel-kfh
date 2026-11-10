@@ -8,9 +8,12 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.launch
 import okhttp3.OkHttpClient
 import ru.kfh.core.roles.Role
+import ru.kfh.core.timesheet.FarmInfo
+import ru.kfh.tabel.session.farmInfoFlow
 import ru.kfh.tabel.db.PhotoStore
 import ru.kfh.tabel.db.RecordWriter
 import ru.kfh.tabel.db.RoomLocalStore
@@ -68,17 +71,20 @@ class AppGraph(
     /** Every change of the screens goes through here; a queued change syncs 1 s later. */
     val writer = RecordWriter(db, { session.role ?: Role.viewer }, scheduler::changed)
 
+    /** The header of every document: the farm's name and manager from `Me`, the rest from the synced settings row. */
+    val farmInfo: Flow<FarmInfo> = farmInfoFlow(session.state, db.records())
+
     /** «Табель работников»: its flows and actions, over the store and the farm's time. */
-    val timesheet: TimesheetViewModel by lazy { TimesheetViewModel(db.records(), writer, session.farmTime, scope, photos) }
+    val timesheet: TimesheetViewModel by lazy { TimesheetViewModel(db.records(), writer, session.farmTime, scope, photos, farmInfo = farmInfo) }
 
     /** «Продажа угля»: its flows and actions, over the store and the farm's time. */
-    val coal: CoalViewModel by lazy { CoalViewModel(db.records(), writer, session.farmTime, scope) }
+    val coal: CoalViewModel by lazy { CoalViewModel(db.records(), writer, session.farmTime, scope, farmInfo = farmInfo) }
 
     /** «Скот и забой»: its flows and actions, over the store and the farm's time. */
-    val livestock: LivestockViewModel by lazy { LivestockViewModel(db.records(), writer, session.farmTime, scope) }
+    val livestock: LivestockViewModel by lazy { LivestockViewModel(db.records(), writer, session.farmTime, scope, farmInfo = farmInfo) }
 
     /** «Агрономические калькуляторы»: the saved calculations and the drafts (in `SharedPreferences`). */
-    val agro: AgroViewModel by lazy { AgroViewModel(db.records(), writer, session.farmTime, scope, PrefsAgroDraftStore(app)) }
+    val agro: AgroViewModel by lazy { AgroViewModel(db.records(), writer, session.farmTime, scope, PrefsAgroDraftStore(app), farmInfo = farmInfo) }
 
     init {
         scope.launch {

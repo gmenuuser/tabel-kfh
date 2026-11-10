@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- The folders of the exported PDF / XLSX files, shared through the FileProvider (`ExportFiles`). -->
+<paths>
+    <cache-path name="export" path="Export/" />
+    <cache-path name="coal-export" path="CoalExport/" />
+</paths>

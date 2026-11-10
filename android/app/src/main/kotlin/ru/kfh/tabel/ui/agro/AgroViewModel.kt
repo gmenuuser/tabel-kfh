@@ -12,6 +12,7 @@ import kotlinx.coroutines.flow.map
 import kotlinx.serialization.builtins.MapSerializer
 import kotlinx.serialization.builtins.serializer
 import kotlinx.serialization.json.Json
+import ru.kfh.core.timesheet.FarmInfo
 import ru.kfh.core.agro.AgroEngine
 import ru.kfh.core.agro.AgroError
 import ru.kfh.core.agro.AgroKind
@@ -71,6 +72,8 @@ class AgroViewModel(
     scope: CoroutineScope,
     private val drafts: AgroDraftStore,
     private val now: () -> Instant = { Instant.now() },
+    /** The farm's name and manager (from `Me`) and the settings row: the header of the history's PDF. */
+    val farmInfo: Flow<FarmInfo> = kotlinx.coroutines.flow.flowOf(FarmInfo.DEFAULT),
 ) {
     private val actions = ActionQueue(scope)
 

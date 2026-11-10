@@ -62,6 +62,12 @@ android {
         unitTests.isReturnDefaultValues = true
     }
 
+    // Fixtures of the reports (the spec's coal day, the sample timesheets) for both the JVM and the device tests.
+    sourceSets {
+        getByName("test") { kotlin.srcDir("src/sharedTest/kotlin") }
+        getByName("androidTest") { kotlin.srcDir("src/sharedTest/kotlin") }
+    }
+
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17

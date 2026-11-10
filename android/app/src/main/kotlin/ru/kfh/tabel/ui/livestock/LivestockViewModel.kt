@@ -10,6 +10,7 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.flow.map
 import kotlinx.serialization.json.JsonObject
+import ru.kfh.core.timesheet.FarmInfo
 import ru.kfh.core.livestock.HerdMove
 import ru.kfh.core.livestock.LivestockBooks
 import ru.kfh.core.livestock.LivestockChange
@@ -74,6 +75,8 @@ class LivestockViewModel(
     private val farmTime: StateFlow<FarmTime>,
     scope: CoroutineScope,
     private val now: () -> Instant = { Instant.now() },
+    /** The farm's name and manager (from `Me`) and the settings row: the header of the reports. */
+    val farmInfo: Flow<FarmInfo> = kotlinx.coroutines.flow.flowOf(FarmInfo.DEFAULT),
 ) {
     private val actions = ActionQueue(scope)
 
