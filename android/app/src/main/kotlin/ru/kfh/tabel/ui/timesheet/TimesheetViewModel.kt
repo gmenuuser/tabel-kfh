@@ -11,6 +11,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.drop
+import kotlinx.coroutines.flow.filter
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.flowOn
@@ -44,6 +45,7 @@ import ru.kfh.tabel.db.PhotoStore
 import ru.kfh.tabel.db.RecordDao
 import ru.kfh.tabel.db.RecordWriter
 import ru.kfh.tabel.db.observe
+import ru.kfh.tabel.session.SessionState
 import java.io.File
 import java.time.Instant
 import java.time.LocalDate
@@ -124,6 +126,17 @@ class TimesheetViewModel(
         _today.value = fresh
         day.value = fresh
         month.value = YearMonth.from(fresh)
+    }
+
+    /**
+     * [resetDays] on every sign-in — the step from «not signed in» to «signed in» — and never on the `SignedIn(me)`
+     * the session re-emits after a sync when the role, the farm's name or its zone changed: a day or month picked by
+     * hand must survive that (a zone change is followed through [farmTime] by [refreshToday] alone).
+     */
+    fun resetOnSignIn(states: Flow<SessionState>) {
+        scope.launch {
+            states.map { it is SessionState.SignedIn }.distinctUntilChanged().filter { it }.collect { resetDays() }
+        }
     }
 
     /** Milliseconds until the farm's next midnight after [todayFlow]'s day (at least one second): when to refresh. */
@@ -275,14 +288,24 @@ class TimesheetViewModel(
                 } else {
                     EmployeeRules.update(existing, draft, farm)
                 }
-                // The photo first (local only): a failed record write then leaves no half-saved employee behind,
-                // and a retry of the form never queues a second one.
-                if (photo != null) photos.save(e.id, photo) else if (removePhoto) photos.delete(e.id)
-                try {
+                fun applyPhoto() {
+                    if (photo != null) photos.save(e.id, photo) else if (removePhoto) photos.delete(e.id)
+                }
+                if (existing == null) {
+                    // A new employee: the photo (local only) first, so a refused record write leaves nothing half-saved
+                    // and a retry of the form never queues a second employee.
+                    applyPhoto()
+                    try {
+                        writer.save(Entities.employee, e.id, RecordCodec.encode(e))
+                    } catch (ex: Exception) {
+                        photos.delete(e.id)
+                        throw ex
+                    }
+                } else {
+                    // An existing one: the record first, so a refused write keeps the old photo; the same id is
+                    // written again on a retry (no duplicate, no second op when nothing changed).
                     writer.save(Entities.employee, e.id, RecordCodec.encode(e))
-                } catch (ex: Exception) {
-                    if (existing == null) photos.delete(e.id)
-                    throw ex
+                    applyPhoto()
                 }
                 Result.success(e)
             } catch (ex: Exception) {

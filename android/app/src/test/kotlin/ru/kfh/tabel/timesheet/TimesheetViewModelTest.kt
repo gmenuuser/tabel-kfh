@@ -21,6 +21,7 @@ import org.junit.rules.TemporaryFolder
 import ru.kfh.core.ids.StableId
 import ru.kfh.core.model.Entities
 import ru.kfh.core.roles.Role
+import ru.kfh.core.sync.Me
 import ru.kfh.core.time.FarmTime
 import ru.kfh.core.timesheet.AttendanceError
 import ru.kfh.core.timesheet.DayStatus
@@ -30,6 +31,7 @@ import ru.kfh.tabel.db.PhotoStore
 import ru.kfh.tabel.db.RecordWriter
 import ru.kfh.tabel.db.TabelDb
 import ru.kfh.tabel.db.openTestDb
+import ru.kfh.tabel.session.SessionState
 import ru.kfh.tabel.ui.timesheet.TimesheetViewModel
 import java.time.Clock
 import java.time.Instant
@@ -337,6 +339,60 @@ class TimesheetViewModelTest {
         val saved = vm.saveEmployee(null, draft, photo = byteArrayOf(9), removePhoto = false).getOrThrow()
         assertEquals(1, ops().size)
         assertNotNull(photos.load(saved.id))
+    }
+
+    @Test
+    fun pickedDaySurvivesAProfileRefreshButNotANewSignIn() = runTest {
+        val me = Me("u1", Role.owner, "КФХ Зубахин", null, null, chita)
+        val states = MutableStateFlow<SessionState>(SessionState.SignedOut)
+        vm.resetOnSignIn(states)
+        states.value = SessionState.SignedIn(me)
+        awaitUntil { vm.day.value == farmDay }
+        // The owner picks another day and month.
+        val picked = farmDay.minusDays(3)
+        vm.day.value = picked
+        vm.month.value = YearMonth.of(2026, 10)
+        // After a sync the session re-emits SignedIn with a changed Me (role, name): nothing moves.
+        states.value = SessionState.SignedIn(me.copy(role = Role.manager, farmName = "КФХ Зубахин А. В."))
+        states.value = SessionState.SignedIn(me.copy(role = Role.manager, farmName = "КФХ Зубахин А. В.", region = "Забайкалье"))
+        kotlinx.coroutines.delay(200)
+        assertEquals(picked, vm.day.value)
+        assertEquals(YearMonth.of(2026, 10), vm.month.value)
+        // A sign-out and a new sign-in open on today and this month again.
+        states.value = SessionState.Loading
+        states.value = SessionState.SignedIn(me)
+        awaitUntil { vm.day.value == farmDay }
+        assertEquals(YearMonth.of(2026, 11), vm.month.value)
+    }
+
+    private suspend fun awaitUntil(condition: () -> Boolean) {
+        val deadline = System.currentTimeMillis() + 5_000
+        while (!condition()) {
+            if (System.currentTimeMillis() > deadline) throw AssertionError("condition not met in 5 s")
+            kotlinx.coroutines.delay(20)
+        }
+    }
+
+    @Test
+    fun refusedUpdateKeepsTheOldPhoto() = runTest {
+        val id = addEmployee()
+        val old = byteArrayOf(1, 1, 1)
+        vm.saveEmployee(employee(id), EmployeeDraft.from(employee(id), farm), photo = old, removePhoto = false).getOrThrow()
+        val before = ops().size
+        role = Role.viewer
+        val e = employee(id)
+        val draft = EmployeeDraft.from(e, farm).copy(position = "Сторож")
+        // A replaced photo and a removed photo: both refused writes leave the old photo in place.
+        assertTrue(vm.saveEmployee(e, draft, photo = byteArrayOf(2, 2), removePhoto = false).isFailure)
+        assertTrue(old.contentEquals(photos.load(id)))
+        assertTrue(vm.saveEmployee(e, draft, photo = null, removePhoto = true).isFailure)
+        assertTrue(old.contentEquals(photos.load(id)))
+        assertEquals(before, ops().size)
+        // The owner's retry writes the record once and then the photo.
+        role = Role.owner
+        vm.saveEmployee(e, draft, photo = byteArrayOf(2, 2), removePhoto = false).getOrThrow()
+        assertEquals(before + 1, ops().size)
+        assertTrue(byteArrayOf(2, 2).contentEquals(photos.load(id)))
     }
 
     @Test

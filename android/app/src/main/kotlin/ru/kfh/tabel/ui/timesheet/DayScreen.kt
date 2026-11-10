@@ -92,9 +92,12 @@ fun DayScreen(
         vm.refreshToday()
         onPauseOrDispose { }
     }
-    LaunchedEffect(today) {
-        delay(vm.millisUntilNextFarmDay())
-        vm.refreshToday()
+    // A loop, not a one-shot: an early wake (same day) or a zone change recomputes the next midnight and waits on.
+    LaunchedEffect(vm) {
+        while (true) {
+            delay(vm.millisUntilNextFarmDay())
+            vm.refreshToday()
+        }
     }
     var search by remember { mutableStateOf("") }
     var more by remember { mutableStateOf(false) }
