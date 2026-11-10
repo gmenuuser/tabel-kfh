@@ -19,6 +19,8 @@ import ru.kfh.tabel.session.EncryptedTokenStore
 import ru.kfh.tabel.session.SessionManager
 import ru.kfh.tabel.session.SyncScheduler
 import ru.kfh.tabel.session.TokenStore
+import ru.kfh.tabel.ui.agro.AgroViewModel
+import ru.kfh.tabel.ui.agro.PrefsAgroDraftStore
 import ru.kfh.tabel.ui.coal.CoalViewModel
 import ru.kfh.tabel.ui.livestock.LivestockViewModel
 import ru.kfh.tabel.ui.timesheet.TimesheetViewModel
@@ -74,6 +76,9 @@ class AppGraph(
 
     /** «Скот и забой»: its flows and actions, over the store and the farm's time. */
     val livestock: LivestockViewModel by lazy { LivestockViewModel(db.records(), writer, session.farmTime, scope) }
+
+    /** «Агрономические калькуляторы»: the saved calculations and the drafts (in `SharedPreferences`). */
+    val agro: AgroViewModel by lazy { AgroViewModel(db.records(), writer, session.farmTime, scope, PrefsAgroDraftStore(app)) }
 
     init {
         scope.launch {

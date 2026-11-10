@@ -12,11 +12,15 @@ import androidx.navigation.navArgument
 import kotlinx.coroutines.async
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.launch
+import ru.kfh.core.agro.AgroKind
 import ru.kfh.core.roles.Module
 import ru.kfh.core.sync.Me
 import ru.kfh.core.sync.SyncStatus
 import ru.kfh.tabel.AppGraph
 import ru.kfh.tabel.session.SessionState
+import ru.kfh.tabel.ui.agro.AgroCalculatorScreen
+import ru.kfh.tabel.ui.agro.AgroHistoryScreen
+import ru.kfh.tabel.ui.agro.AgroHomeScreen
 import ru.kfh.tabel.ui.coal.CloseDayScreen
 import ru.kfh.tabel.ui.coal.CoalDaySummaryScreen
 import ru.kfh.tabel.ui.coal.CoalHistoryScreen
@@ -67,13 +71,20 @@ object Routes {
     const val LIVESTOCK_SLAUGHTER = "livestock/slaughter?category={category}"
     const val LIVESTOCK_HISTORY = "livestock/history?category={category}"
     const val LIVESTOCK_REPORTS = "livestock/reports"
+    const val AGRO = "agro"
+    const val AGRO_HISTORY = "agro/history"
+    const val AGRO_CALCULATOR = "agro/{kind}?id={id}"
 
     fun module(m: Module) = when (m) {
         Module.timesheet -> TIMESHEET_DAY
         Module.coal -> COAL
         Module.livestock -> LIVESTOCK
+        Module.agro -> AGRO
         else -> "module/${m.name}"
     }
+
+    /** The calculator [kind], empty (its draft) or over the saved calculation [id]. */
+    fun agroCalculator(kind: AgroKind, id: String? = null) = if (id == null) "agro/${kind.wire}" else "agro/${kind.wire}?id=$id"
 
     /** The form of the saved operation [id], or of a new one for [category]: «Добавить» ([adding]) or «Уменьшить». */
     fun livestockOperation(id: String?, category: String? = null, adding: Boolean = false) =
@@ -145,7 +156,7 @@ private fun FarmRoot(graph: AppGraph, me: Me) {
         }
         composable(Routes.MODULE, arguments = listOf(navArgument("name") { type = NavType.StringType })) { entry ->
             val m = entry.arguments?.getString("name")?.let { n -> Module.entries.firstOrNull { it.name == n } }
-            // The other modules come with Tasks 12–15: until then only the title and «Назад».
+            // The reports module comes with Task 15: until then only the title and «Назад».
             TitledScreen(m?.let(::moduleTitle).orEmpty(), onBack = { nav.popBackStack() })
         }
         composable(Routes.TIMESHEET_DAY) {
@@ -275,6 +286,27 @@ private fun FarmRoot(graph: AppGraph, me: Me) {
         composable(Routes.LIVESTOCK_REPORTS) {
             // The livestock reports (PDF / Excel) come with the reports module (Task 15): until then only the title and «Назад».
             TitledScreen("Отчёты по скоту", onBack = { nav.popBackStack() })
+        }
+        composable(Routes.AGRO) {
+            AgroHomeScreen(
+                graph.agro,
+                onBack = { nav.popBackStack() },
+                openCalculator = { kind -> nav.navigate(Routes.agroCalculator(kind)) },
+                openHistory = { nav.navigate(Routes.AGRO_HISTORY) },
+            )
+        }
+        composable(Routes.AGRO_HISTORY) {
+            AgroHistoryScreen(graph.agro, onBack = { nav.popBackStack() }) { c -> nav.navigate(Routes.agroCalculator(AgroKind.fromWire(c.kind), c.id)) }
+        }
+        composable(
+            Routes.AGRO_CALCULATOR,
+            arguments = listOf(
+                navArgument("kind") { type = NavType.StringType },
+                navArgument("id") { type = NavType.StringType; nullable = true; defaultValue = null },
+            ),
+        ) { entry ->
+            val kind = AgroKind.fromWire(entry.arguments?.getString("kind").orEmpty())
+            AgroCalculatorScreen(graph.agro, kind, entry.arguments?.getString("id"), onBack = { nav.popBackStack() })
         }
     }
 }
