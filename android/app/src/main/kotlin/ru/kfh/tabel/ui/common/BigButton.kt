@@ -29,6 +29,7 @@ import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import ru.kfh.tabel.ui.theme.Tabel
 
@@ -62,8 +63,9 @@ fun ModuleButton(
             Icon(icon, contentDescription = null, tint = Color.White, modifier = Modifier.size(28.dp))
         }
         Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-            Text(title, color = Color.White, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold,
-                 maxLines = 2)
+            // No line limit: at font scale 2 on a 360 dp screen «АГРОНОМИЧЕСКИЕ КАЛЬКУЛЯТОРЫ» needs three lines,
+            // and a clipped title is worse than a taller button (SmallScreenLargeFontTest).
+            Text(title, color = Color.White, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
             Text(subtitle, color = Color.White, style = MaterialTheme.typography.bodyMedium,
                  modifier = Modifier.alpha(0.9f))
         }
@@ -95,9 +97,10 @@ fun BigButton(
         if (busy) {
             CircularProgressIndicator(color = Color.White, strokeWidth = 2.dp, modifier = Modifier.size(22.dp))
         } else {
+            // Centered also when huge text wraps the label onto two lines.
             Text(text, color = Color.White.copy(alpha = if (enabled) 1f else 0.7f),
                  style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold,
-                 modifier = Modifier.padding(horizontal = 16.dp))
+                 textAlign = TextAlign.Center, modifier = Modifier.padding(horizontal = 16.dp, vertical = 10.dp))
         }
     }
 }
