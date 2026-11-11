@@ -43,6 +43,105 @@ jobs:
             android/app/build/reports/tests
           if-no-files-found: ignore
 
+  # The instrumented tests (the flows of Tasks 9–15, the walkthroughs and the small-screen check of Task 17, the
+  # report samples) on two emulators: the oldest Android the app runs on (26) with the Galaxy Nexus profile — a
+  # 360×640 dp screen and 1 GB — and a current one (35) on a Pixel. Each uploads its review samples (report PDFs,
+  # XLSXs and page PNGs, every walkthrough screenshot); the «review-samples» job merges both for one download.
+  emulator:
+    needs: test
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - api-level: 26
+            target: google_apis
+            arch: x86_64
+            profile: Galaxy Nexus
+            ram-size: 1024M
+          - api-level: 35
+            target: google_apis
+            arch: x86_64
+            profile: pixel_6
+            ram-size: 2048M
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: gradle/actions/setup-gradle@v4
+      - name: Fetch Gradle (retries; services.gradle.org flakes)
+        working-directory: android
+        run: |
+          for i in 1 2 3 4 5; do
+            ./gradlew --version && exit 0
+            echo "gradle download failed (try $i), waiting"; sleep 30
+          done
+          exit 1
+      - name: Enable KVM
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+      - name: Build the apks before the emulator starts
+        working-directory: android
+        run: ./gradlew :app:assembleDebug :app:assembleDebugAndroidTest
+      - name: Instrumented tests on API ${{ matrix.api-level }}
+        uses: reactivecircus/android-emulator-runner@v2.38.0
+        with:
+          api-level: ${{ matrix.api-level }}
+          target: ${{ matrix.target }}
+          arch: ${{ matrix.arch }}
+          profile: ${{ matrix.profile }}
+          ram-size: ${{ matrix.ram-size }}
+          emulator-options: -no-window -gpu swiftshader_indirect -no-snapshot -noaudio -no-boot-anim -camera-back none -camera-front none
+          disable-animations: true
+          emulator-boot-timeout: 900
+          working-directory: android
+          script: |
+            # No «isn't responding» dialogs over the app (the launcher ANRs on a slow first boot); screen on.
+            adb shell settings put global hide_error_dialogs 1
+            adb shell settings put secure show_first_crash_dialog 0 || true
+            adb shell input keyevent 82 || true
+            # The apks stay installed so the review samples can be pulled afterwards; shots=true makes the flow
+            # tests of Tasks 9–15 keep their pictures too.
+            ./gradlew :app:connectedDebugAndroidTest \
+              -Pandroid.injected.androidTest.leaveApksInstalledAfterRun=true \
+              -Pandroid.testInstrumentationRunnerArguments.shots=true
+      - name: Pull the review samples
+        if: always()
+        working-directory: android
+        run: bash scripts/pull-review-samples.sh build/review-samples
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: review-samples-api${{ matrix.api-level }}
+          path: android/build/review-samples
+          if-no-files-found: warn
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: emulator-reports-api${{ matrix.api-level }}
+          path: |
+            android/app/build/reports/androidTests/connected
+            android/app/build/outputs/androidTest-results/connected
+          if-no-files-found: ignore
+
+  review-samples:
+    needs: emulator
+    if: always()
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/upload-artifact/merge@v4
+        with:
+          name: review-samples
+          pattern: review-samples-api*
+          separate-directories: true
+          delete-merged: true
+
   build:
     needs: test
     runs-on: ubuntu-latest
