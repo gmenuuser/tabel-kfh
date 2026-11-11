@@ -10,6 +10,13 @@ plugins {
 
 val runNumber = System.getenv("GITHUB_RUN_NUMBER")?.toIntOrNull() ?: 1
 
+// versionCode = 1000 + the CI run number (1001 for a local build without GITHUB_RUN_NUMBER). The offset keeps every
+// build above the first phones' hand-signed 1.0.101 (versionCode 101) and survives a recreated workflow, whose run
+// numbers start at 1 again; a lower code would be INSTALL_FAILED_VERSION_DOWNGRADE on every phone. versionName is
+// «1.0.<versionCode>», the same number the download page and version.json show.
+val versionCodeOffset = 1000
+val appVersionCode = versionCodeOffset + runNumber
+
 // Release signing: env vars in CI, android/keystore.properties locally. Never committed.
 val keystoreProps = Properties().apply {
     val f = rootProject.file("keystore.properties")
@@ -30,8 +37,8 @@ android {
         applicationId = "ru.kfh.tabel"
         minSdk = 26
         targetSdk = 36
-        versionCode = runNumber
-        versionName = "1.0.$runNumber"
+        versionCode = appVersionCode
+        versionName = "1.0.$appVersionCode"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 

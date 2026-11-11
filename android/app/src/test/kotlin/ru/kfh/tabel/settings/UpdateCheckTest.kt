@@ -41,11 +41,29 @@ class UpdateCheckTest {
         assertNull(check(41).newer())
     }
 
-    @Test fun explicitUrlAndMissingNameTolerated() = runBlocking {
-        server.enqueue(MockResponse().setBody("""{"versionCode": 43, "url": "https://example.ru/x/TabelKFH.apk", "extra": true}"""))
+    @Test fun ourUrlAndMissingNameTolerated() = runBlocking {
+        server.enqueue(MockResponse().setBody("""{"versionCode": 43, "url": "https://kfh.cubely.ru/android/TabelKFH-43.apk", "extra": true}"""))
         val u = check(41).newer()
-        assertEquals("https://example.ru/x/TabelKFH.apk", u?.url)
+        assertEquals("https://kfh.cubely.ru/android/TabelKFH-43.apk", u?.url)
         assertEquals("1.0.43", u?.versionName)
+    }
+
+    /** The download address from the answer is opened only on our own https host; anything else is the `.apk` next to `version.json`. */
+    @Test fun foreignUrlFallsBackToTheApkNextToVersionJson() = runBlocking {
+        for (url in listOf("https://example.ru/x/TabelKFH.apk", "http://kfh.cubely.ru/android/tabel-kfh.apk", "https://kfh.cubely.ru.evil.ru/a.apk", "")) {
+            server.enqueue(MockResponse().setBody("""{"versionCode": 43, "url": "$url"}"""))
+            assertEquals(url, server.url("/android/tabel-kfh.apk").toString(), check(41).newer()?.url)
+        }
+        assertEquals(true, UpdateCheck.isOurs("https://kfh.cubely.ru/android/tabel-kfh.apk"))
+        assertEquals(false, UpdateCheck.isOurs("https://kfh.cubely.ru.evil.ru/android/tabel-kfh.apk"))
+    }
+
+    /** The versionCode offset (build.gradle.kts: 1000 + run number) keeps every CI build above the hand-signed 1.0.101 (101). */
+    @Test fun ciBuildIsNewerThanTheHandSignedFirstVersion() = runBlocking {
+        server.enqueue(MockResponse().setBody("""{"versionCode": 1001, "versionName": "1.0.1001"}"""))
+        assertEquals(1001L, check(101).newer()?.versionCode)
+        server.enqueue(MockResponse().setBody("""{"versionCode": 1001, "versionName": "1.0.1001"}"""))
+        assertNull(check(1001).newer())
     }
 
     @Test fun serverTroubleSilent() = runBlocking {

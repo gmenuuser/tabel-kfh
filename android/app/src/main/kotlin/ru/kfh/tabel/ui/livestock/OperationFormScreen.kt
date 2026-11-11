@@ -162,7 +162,7 @@ fun OperationFormScreen(vm: LivestockViewModel, operationId: String?, categoryId
                         Text("Голов", style = MaterialTheme.typography.bodyLarge, modifier = Modifier.weight(1f))
                         HeadsField(d.headsText, { draft = d.copy(headsText = it) }, "headsField", Modifier.width(160.dp), enabled = canEdit)
                     }
-                    DateTimeRow("Дата", d.date, vm.farm.zone, enabled = canEdit) { draft = d.copy(date = it) }
+                    DateTimeRow("Дата", d.date, vm.farm, enabled = canEdit) { draft = d.copy(date = it) }
                     OutlinedTextField(value = d.comment, onValueChange = { draft = d.copy(comment = it) }, enabled = canEdit, maxLines = 3,
                                       placeholder = { Text("Комментарий") }, modifier = Modifier.fillMaxWidth().testTag("comment"))
                 }

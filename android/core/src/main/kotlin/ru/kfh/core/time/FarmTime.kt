@@ -20,6 +20,15 @@ class FarmTime(val zone: ZoneId, private val clock: Clock = Clock.systemUTC()) {
 
     /** Midnight of the day at the farm. */
     fun startOf(d: LocalDate): Instant = d.atStartOfDay(zone).toInstant()
+
+    fun now(): Instant = clock.instant()
+
+    /**
+     * The moment a day picked for a record stands for, as the site saves it (`livestock.tsx`): this moment for
+     * today, the farm's midnight for any other day. A backdated operation then sorts before the same day's later
+     * ones everywhere, and the server's herd check sees the same order the phone did.
+     */
+    fun momentOf(day: LocalDate): Instant = if (day == today()) now() else startOf(day)
 }
 
 object Iso {

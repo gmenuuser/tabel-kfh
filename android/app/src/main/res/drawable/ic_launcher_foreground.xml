@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  The iPhone icon's mark (AppIcon.appiconset/icon-1024.png): a white «T» with an orange underline. The 1024-unit
+  geometry (bar 262..762 × 300..400, stem 462..562 × 400..760, underline 262..762 × 800..830) scaled by 0.086 and
+  centred in the 108 dp adaptive canvas, so every corner stays inside the 66 dp safe circle of any launcher mask.
+-->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <!-- the bar of the T -->
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:pathData="M32.5,31.2 H75.5 V39.8 H32.5 Z" />
+    <!-- the stem -->
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:pathData="M49.7,39.8 H58.3 V70.8 H49.7 Z" />
+    <!-- the underline -->
+    <path
+        android:fillColor="#FFE8892B"
+        android:pathData="M32.5,74.24 H75.5 V76.82 H32.5 Z" />
+</vector>

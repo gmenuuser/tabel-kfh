@@ -34,7 +34,9 @@ object ShareAndPrint {
             Intent(Intent.ACTION_SEND_MULTIPLE).putParcelableArrayListExtra(Intent.EXTRA_STREAM, uris).setType("*/*")
         }
         intent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
-        context.startActivity(Intent.createChooser(intent, "Поделиться").addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+        // No FLAG_ACTIVITY_NEW_TASK: [context] is the activity's, and the flag only pushed the chooser into a task of
+        // its own on some launchers.
+        context.startActivity(Intent.createChooser(intent, "Поделиться"))
     }
 
     /** The system print dialog with the PDF [pdf], A4 [landscape] or portrait, the job named after the file. */

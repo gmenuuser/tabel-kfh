@@ -165,7 +165,7 @@ class TimesheetViewModel(
                 DayRow(e, hoursRules.hoursOf(e, marks, day), statusRules.status(e, records, day), photo(e.id))
             }
             DayState(day, today, rows, DayMarkRules.statuses(day, today))
-        }
+        }.flowOn(Dispatchers.Default)
 
     /** The month's timesheet of [kind] for everyone employed in it, archived ones too, or for [onlyEmployeeId] alone. */
     fun monthDocument(month: YearMonth, kind: TimesheetKind, onlyEmployeeId: String? = null): Flow<TimesheetDocument> =
@@ -174,7 +174,7 @@ class TimesheetViewModel(
                 month = month, employees = people, marks = marks, attendance = records, onlyEmployeeId = onlyEmployeeId,
                 settings = info, createdAt = now(), farm = farm, kind = kind,
             )
-        }
+        }.flowOn(Dispatchers.Default)
 
     /** One employee's days of [month] within employment, newest first; null when the employee is gone. */
     fun history(employeeId: String, month: YearMonth): Flow<History?> =

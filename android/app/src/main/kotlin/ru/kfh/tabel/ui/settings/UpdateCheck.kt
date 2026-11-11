@@ -27,7 +27,9 @@ class UpdateCheck(private val client: OkHttpClient, private val url: String, pri
                 val code = o["versionCode"]?.jsonPrimitive?.longOrNull ?: return@withContext null
                 if (code <= currentCode) return@withContext null
                 val name = o["versionName"]?.jsonPrimitive?.takeIf { it.isString }?.content ?: "1.0.$code"
-                val apk = o["url"]?.jsonPrimitive?.takeIf { it.isString }?.content ?: defaultApkUrl(url)
+                // Only our own https address is opened from the answer; anything else falls back to the `.apk` next
+                // to `version.json` (the answer is data from the network, not a place to send the person).
+                val apk = o["url"]?.jsonPrimitive?.takeIf { it.isString }?.content?.takeIf(::isOurs) ?: defaultApkUrl(url)
                 Update(code, name, apk)
             }
         } catch (e: Exception) {
@@ -38,7 +40,13 @@ class UpdateCheck(private val client: OkHttpClient, private val url: String, pri
     companion object {
         const val VERSION_URL = "https://kfh.cubely.ru/android/version.json"
 
+        /** The only place a download address from `version.json` may point to. */
+        const val APK_URL_PREFIX = "https://kfh.cubely.ru/"
+
         /** The `.apk` lies next to `version.json`. */
         fun defaultApkUrl(versionUrl: String): String = versionUrl.substringBeforeLast('/') + "/tabel-kfh.apk"
+
+        /** `https://kfh.cubely.ru/…` and nothing else (no http, no other host). */
+        fun isOurs(url: String): Boolean = url.startsWith(APK_URL_PREFIX)
     }
 }

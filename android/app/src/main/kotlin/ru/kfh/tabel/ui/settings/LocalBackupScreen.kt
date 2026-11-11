@@ -63,7 +63,13 @@ fun LocalBackupSection(vm: SettingsViewModel, note: (String) -> Unit) {
                     try {
                         val file = vm.makeBackupFile()
                         pending = file.path
-                        save.launch(file.name)
+                        try {
+                            save.launch(file.name)
+                        } catch (e: Exception) {
+                            // No DocumentsUI on this phone: a message, not a crash.
+                            pending = null
+                            note("Нет приложения, чтобы сохранить файл")
+                        }
                     } catch (e: Exception) {
                         if (e is CancellationException) throw e
                         note("Не удалось создать копию: ${e.message ?: e::class.java.simpleName}")

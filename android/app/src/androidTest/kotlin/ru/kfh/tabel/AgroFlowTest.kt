@@ -148,6 +148,14 @@ class AgroFlowTest {
         assertEquals("""{"area":"10","rate":"200"}""", f["inputs"].toString())
         assertTrue(f["lines"].toString().contains("\"Нужно семян\""))
         assertTrue(app.getSharedPreferences("agro", 0).all.isEmpty())
+
+        // «Сохранить» again on the same form: the saved calculation is updated, not saved a second time.
+        compose.waitUntilExactlyOneExists(hasText("Сохранить изменения"), 5_000)
+        compose.onNodeWithTag("agroTitle").performScrollTo().performTextInput(" 2")
+        compose.onNodeWithTag("saveCalc").performScrollTo().performClick()
+        compose.waitUntilExactlyOneExists(hasText("Изменения сохранены"), 10_000)
+        compose.waitUntil(10_000) { ops().count { it.entity == "agroCalculation" } == 2 }
+        assertEquals(setOf(op.recordId), ops().map { it.recordId }.toSet())
         compose.onNodeWithTag("back").performClick()
 
         // The home counts it; the history lists it with the main line.

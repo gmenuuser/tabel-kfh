@@ -4,6 +4,7 @@ import android.graphics.Bitmap
 import android.util.Log
 import androidx.compose.ui.test.ExperimentalTestApi
 import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.assertTextContains
 import androidx.compose.ui.test.assertTextEquals
 import androidx.compose.ui.test.hasTestTag
 import androidx.compose.ui.test.hasText
@@ -131,11 +132,20 @@ class TimesheetFlowTest {
         compose.onNodeWithText("Дата приёма").performScrollTo().assertIsDisplayed()
         compose.onNodeWithTag("lastName").performTextInput("Зубахин")
         compose.onNodeWithTag("firstName").performTextInput("Иван")
+        compose.onNodeWithTag("position").performTextInput("Скотник")
+        // The activity is destroyed and rebuilt from its saved state (what a process death behind the camera leaves):
+        // the typed form must still be there.
+        scenario.recreate()
+        compose.waitUntilExactlyOneExists(hasTestTag("lastName"), 10_000)
+        compose.onNodeWithTag("lastName").assertTextContains("Зубахин")
+        compose.onNodeWithTag("firstName").assertTextContains("Иван")
+        compose.onNodeWithTag("position").assertTextContains("Скотник")
         compose.onNodeWithTag("save").performClick()
 
-        // Back on the day: the person, «Не отмечен», the «Я» button and the four hours.
+        // Back on the day: the person, «Не отмечен», the «Я» button and the four hours. (The keyboard the rebuilt
+        // field raised may still be on its way down: scroll to the row rather than assume it is in view.)
         compose.waitUntilExactlyOneExists(hasTestTag("row-Зубахин"), 10_000)
-        compose.onNodeWithText("Зубахин Иван").assertIsDisplayed()
+        compose.onNodeWithText("Зубахин Иван").performScrollTo().assertIsDisplayed()
         compose.onNodeWithText("Отмечено: 0 из 1").assertIsDisplayed()
         compose.onNodeWithTag("mark-Зубахин").performScrollTo().performClick()
         compose.waitUntilExactlyOneExists(hasText("Я — был на работе"), 10_000)

@@ -144,12 +144,12 @@ if [ "$GOT" != "$KFH_CERT_SHA256" ]; then
 fi
 echo "==> signed by the kfh release key ($(echo "$CERTS" | sed -n 's/^Signer #1 certificate DN: //p' | tr -d '\r'))"
 
-# 4. the version: from the apk when aapt is there, else the run number (build.gradle.kts: versionCode = run number)
+# 4. the version: from the apk when aapt is there, else 1000 + the run number (build.gradle.kts: versionCode = 1000 + run number)
 AAPT="$(kfh_first_existing "$BT"aapt.exe "$BT"aapt)"
 VER=""
 [ -z "$AAPT" ] || VER="$("$AAPT" dump badging "$(cygpath -w "$APK" 2>/dev/null || echo "$APK")" 2>/dev/null | kfh_android_badging_version || true)"
 if [ -n "$VER" ]; then read -r CODE NAME <<<"$VER"
-elif [ -n "$RUN_NUMBER" ]; then CODE="$RUN_NUMBER"; NAME="1.0.$RUN_NUMBER"
+elif [ -n "$RUN_NUMBER" ]; then CODE="$((1000 + RUN_NUMBER))"; NAME="1.0.$CODE"
 else echo "cannot read the version of $APK: aapt not found under $BT (needed with --apk)" >&2; exit 1
 fi
 VERSION_JSON="$(kfh_android_version_json "$CODE" "$NAME")"

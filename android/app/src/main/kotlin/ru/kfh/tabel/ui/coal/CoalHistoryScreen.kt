@@ -117,7 +117,7 @@ fun CoalHistoryScreen(vm: CoalViewModel, onBack: () -> Unit, openSummary: (Local
                     if (!vm.canSell) ReadOnlyNote()
                     if (sales.isEmpty()) Text("Продаж нет", color = Tabel.colors.secondaryText)
                     for (s in sales) {
-                        CoalSaleCard(s, zone, showsDate = period == Period.MONTH, enabled = vm.canSell, onClick = { openSale(s.id) })
+                        CoalSaleCard(s, zone, showsDate = period == Period.MONTH, onClick = { openSale(s.id) })
                     }
                     if (period == Period.MONTH) {
                         val report by remember(month) { vm.monthReport(month) }.collectAsState(initial = null)

@@ -20,6 +20,8 @@ class FakeStore : LocalStore {
     val pulled = mutableListOf<List<RemoteRecord>>()
     /** Runs at the start of [applyPulled] and [acknowledge]: a test can hold the engine right before a write. */
     @Volatile var beforeWrite: suspend () -> Unit = {}
+    /** The next [wipe] throws (a broken database): the engine must still end the session. */
+    @Volatile var failWipe = false
 
     private fun key(entity: String, id: String) = "$entity:$id"
 
@@ -93,6 +95,10 @@ class FakeStore : LocalStore {
 
     override suspend fun wipe() {
         wipes++
+        if (failWipe) {
+            failWipe = false
+            throw IllegalStateException("database is locked")
+        }
         records.clear()
         queue.clear()
         refused.clear()

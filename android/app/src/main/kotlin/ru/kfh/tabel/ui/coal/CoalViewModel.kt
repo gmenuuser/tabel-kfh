@@ -145,7 +145,7 @@ class CoalViewModel(
     /** Everything the rules read, rebuilt after any change. */
     val books: Flow<CoalBooks> = combine(sales, payments, drivers, workDays, farmTime) { s, p, d, w, farm ->
         CoalBooks(s, p, d, w, farm)
-    }
+    }.flowOn(Dispatchers.Default)
 
     /** The day of [day] on the sale screen. */
     fun dayState(day: LocalDate): Flow<DayState> =
@@ -157,22 +157,22 @@ class CoalViewModel(
                 day = day, today = today, sales = daySales.asReversed(), totals = CoalTotals.of(daySales),
                 isClosed = closed, closedAt = if (closed) wd?.closedAt else null, pricePerTon = price,
             )
-        }
+        }.flowOn(Dispatchers.Default)
 
     /** Today at the farm, live: the sale screen. */
     val todayState: Flow<DayState> = todayFlow.flatMapLatest { dayState(it) }
 
     fun dayReport(day: LocalDate): Flow<CoalPeriodReport> =
-        combine(books, farmInfo) { b, info -> CoalReport.day(day, b, info, now()) }
+        combine(books, farmInfo) { b, info -> CoalReport.day(day, b, info, now()) }.flowOn(Dispatchers.Default)
 
     fun monthReport(month: YearMonth): Flow<CoalPeriodReport> =
-        combine(books, farmInfo) { b, info -> CoalReport.month(month, b, info, now()) }
+        combine(books, farmInfo) { b, info -> CoalReport.month(month, b, info, now()) }.flowOn(Dispatchers.Default)
 
     fun driver(id: String): Flow<Driver?> =
         drivers.map { list -> list.firstOrNull { it.id.equals(id, ignoreCase = true) } }.distinctUntilChanged()
 
     fun balance(driverId: String): Flow<DriverBalance> =
-        books.map { CoalReport.balance(driverId, it.sales, it.payments) }.distinctUntilChanged()
+        books.map { CoalReport.balance(driverId, it.sales, it.payments) }.flowOn(Dispatchers.Default).distinctUntilChanged()
 
     /** Every driver's account, archived ones included («Общий долг перед водителями»). */
     val balances: Flow<Map<String, DriverBalance>> =

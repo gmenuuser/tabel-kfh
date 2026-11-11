@@ -61,9 +61,22 @@ keyAlias=kfh
 ```
 
 Затем в `android/`: `GITHUB_RUN_NUMBER=<номер> ./gradlew :app:assembleRelease` → `app/build/outputs/apk/release/app-release.apk`
-(`versionCode` = номер, `versionName` = `1.0.<номер>`; без переменной — 1). Те же четыре значения можно дать
-переменными окружения `KFH_KEYSTORE_FILE`, `KFH_KEYSTORE_PASSWORD`, `KFH_KEY_ALIAS`, `KFH_KEY_PASSWORD`
-(так делает CI) — они главнее файла.
+(`versionCode` = 1000 + номер, `versionName` = `1.0.<versionCode>`; без переменной — 1001, см. «Номер версии»).
+Те же четыре значения можно дать переменными окружения `KFH_KEYSTORE_FILE`, `KFH_KEYSTORE_PASSWORD`,
+`KFH_KEY_ALIAS`, `KFH_KEY_PASSWORD` (так делает CI) — они главнее файла.
+
+## Номер версии (versionCode)
+
+Android ставит новую сборку поверх старой, только если её `versionCode` **больше** установленного — иначе
+`INSTALL_FAILED_VERSION_DOWNGRADE`, и приложение пришлось бы удалять. Поэтому (`app/build.gradle.kts`):
+
+- `versionCode = 1000 + GITHUB_RUN_NUMBER` (номер запуска workflow `android.yml`), `versionName = 1.0.<versionCode>`;
+  локальная сборка без переменной — `1001` / `1.0.1001`;
+- сдвиг 1000 держит каждую сборку выше первой версии, подписанной вручную на этом компьютере (`1.0.101`, код 101,
+  стоит на первых телефонах), и переживает пересоздание workflow (номера запусков тогда снова идут с 1);
+- `deploy-android.sh` берёт `versionCode` из .apk (`aapt`), а без `aapt` считает его так же: 1000 + номер запуска;
+- если workflow когда-нибудь переименуют или пересоздадут, сдвиг нужно поднять выше последнего выложенного
+  `versionCode` (например, до 2000) — одним числом `versionCodeOffset` в `app/build.gradle.kts`.
 
 Проверка подписи: `apksigner verify --print-certs app-release.apk` (`build-tools/36.0.0/apksigner.bat`) показывает
 `CN=Tabel KFH` и отпечаток выше.

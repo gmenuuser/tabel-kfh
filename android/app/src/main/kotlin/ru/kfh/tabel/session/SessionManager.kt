@@ -345,12 +345,11 @@ class SessionManager(
      */
     suspend fun resyncFromStart() = off {
         if (_state.value !is SessionState.SignedIn) return@off
-        try {
-            store.setCursor(0)
-        } catch (e: Exception) {
-            if (e is CancellationException) throw e
-        }
-        syncNow()
+        val engine = _engine.value ?: return@off
+        if (engine.stopped) return@off
+        // The cursor goes to 0 inside the engine, under its lock: a pull page of a run on its way cannot overwrite it.
+        engine.resyncFromStart()
+        refreshMe(engine)
     }
 
     // MARK: Engine

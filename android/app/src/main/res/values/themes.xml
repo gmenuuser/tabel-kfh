@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!--
+      The window theme under Compose (TabelTheme draws everything inside). Light here, dark in values-night: the
+      window background and the framework's own dialogs follow the phone's theme from the first frame, so a cold
+      start in the dark theme no longer flashes white (ledger T9-M5). values-v31 adds the splash colour on top.
+    -->
+    <style name="Theme.Tabel.Base" parent="@android:style/Theme.Material.Light.NoActionBar">
+        <item name="android:windowBackground">@color/window_background</item>
+        <item name="android:colorPrimary">@color/tabel_primary</item>
+        <item name="android:colorAccent">@color/tabel_primary</item>
+    </style>
+
+    <style name="Theme.Tabel" parent="Theme.Tabel.Base" />
+</resources>

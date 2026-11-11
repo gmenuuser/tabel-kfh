@@ -418,7 +418,8 @@ private fun SalesList(s: CoalViewModel.DayState, vm: CoalViewModel, canSell: Boo
         Text("Продажи за сегодня", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
         if (s.sales.isEmpty()) Text("Сегодня продаж пока нет.", color = Tabel.colors.secondaryText, modifier = Modifier.testTag("noSales"))
         for (sale in s.sales) {
-            CoalSaleCard(sale, vm.farm.zone, enabled = canSell, onClick = { onOpen(sale.id) })
+            // A viewer opens the card too: the form shows the sale read-only (`ReadOnlyNote`), as the site does.
+            CoalSaleCard(sale, vm.farm.zone, onClick = { onOpen(sale.id) })
             if (!s.isClosed && canSell) {
                 Text("Отменить продажу", color = Tabel.colors.error, style = MaterialTheme.typography.bodyMedium,
                      modifier = Modifier.clickable(role = Role.Button) { onCancel(sale.id) }.testTag("cancel-${sale.id}").padding(horizontal = 14.dp, vertical = 2.dp))

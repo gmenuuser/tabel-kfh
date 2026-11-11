@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Theme.swift: the dark green primary, the iPhone icon's background. -->
+    <color name="ic_launcher_background">#1F5D3A</color>
+    <color name="tabel_primary">#1F5D3A</color>
+    <!-- The window behind Compose (TabelColors.background): white by day, black by night, so a cold start shows
+         no flash of the other theme before the first frame. -->
+    <color name="window_background">#FFFFFF</color>
+</resources>

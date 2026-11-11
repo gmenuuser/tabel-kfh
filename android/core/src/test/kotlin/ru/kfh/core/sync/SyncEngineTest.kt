@@ -522,4 +522,66 @@ class SyncEngineTest {
         engine.refreshStatus()
         assertTrue(engine.status.value is SyncStatus.Failed)
     }
+
+    /** A wipe that fails on a 401 (a broken database) still ends the session: never «signed in» with a dead engine. */
+    @Test
+    fun unauthorizedSignsOutEvenWhenTheWipeFails() = runBlocking {
+        localDriver()
+        store.failWipe = true
+        server.override = { TestServer.json("""{"error":"Нужно войти заново"}""", 401) }
+        engine.syncNow()
+
+        assertEquals(1, signedOut)
+        assertEquals(1, store.wipes)
+        assertTrue(engine.stopped)
+        assertTrue(engine.status.value is SyncStatus.Failed)
+        // The rows are still there (the next launch wipes them); the engine never touches them again.
+        assertEquals(1, store.queue.size)
+        engine.syncNow()
+        assertEquals(1, server.seen.size)
+    }
+
+    /**
+     * «Удалить» a refused change / a server restore: the cursor goes to 0 under the engine's lock, so a pull page of
+     * the run on its way lands first and cannot overwrite the reset — the next pull starts from the first change.
+     */
+    @Test
+    fun resyncFromStartWaitsForTheRunInFlight() = runBlocking {
+        val asked = CountDownLatch(1)
+        val release = CountDownLatch(1)
+        server.addPages(
+            TestServer.page(listOf(TestServer.change("driver", id(), 3, """{"lastName":"Первый"}""")), next = 9),
+            TestServer.page(listOf(TestServer.change("driver", id(), 4, """{"lastName":"Второй"}""")), next = 12),
+        )
+        server.override = { s ->
+            if (s.path == "/sync/pull" && s.query == "since=0" && asked.count > 0) {
+                asked.countDown()
+                release.await(5, TimeUnit.SECONDS)
+            }
+            null
+        }
+        val run = async(kotlinx.coroutines.Dispatchers.Default) { engine.syncNow() }
+        assertTrue(asked.await(5, TimeUnit.SECONDS))
+        val resync = async(kotlinx.coroutines.Dispatchers.Default) { engine.resyncFromStart() }
+        Thread.sleep(150)
+        assertFalse(resync.isCompleted, "the reset must wait for the run in flight")
+        release.countDown()
+        run.await()
+        resync.await()
+
+        // The first run's page (next = 9) landed, then the reset, then a pull from 0 again that moved on to 12.
+        assertEquals(listOf("since=0", "since=0"), server.pulls().map { it.query })
+        assertEquals(2, store.pulled.size)
+        assertEquals(12L, store.cursorValue)
+        assertEquals(SyncStatus.Synced, engine.status.value)
+    }
+
+    @Test
+    fun resyncFromStartAfterStopDoesNothing() = runBlocking {
+        store.cursorValue = 5
+        engine.stop()
+        engine.resyncFromStart()
+        assertEquals(5L, store.cursorValue)
+        assertEquals(0, server.seen.size)
+    }
 }

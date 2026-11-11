@@ -112,10 +112,10 @@ class LivestockViewModel(
     /** Everything the rules read, rebuilt after any change. */
     val books: Flow<LivestockBooks> = combine(categories, operations, slaughters, settings, farmTime) { c, o, s, st, f ->
         LivestockBooks(c, o, s, f, st)
-    }
+    }.flowOn(Dispatchers.Default)
 
     /** Heads of every category and species now. */
-    val herd: Flow<Herd> = combine(categories, operations) { c, o -> Herd.of(c, o) }
+    val herd: Flow<Herd> = combine(categories, operations) { c, o -> Herd.of(c, o) }.flowOn(Dispatchers.Default)
 
     fun categories(species: Species): Flow<List<LivestockCategory>> = categories.map { list -> list.filter { Species.fromWire(it.species) == species } }
 

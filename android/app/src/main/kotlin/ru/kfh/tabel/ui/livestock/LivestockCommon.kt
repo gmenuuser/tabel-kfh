@@ -54,6 +54,7 @@ import ru.kfh.tabel.ui.theme.Tabel
 import ru.kfh.tabel.ui.timesheet.FarmDatePickerDialog
 import java.time.Instant
 import java.time.ZoneId
+import ru.kfh.core.time.FarmTime
 
 /** Colours of the livestock module (`LivestockTheme`): КРС green, козы blue, свиньи orange, забой red. */
 object LivestockTheme {
@@ -183,11 +184,13 @@ fun WeightField(title: String, value: String, onChange: (String) -> Unit, tag: S
 }
 
 /**
- * «Дата — 07.11.2026 14:05» on the farm's clock; a tap opens the farm date picker. The picked day keeps the time of
- * day (the iPhone's wheel changes both; Android's picker only the day).
+ * «Дата — 07.11.2026 14:05» on the farm's clock; a tap opens the farm date picker. A picked day becomes the site's
+ * moment for it ([FarmTime.momentOf]): now for today, the farm's midnight for an earlier day, so a backdated
+ * decrease is not ordered after a same-day 00:00 operation and refused by the server after the phone accepted it.
  */
 @Composable
-fun DateTimeRow(label: String, date: Instant, zone: ZoneId, enabled: Boolean = true, tag: String = "pickDate", onPick: (Instant) -> Unit) {
+fun DateTimeRow(label: String, date: Instant, farm: FarmTime, enabled: Boolean = true, tag: String = "pickDate", onPick: (Instant) -> Unit) {
+    val zone = farm.zone
     var picking by remember { mutableStateOf(false) }
     Row(
         modifier = Modifier.fillMaxWidth().clickable(enabled = enabled, role = Role.Button) { picking = true }.testTag(tag).padding(vertical = 6.dp),
@@ -197,10 +200,7 @@ fun DateTimeRow(label: String, date: Instant, zone: ZoneId, enabled: Boolean = t
         Text(CoalText.dateTime(date, zone), color = Tabel.colors.primary, fontWeight = FontWeight.SemiBold)
     }
     if (picking) {
-        FarmDatePickerDialog(date.atZone(zone).toLocalDate(), onDismiss = { picking = false }) { day ->
-            val time = date.atZone(zone).toLocalTime()
-            onPick(day.atTime(time).atZone(zone).toInstant())
-        }
+        FarmDatePickerDialog(date.atZone(zone).toLocalDate(), onDismiss = { picking = false }) { day -> onPick(farm.momentOf(day)) }
     }
 }
 

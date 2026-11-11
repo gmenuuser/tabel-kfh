@@ -69,6 +69,25 @@ class SyncEngine(
         mutex.withLock { }
     }
 
+    /**
+     * The next pull from the first change, then a run: every record takes the server's version again (after a
+     * server restore, or a refused change removed). The cursor is reset under the lock, so a page of a run on its
+     * way cannot land a moment later and overwrite the reset, leaving the refused value on the phone.
+     */
+    suspend fun resyncFromStart() {
+        if (stopped) return
+        mutex.withLock {
+            if (stopped) return
+            try {
+                store.setCursor(0)
+            } catch (e: Exception) {
+                // The store refused: the run below pulls from where it was, as before.
+                if (e is CancellationException) throw e
+            }
+            run()
+        }
+    }
+
     /** The status from the store alone, without the network (at start, after a refused change was removed). */
     suspend fun refreshStatus() {
         if (stopped) return
@@ -98,8 +117,15 @@ class SyncEngine(
             _status.value = SyncStatus.Failed(e.message!!)
             // Counted before the wipe: the sign-in screen tells how many unsent changes were lost.
             val lost = try { store.pendingCount() } catch (_: Exception) { 0 }
-            store.wipe()
-            onSignedOut(lost)
+            try {
+                store.wipe()
+            } catch (e: Exception) {
+                // A wipe that failed is not a reason to stay «signed in» with a stopped engine: the session ends
+                // all the same, and the next launch wipes the leftovers (no token, rows left).
+                if (e is CancellationException) throw e
+            } finally {
+                onSignedOut(lost)
+            }
         } catch (e: SSLException) {
             // TLS, certificate: the network is there, the connection is wrong.
             _status.value = SyncStatus.Failed("Ошибка соединения с сервером")

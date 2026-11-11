@@ -139,7 +139,7 @@ fun SlaughterScreen(vm: LivestockViewModel, categoryId: String?, onBack: () -> U
             }
 
             LivestockCaption("4. Дата забоя")
-            Card { DateTimeRow("Дата", draft.date, vm.farm.zone, enabled = canEdit) { draft = draft.copy(date = it) } }
+            Card { DateTimeRow("Дата", draft.date, vm.farm, enabled = canEdit) { draft = draft.copy(date = it) } }
 
             LivestockCaption("5. Причина")
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {

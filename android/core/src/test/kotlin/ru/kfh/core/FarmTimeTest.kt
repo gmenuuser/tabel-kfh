@@ -63,4 +63,17 @@ class FarmTimeTest {
         assertEquals("45 мин", durationText(45))
         assertEquals("0 мин", durationText(0))
     }
+
+    /** A picked day as the site saves it: this moment for today, the farm's midnight for an earlier day. */
+    @Test
+    fun momentOfPickedDay() {
+        TimeZone.setDefault(TimeZone.getTimeZone("Europe/Moscow"))
+        // 16:30 UTC on the 6th = 01:30 on the 7th at the farm (UTC+9).
+        val now = Instant.parse("2026-11-06T16:30:00Z")
+        val ft = FarmTime(ZoneId.of("Asia/Chita"), Clock.fixed(now, ZoneId.of("UTC")))
+        assertEquals(now, ft.momentOf(LocalDate.of(2026, 11, 7)))
+        // Yesterday at the farm: its midnight at the farm, 15:00 UTC on the 5th — not the phone's midnight.
+        assertEquals(Instant.parse("2026-11-05T15:00:00Z"), ft.momentOf(LocalDate.of(2026, 11, 6)))
+        assertEquals(ft.startOf(LocalDate.of(2026, 10, 1)), ft.momentOf(LocalDate.of(2026, 10, 1)))
+    }
 }

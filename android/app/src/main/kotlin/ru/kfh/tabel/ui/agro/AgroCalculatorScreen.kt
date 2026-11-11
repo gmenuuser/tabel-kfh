@@ -80,6 +80,9 @@ fun AgroCalculatorScreen(vm: AgroViewModel, kind: AgroKind, savedId: String?, on
     var inputs by rememberSaveable { mutableStateOf<Map<String, String>>(emptyMap()) }
     var title by rememberSaveable { mutableStateOf("") }
     var loaded by rememberSaveable { mutableStateOf(false) }
+    // The calculation this form stands for: [savedId] from the history, or the one «Сохранить» just made — from then
+    // on the form edits it («Сохранить изменения»), so a second tap updates instead of saving a twin.
+    var currentId by rememberSaveable { mutableStateOf(savedId) }
     var saved by remember { mutableStateOf<AgroCalculation?>(null) }
     // The id of this form: a second tap on «Сохранить» while it runs is refused; after a save a new one is drawn.
     var formId by rememberSaveable { mutableStateOf(vm.newId()) }
@@ -87,12 +90,17 @@ fun AgroCalculatorScreen(vm: AgroViewModel, kind: AgroKind, savedId: String?, on
     var note by remember { mutableStateOf<String?>(null) }
     var message by remember { mutableStateOf<String?>(null) }
     val canSave = vm.canSave
-    val isNew = savedId == null
+    val isNew = currentId == null
 
-    LaunchedEffect(savedId) {
-        if (savedId != null) {
-            val c = vm.calculation(savedId).first()
-            if (c == null) { onBack(); return@LaunchedEffect }
+    LaunchedEffect(currentId) {
+        val id = currentId
+        if (id != null) {
+            val c = vm.calculation(id).first()
+            if (c == null) {
+                // Opened from the history and gone meanwhile: nothing to show. (After a save it is always there.)
+                if (saved == null) onBack()
+                return@LaunchedEffect
+            }
             saved = c
             if (!loaded) { inputs = c.inputs; title = c.title }
         } else if (!loaded) {
@@ -135,6 +143,9 @@ fun AgroCalculatorScreen(vm: AgroViewModel, kind: AgroKind, savedId: String?, on
             r.onSuccess {
                 note = if (over == null) "Расчёт сохранён в истории" else "Изменения сохранены"
                 formId = vm.newId()
+                // From now on the form edits what it saved: the next «Сохранить изменения» updates this record.
+                saved = it
+                currentId = it.id
             }.onFailure { message = it.message ?: "Не получилось" }
         }
     }

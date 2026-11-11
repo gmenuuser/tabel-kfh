@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <style name="Theme.Tabel.Base" parent="@android:style/Theme.Material.NoActionBar">
+        <item name="android:windowBackground">@color/window_background</item>
+        <item name="android:colorPrimary">@color/tabel_primary</item>
+        <item name="android:colorAccent">@color/tabel_primary</item>
+    </style>
+</resources>
