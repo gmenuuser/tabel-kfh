@@ -106,12 +106,9 @@ jobs:
             adb shell settings put secure show_first_crash_dialog 0 || true
             adb shell input keyevent 82 || true
             # The apks stay installed so the review samples can be pulled afterwards; shots=true makes the flow
-            # tests of Tasks 9–15 keep their pictures too. One line: the action runs each line as its own command.
-            ./gradlew :app:connectedDebugAndroidTest -Pandroid.injected.androidTest.leaveApksInstalledAfterRun=true -Pandroid.testInstrumentationRunnerArguments.shots=true
-      - name: Pull the review samples
-        if: always()
-        working-directory: android
-        run: bash scripts/pull-review-samples.sh build/review-samples
+            # tests of Tasks 9–15 keep their pictures too. The samples are pulled on the same line, before the
+            # action stops the emulator, and also when the tests failed (the action runs each line as its own command).
+            ./gradlew :app:connectedDebugAndroidTest -Pandroid.injected.androidTest.leaveApksInstalledAfterRun=true -Pandroid.testInstrumentationRunnerArguments.shots=true; rc=$?; bash scripts/pull-review-samples.sh build/review-samples; exit $rc
       - uses: actions/upload-artifact@v4
         if: always()
         with:

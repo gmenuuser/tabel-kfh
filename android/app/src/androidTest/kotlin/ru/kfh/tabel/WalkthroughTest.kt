@@ -450,6 +450,9 @@ class WalkthroughTest {
 
     /** Tons, village, truck, then «СОХРАНИТЬ ПРОДАЖУ» — all on the one screen. */
     private fun sell(tons: String, place: String, vehicleTag: String, total: String, shotName: String) {
+        // The chips sit in a sideways-scrolling row: performScrollTo on a chip scrolls only that row, so first
+        // bring the form's top back into view through the column (after a save the screen is at the bottom).
+        compose.onNodeWithTag("tonsField").performScrollTo()
         compose.onNodeWithTag("tons-$tons").performScrollTo().performClick()
         compose.onNodeWithTag("tons-$tons").assertIsSelected()
         compose.onNodeWithTag("location-$place").performScrollTo().performClick()

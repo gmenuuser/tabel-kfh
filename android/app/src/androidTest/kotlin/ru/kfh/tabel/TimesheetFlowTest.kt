@@ -127,7 +127,8 @@ class TimesheetFlowTest {
         // «Добавить сотрудника»: the form, hired today, saved.
         compose.onNodeWithTag("addEmployee").performScrollTo().performClick()
         compose.waitUntilExactlyOneExists(hasText("Новый сотрудник"), 10_000)
-        compose.onNodeWithText("Дата приёма").assertIsDisplayed()
+        // Below the fold on a 360×640 dp screen (the CI's Galaxy Nexus profile).
+        compose.onNodeWithText("Дата приёма").performScrollTo().assertIsDisplayed()
         compose.onNodeWithTag("lastName").performTextInput("Зубахин")
         compose.onNodeWithTag("firstName").performTextInput("Иван")
         compose.onNodeWithTag("save").performClick()
