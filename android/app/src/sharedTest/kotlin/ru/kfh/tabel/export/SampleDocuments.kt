@@ -13,7 +13,6 @@ import ru.kfh.core.livestock.LivestockRules
 import ru.kfh.core.livestock.Species
 import ru.kfh.core.model.AgroCalculation
 import ru.kfh.core.model.AgroLine
-import ru.kfh.core.model.AttendanceRecord
 import ru.kfh.core.model.Employee
 import ru.kfh.core.model.HoursMark
 import ru.kfh.core.model.LivestockCategory
@@ -22,11 +21,9 @@ import ru.kfh.core.model.SlaughterRecord
 import ru.kfh.core.report.ReportDocument
 import ru.kfh.core.time.DEFAULT_FARM_ZONE
 import ru.kfh.core.time.FarmTime
-import ru.kfh.core.timesheet.CellFormat
 import ru.kfh.core.timesheet.FarmInfo
 import ru.kfh.core.timesheet.TimesheetBuilder
 import ru.kfh.core.timesheet.TimesheetDocument
-import ru.kfh.core.timesheet.TimesheetKind
 
 /** The documents of the review samples (`PDFRendererTests.sampleDocument` and the coal / livestock / agro spec data). */
 object SampleDocuments {
@@ -60,40 +57,10 @@ object SampleDocuments {
     }
 
     /**
-     * December 2026 of status codes and hours (`sampleDocument` of PDFRendererTests.swift): weekends off, varied
-     * hours, sick leave, vacation, a day off, an absence, a business trip, one dismissed on the 15th, one hired on
-     * the 10th, blanks at the end.
+     * December 2026 of hours (what the iPhone and the app export; the hours counterpart of `sampleDocument` of
+     * PDFRendererTests.swift): 8 on weekdays with 4 / 12 / 0 sprinkled in, weekends blank, one dismissed on the 15th,
+     * one hired on the 10th, blanks at the end.
      */
-    fun codes(count: Int): TimesheetDocument {
-        val employees = employees(count)
-        val records = mutableListOf<AttendanceRecord>()
-        for ((i, e) in employees.withIndex()) {
-            val kind = i % 12
-            for (day in 1..31) {
-                val date = LocalDate.of(2026, 12, day)
-                val weekend = date.dayOfWeek == DayOfWeek.SATURDAY || date.dayOfWeek == DayOfWeek.SUNDAY
-                var status = if (weekend) "В" else "Я"
-                if (kind == 4 && date.dayOfWeek == DayOfWeek.SATURDAY) status = "Я"
-                if (kind == 2 && day in 7..11) status = "Б"
-                if (kind == 3 && day in 14..25) status = "О"
-                if (kind == 5 && day == 4) status = "ОТ"
-                if (kind == 5 && day == 18) status = "ПР"
-                if (kind == 8 && day in 8..10) status = "К"
-                if (kind == 9 && day >= 30) continue
-                val minutes = 480 + ((i * 13 + day * 7) % 5 - 2) * 30 + (if (day % 4 == 0) 15 else 0)
-                records += AttendanceRecord(
-                    id = "r-${e.id}-$day", employeeId = e.id, day = farm.startOf(date), status = status,
-                    manualWorkedMinutes = if (status == "Я") minutes else null,
-                )
-            }
-        }
-        return TimesheetBuilder.build(
-            YearMonth.of(2026, 12), employees, emptyList(), records, null, info, CellFormat.CODES_AND_HOURS, 2, createdAt, farm,
-            TimesheetKind.CODES,
-        )
-    }
-
-    /** December 2026 of hours (what the iPhone exports today): 8 on weekdays with 4 / 12 / 0 sprinkled in, weekends blank. */
     fun hours(count: Int): TimesheetDocument {
         val employees = employees(count)
         val marks = mutableListOf<HoursMark>()

@@ -42,9 +42,10 @@ import java.net.InetAddress
 import java.util.Collections
 
 /**
- * Sign in → «Табель работников» → «Добавить сотрудника» → «Я» for today → the hours → «Табель за месяц» shows
- * the «Я» cell (codes) and the hours cell. Against a MockWebServer on the device, as [SignInHomeTest]. With the
- * instrumentation argument `shots=true` the day and month screens are saved to `files/shots/` of the app.
+ * Sign in → «Табель работников» → «Добавить сотрудника» → 8 ч for today, 4 ч for tomorrow → «Табель за месяц»
+ * shows both cells → «Старые отметки (архив)» is empty. Only hours marks are written, never a status record.
+ * Against a MockWebServer on the device, as [SignInHomeTest]. With the instrumentation argument `shots=true` the
+ * day and month screens are saved to `files/shots/` of the app.
  */
 @OptIn(ExperimentalTestApi::class)
 @RunWith(AndroidJUnit4::class)
@@ -110,7 +111,7 @@ class TimesheetFlowTest {
     private fun json(s: String) = MockResponse().setHeader("Content-Type", "application/json").setBody(s)
 
     @Test
-    fun addEmployeeMarkPresentAndSeeTheMonth() {
+    fun addEmployeeMarkHoursAndSeeTheMonth() {
         compose.waitUntilExactlyOneExists(hasTestTag("signInLogin"), 10_000)
         compose.onNodeWithTag("signInLogin").performTextInput("anna")
         compose.onNodeWithTag("signInPassword").performTextInput("secret")
@@ -142,33 +143,35 @@ class TimesheetFlowTest {
         compose.onNodeWithTag("position").assertTextContains("Скотник")
         compose.onNodeWithTag("save").performClick()
 
-        // Back on the day: the person, «Не отмечен», the «Я» button and the four hours. (The keyboard the rebuilt
-        // field raised may still be on its way down: scroll to the row rather than assume it is in view.)
+        // Back on the day: the person, «Не отмечен» and the four hours — no «Я» button, no status menu or chip.
+        // (The keyboard the rebuilt field raised may still be on its way down: scroll to the row rather than assume
+        // it is in view.)
         compose.waitUntilExactlyOneExists(hasTestTag("row-Зубахин"), 10_000)
         compose.onNodeWithText("Зубахин Иван").performScrollTo().assertIsDisplayed()
         compose.onNodeWithText("Отмечено: 0 из 1").assertIsDisplayed()
-        compose.onNodeWithTag("mark-Зубахин").performScrollTo().performClick()
-        compose.waitUntilExactlyOneExists(hasText("Я — был на работе"), 10_000)
-        compose.onNodeWithText("Был на работе").assertIsDisplayed()
+        compose.onNodeWithTag("hoursText-Зубахин").assertTextEquals("Не отмечен")
+        compose.onNodeWithTag("mark-Зубахин").assertDoesNotExist()
+        compose.onNodeWithTag("statusMenu-Зубахин").assertDoesNotExist()
+        compose.onNodeWithTag("status-Зубахин").assertDoesNotExist()
+        compose.onNodeWithText("Был на работе").assertDoesNotExist()
         compose.onNodeWithTag("hours-8-Зубахин").performScrollTo().performClick()
         compose.waitUntilExactlyOneExists(hasText("Отмечено: 8 ч"), 10_000)
         compose.onNodeWithText("Отмечено: 1 из 1").assertIsDisplayed()
         compose.onNodeWithText("Часов: 8").assertIsDisplayed()
-        shot("task-10-day")
+        compose.onNodeWithTag("markAll").assertDoesNotExist()
+        shot("hours-only-day")
 
-        // «Завтра»: «Я» is not offered, the other statuses are.
+        // «Завтра»: the same four buttons (hours can be set ahead, as on the iPhone).
         compose.onNodeWithTag("day-Завтра").performScrollTo().performClick()
         compose.waitUntilExactlyOneExists(hasText(ru.kfh.tabel.ui.home.longDate(today.plusDays(1))), 10_000)
-        compose.onNodeWithTag("mark-Зубахин").assertDoesNotExist()
-        compose.onNodeWithTag("statusMenu-Зубахин").performScrollTo().performClick()
-        compose.waitUntilExactlyOneExists(hasTestTag("set-В-Зубахин"), 5_000)
-        compose.onNodeWithTag("set-Я-Зубахин").assertDoesNotExist()
-        compose.onNodeWithTag("set-В-Зубахин").performClick()
-        compose.waitUntilExactlyOneExists(hasText("Выходной"), 10_000)
+        compose.waitUntilExactlyOneExists(hasText("Отмечено: 0 из 1"), 10_000)
+        compose.onNodeWithTag("hours-4-Зубахин").performScrollTo().performClick()
+        compose.waitUntilExactlyOneExists(hasText("Отмечено: 4 ч"), 10_000)
+        compose.onNodeWithText("Часов: 4").assertIsDisplayed()
         compose.onNodeWithTag("day-Сегодня").performScrollTo().performClick()
-        compose.waitUntilExactlyOneExists(hasText("Я — был на работе"), 10_000)
+        compose.waitUntilExactlyOneExists(hasText("Отмечено: 8 ч"), 10_000)
 
-        // «Табель за месяц»: the hours cell, then the «Я» cell of the codes.
+        // «Табель за месяц»: the two hours cells, no «Часы / Обозначения» switch.
         compose.onNodeWithTag("more").performClick()
         compose.onNodeWithTag("openMonth").performClick()
         compose.waitUntilExactlyOneExists(hasText("Табель за месяц"), 10_000)
@@ -176,18 +179,31 @@ class TimesheetFlowTest {
         val cell = "cell-$employeeId-${today.dayOfMonth}"
         compose.waitUntilExactlyOneExists(hasTestTag(cell), 10_000)
         compose.onNodeWithTag(cell).assertTextEquals("8")
+        if (today.plusDays(1).month == today.month) {
+            compose.onNodeWithTag("cell-$employeeId-${today.plusDays(1).dayOfMonth}").assertTextEquals("4")
+        }
+        compose.onNodeWithTag("kind-HOURS").assertDoesNotExist()
+        compose.onNodeWithTag("kind-CODES").assertDoesNotExist()
         compose.onNodeWithText("Всего отработано").assertExists()
-        shot("task-10-month")
-        compose.onNodeWithTag("kind-CODES").performClick()
-        compose.waitUntilExactlyOneExists(hasTestTag(cell), 10_000)
-        compose.onNodeWithTag(cell).assertTextEquals("Я")
-        compose.onNodeWithTag("cell-$employeeId-${today.plusDays(1).dayOfMonth}").assertTextEquals("В")
+        shot("hours-only-month")
 
-        // What was queued: the employee, the hours mark on its stable id, the two status records.
+        // «Старые отметки (архив)»: the old status records, read only; this farm has none.
+        compose.onNodeWithTag("back").performClick()
+        compose.waitUntilExactlyOneExists(hasTestTag("more"), 10_000)
+        compose.onNodeWithTag("more").performClick()
+        compose.onNodeWithTag("openOldMarks").performClick()
+        compose.waitUntilExactlyOneExists(hasText("Старые отметки"), 10_000)
+        compose.waitUntilExactlyOneExists(hasText("В этом месяце старых отметок нет"), 10_000)
+        compose.onNodeWithTag("oldMarksTotal").assertTextEquals("ОТМЕТКИ (0)")
+
+        // What was queued: the employee and the two hours marks on their stable ids; never a status record.
         val all = ops()
         assertEquals(listOf("employee"), all.filter { it.entity == "employee" }.map { it.entity })
-        assertEquals(StableId.hoursMark(employeeId, today), all.single { it.entity == "hoursMark" }.recordId)
-        assertEquals(2, all.count { it.entity == "attendanceRecord" })
+        assertEquals(
+            setOf(StableId.hoursMark(employeeId, today), StableId.hoursMark(employeeId, today.plusDays(1))),
+            all.filter { it.entity == "hoursMark" }.map { it.recordId }.toSet(),
+        )
+        assertEquals(0, all.count { it.entity == "attendanceRecord" })
         assertTrue(all.all { it.recordId == it.recordId.lowercase() })
     }
 

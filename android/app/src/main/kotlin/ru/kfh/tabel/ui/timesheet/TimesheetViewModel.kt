@@ -20,11 +20,6 @@ import ru.kfh.core.model.Entities
 import ru.kfh.core.model.HoursMark
 import ru.kfh.core.model.RecordCodec
 import ru.kfh.core.time.FarmTime
-import ru.kfh.core.timesheet.AttendanceError
-import ru.kfh.core.timesheet.AttendanceRules
-import ru.kfh.core.timesheet.DayMarkChange
-import ru.kfh.core.timesheet.DayMarkRules
-import ru.kfh.core.timesheet.DayStatus
 import ru.kfh.core.timesheet.EmployeeDraft
 import ru.kfh.core.timesheet.EmployeeError
 import ru.kfh.core.timesheet.EmployeeRules
@@ -35,6 +30,7 @@ import ru.kfh.core.timesheet.HoursTotals
 import ru.kfh.core.timesheet.TimesheetBuilder
 import ru.kfh.core.timesheet.TimesheetDocument
 import ru.kfh.core.timesheet.TimesheetKind
+import ru.kfh.core.timesheet.fullName
 import ru.kfh.tabel.db.PhotoStore
 import ru.kfh.tabel.db.RecordDao
 import ru.kfh.tabel.db.RecordWriter
@@ -48,14 +44,16 @@ import java.time.LocalDate
 import java.time.YearMonth
 
 /**
- * «Табель работников»: the store's employees, hours marks and status records as flows the screens collect, and
- * the actions of the screens as the rules of the domain (`HoursMarkRules`, `AttendanceRules`, `EmployeeRules`)
- * written through [RecordWriter]. One per process ([ru.kfh.tabel.AppGraph.timesheet]).
+ * «Табель работников»: the store's employees and hours marks as flows the screens collect, and the actions of the
+ * screens as the rules of the domain (`HoursMarkRules`, `EmployeeRules`) written through [RecordWriter]. One per
+ * process ([ru.kfh.tabel.AppGraph.timesheet]).
  *
  * - «Сегодня», the day of a mark and «this month» are the farm's ([farmTime]), never the phone's.
  * - Every action runs in [scope] (the app's): leaving a screen in the middle never cancels a write.
  * - An action returns the text for «Не получилось» (the domain's Russian message), or null when it went through.
- * - Removing an hours mark writes `hours: null` (the iPhone's way); removing a status deletes the record.
+ * - Removing an hours mark writes `hours: null` (the iPhone's way).
+ * - The status records of the old timesheet (`attendanceRecord`: Я, В, Б…) are never written or deleted here, as
+ *   on the iPhone since its timesheet of hours; they are only read for «Старые отметки (архив)» ([oldMarks]).
  */
 class TimesheetViewModel(
     private val dao: RecordDao,
@@ -67,13 +65,12 @@ class TimesheetViewModel(
     /** The farm's name and manager (from `Me`) and the settings row: the header of the timesheet. */
     val farmInfo: Flow<FarmInfo> = kotlinx.coroutines.flow.flowOf(FarmInfo.DEFAULT),
 ) {
-    /** One person of the day: their hours mark, their status mark, their photo (if any). */
-    data class DayRow(val employee: Employee, val hours: Int?, val status: DayStatus?, val photo: File?)
+    /** One person of the day: their hours mark and their photo (if any). */
+    data class DayRow(val employee: Employee, val hours: Int?, val photo: File?)
 
-    /** The day screen: who works that day with their marks, and which statuses the day takes. */
-    data class DayState(val day: LocalDate, val today: LocalDate, val rows: List<DayRow>, val statuses: List<DayStatus>) {
+    /** The day screen: who works that day with their marks. */
+    data class DayState(val day: LocalDate, val today: LocalDate, val rows: List<DayRow>) {
         val isFuture: Boolean get() = day.isAfter(today)
-        val canPresent: Boolean get() = DayStatus.PRESENT in statuses
         val marked: Int get() = rows.count { it.hours != null }
         val hours: Int get() = rows.sumOf { it.hours ?: 0 }
         val unmarked: Int get() = rows.size - marked
@@ -83,6 +80,12 @@ class TimesheetViewModel(
 
     /** One employee's month: the days of employment, newest first, and the totals of the marked ones. */
     data class History(val employee: Employee, val days: List<HistoryDay>, val totals: HoursTotals, val photo: File?)
+
+    /** One employee's old status marks of a month: «6 — Я, 7 — В» (`OldMarksView`'s line). */
+    data class OldMarksLine(val name: String, val days: String)
+
+    /** «Старые отметки (архив)» of a month: the lines by name and the number of records. */
+    data class OldMarks(val lines: List<OldMarksLine>, val total: Int)
 
     /**
      * «Сегодня» as the screens see it. The iPhone recomputes it on every render and on scene activation; here the
@@ -104,9 +107,6 @@ class TimesheetViewModel(
 
     /** The month of the month screen, kept between visits (the iPhone's `timesheetMonth`). */
     val month: MutableStateFlow<YearMonth> = MutableStateFlow(YearMonth.from(farmToday.flow.value))
-
-    /** Hours (the current timesheet) or the status codes. */
-    val kind = MutableStateFlow(TimesheetKind.HOURS)
 
     /** Recomputes «Сегодня» from the clock and the farm's zone (see [farmToday]). */
     fun refreshToday() {
@@ -133,7 +133,7 @@ class TimesheetViewModel(
     /** Writes one at a time: a second tap reads what the first one wrote. */
     private val actions = ActionQueue(scope)
 
-    val canEditMarks: Boolean get() = writer.canWrite(Entities.hoursMark) && writer.canWrite(Entities.attendanceRecord)
+    val canEditMarks: Boolean get() = writer.canWrite(Entities.hoursMark)
     val canEditEmployees: Boolean get() = writer.canWrite(Entities.employee)
 
     // MARK: What the screens show
@@ -147,6 +147,7 @@ class TimesheetViewModel(
         rows.map { RecordCodec.decode<HoursMark>(it.entity, it.id, it.json()) }
     }.flowOn(Dispatchers.Default)
 
+    /** The status records of the old timesheet, read only (see [oldMarks]). */
     val attendance: Flow<List<AttendanceRecord>> = dao.observe(Entities.attendanceRecord).map { rows ->
         rows.map { RecordCodec.decode<AttendanceRecord>(it.entity, it.id, it.json()) }
     }.flowOn(Dispatchers.Default)
@@ -156,24 +157,36 @@ class TimesheetViewModel(
         if (id.isBlank()) flowOf(null)
         else employees.map { list -> list.firstOrNull { it.id.equals(id, ignoreCase = true) } }.distinctUntilChanged()
 
-    /** The people of [day] (not archived, employed that day), by name, with their marks. */
+    /** The people of [day] (not archived, employed that day), by name, with their hours. */
     fun dayState(day: LocalDate): Flow<DayState> =
-        combine(employees, marks, attendance, farmTime, todayFlow) { people, marks, records, farm, today ->
-            val hoursRules = HoursMarkRules(farm, now)
-            val statusRules = AttendanceRules(farm, now)
-            val rows = EmployeeRules.active(people, day, farm).map { e ->
-                DayRow(e, hoursRules.hoursOf(e, marks, day), statusRules.status(e, records, day), photo(e.id))
-            }
-            DayState(day, today, rows, DayMarkRules.statuses(day, today))
+        combine(employees, marks, farmTime, todayFlow) { people, marks, farm, today ->
+            val rules = HoursMarkRules(farm, now)
+            val rows = EmployeeRules.active(people, day, farm).map { e -> DayRow(e, rules.hoursOf(e, marks, day), photo(e.id)) }
+            DayState(day, today, rows)
         }.flowOn(Dispatchers.Default)
 
-    /** The month's timesheet of [kind] for everyone employed in it, archived ones too, or for [onlyEmployeeId] alone. */
-    fun monthDocument(month: YearMonth, kind: TimesheetKind, onlyEmployeeId: String? = null): Flow<TimesheetDocument> =
-        combine(employees, marks, attendance, farmTime, farmInfo) { people, marks, records, farm, info ->
+    /** The month's timesheet of hours for everyone employed in it, archived ones too, or for [onlyEmployeeId] alone. */
+    fun monthDocument(month: YearMonth, onlyEmployeeId: String? = null): Flow<TimesheetDocument> =
+        combine(employees, marks, farmTime, farmInfo) { people, marks, farm, info ->
             TimesheetBuilder.build(
-                month = month, employees = people, marks = marks, attendance = records, onlyEmployeeId = onlyEmployeeId,
-                settings = info, createdAt = now(), farm = farm, kind = kind,
+                month = month, employees = people, marks = marks, attendance = emptyList(), onlyEmployeeId = onlyEmployeeId,
+                settings = info, createdAt = now(), farm = farm, kind = TimesheetKind.HOURS,
             )
+        }.flowOn(Dispatchers.Default)
+
+    /**
+     * «Старые отметки (архив)» of [month] (`OldMarksView.reload`): the status codes kept from before the timesheet
+     * of hours, one line per employee («6 — Я, 7 — В», by day), sorted by name; a deleted employee's line is
+     * «Сотрудник удалён». Read only: these records are history, not hours.
+     */
+    fun oldMarks(month: YearMonth): Flow<OldMarks> =
+        combine(employees, attendance, farmTime) { people, records, farm ->
+            val names = people.associate { it.id.lowercase() to it.fullName }
+            val inMonth = records.filter { YearMonth.from(farm.dayOf(it.day)) == month }.sortedBy { it.day }
+            val lines = inMonth.groupBy { it.employeeId.lowercase() }.map { (id, rs) ->
+                OldMarksLine(names[id] ?: "Сотрудник удалён", rs.joinToString(", ") { "${farm.dayOf(it.day).dayOfMonth} — ${it.status}" })
+            }.sortedBy { it.name }
+            OldMarks(lines, inMonth.size)
         }.flowOn(Dispatchers.Default)
 
     /** One employee's days of [month] within employment, newest first; null when the employee is gone. */
@@ -229,29 +242,6 @@ class TimesheetViewModel(
         change.put?.let { changes += Triple(Entities.hoursMark, it.id, RecordCodec.encode(it)) }
         for (m in change.delete) changes += Triple(Entities.hoursMark, m.id, RecordCodec.removedHoursMark(m))
         if (changes.isNotEmpty()) writer.saveAll(changes)
-    }
-
-    // MARK: Statuses
-
-    /** The big button: не отмечен → Я, Я → не отмечен, another status → Я. «Я» on a future day is refused. */
-    suspend fun togglePresence(e: Employee, day: LocalDate): String? = action {
-        write(AttendanceRules(farm, now).togglePresence(e, attendance.first(), day))
-    }
-
-    /** Sets the day's status; null removes the mark. */
-    suspend fun setStatus(e: Employee, day: LocalDate, status: DayStatus?): String? = action {
-        write(AttendanceRules(farm, now).setStatus(e, attendance.first(), day, status))
-    }
-
-    suspend fun setStatus(employeeId: String, day: LocalDate, status: DayStatus?): String? = action {
-        write(AttendanceRules(farm, now).setStatus(find(employeeId), attendance.first(), day, status))
-    }
-
-    private suspend fun write(change: DayMarkChange) {
-        when (change) {
-            is DayMarkChange.Put -> writer.save(Entities.attendanceRecord, change.record.id, RecordCodec.encode(change.record))
-            is DayMarkChange.Delete -> change.record?.let { writer.delete(Entities.attendanceRecord, it.id) }
-        }
     }
 
     // MARK: Employees
@@ -316,7 +306,7 @@ class TimesheetViewModel(
         } catch (e: Exception) {
             when (e) {
                 is CancellationException -> throw e
-                is AttendanceError, is HoursError, is EmployeeError -> e.message
+                is HoursError, is EmployeeError -> e.message
                 is IllegalStateException -> e.message ?: "Не получилось"
                 else -> "Не получилось: ${e.message ?: e::class.java.simpleName}"
             }

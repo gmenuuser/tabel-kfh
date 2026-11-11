@@ -9,6 +9,8 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.test.runTest
 import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.put
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
@@ -23,11 +25,9 @@ import ru.kfh.core.model.Entities
 import ru.kfh.core.roles.Role
 import ru.kfh.core.sync.Me
 import ru.kfh.core.time.FarmTime
-import ru.kfh.core.timesheet.AttendanceError
-import ru.kfh.core.timesheet.DayStatus
 import ru.kfh.core.timesheet.EmployeeDraft
-import ru.kfh.core.timesheet.TimesheetKind
 import ru.kfh.tabel.db.PhotoStore
+import ru.kfh.tabel.db.RecordRow
 import ru.kfh.tabel.db.RecordWriter
 import ru.kfh.tabel.db.TabelDb
 import ru.kfh.tabel.db.openTestDb
@@ -142,30 +142,60 @@ class TimesheetViewModelTest {
     }
 
     @Test
-    fun presentOnFutureDayRefused() = runTest {
+    fun hoursCanBeSetAheadAndTomorrowIsFuture() = runTest {
         val id = addEmployee()
         val e = employee(id)
         val tomorrow = farmDay.plusDays(1)
+        // Hours are set on any day of employment, tomorrow too (the iPhone's `HoursService.set`).
+        assertTrue(vm.dayState(tomorrow).first().isFuture)
+        assertNull(vm.tapHours(e, tomorrow, 8))
+        assertEquals(8, vm.dayState(tomorrow).first().rows.single().hours)
+        assertEquals(Entities.hoursMark, ops().last().entity)
+        // Only hours marks are ever written: no status record from any tap.
+        assertEquals(emptyList<String>(), ops().filter { it.entity == Entities.attendanceRecord }.map { it.recordId })
+    }
+
+    @Test
+    fun oldStatusRecordsAreShownAsHistoryAndNeverTouched() = runTest {
+        val id = addEmployee()
+        // Status records of the old timesheet, as the iPhone or the site wrote them and a sync pulled them (an
+        // uppercase employee id too); one of a deleted employee.
+        suspend fun pulled(n: Int, employeeId: String, day: LocalDate, status: String) {
+            val json = buildJsonObject {
+                put("employeeId", employeeId); put("day", farm.startOf(day).toString()); put("status", status)
+                put("createdAt", "2026-10-01T00:00:00.000Z"); put("updatedAt", "2026-10-01T00:00:00.000Z")
+            }
+            db.records().upsert(RecordRow(Entities.attendanceRecord, "r-$n", n.toLong(), json.toString(), deleted = false))
+        }
+        pulled(1, id.uppercase(), farmDay.minusDays(1), "Я")
+        pulled(2, id.uppercase(), farmDay, "В")
+        pulled(3, id, farmDay.minusMonths(1), "Б")
+        pulled(4, "00000000-0000-4000-8000-000000000000", farmDay, "О")
         val before = ops().size
 
-        assertEquals(AttendanceError.FuturePresence.message, vm.setStatus(e, tomorrow, DayStatus.PRESENT))
-        assertEquals(AttendanceError.FuturePresence.message, vm.togglePresence(e, tomorrow))
-        assertEquals("nothing written", before, ops().size)
-        assertNull(vm.dayState(tomorrow).first().rows.single().status)
-        assertEquals(DayStatus.futureStatuses, vm.dayState(tomorrow).first().statuses)
+        // «Старые отметки (архив)»: this month's two records of the employee by day, the deleted employee's line, the total.
+        val archive = vm.oldMarks(YearMonth.of(2026, 11)).first()
+        assertEquals(3, archive.total)
+        assertEquals(listOf("Зубахин Иван", "Сотрудник удалён"), archive.lines.map { it.name })
+        assertEquals("6 — Я, 7 — В", archive.lines[0].days)
+        assertEquals("7 — О", archive.lines[1].days)
+        assertEquals(1, vm.oldMarks(YearMonth.of(2026, 10)).first().total)
+        assertEquals(0, vm.oldMarks(YearMonth.of(2026, 9)).first().total)
 
-        // Every other status can be set ahead.
-        assertNull(vm.setStatus(e, tomorrow, DayStatus.DAY_OFF))
-        assertEquals(DayStatus.DAY_OFF, vm.dayState(tomorrow).first().rows.single().status)
-        assertEquals(Entities.attendanceRecord, ops().last().entity)
-
-        // Today «Я» is one tap, and the same tap removes it (a delete op).
-        assertNull(vm.togglePresence(e, farmDay))
-        assertEquals(DayStatus.PRESENT, vm.dayState(farmDay).first().rows.single().status)
-        assertEquals(DayStatus.entries.toList(), vm.dayState(farmDay).first().statuses)
-        assertNull(vm.togglePresence(e, farmDay))
-        assertNull(vm.dayState(farmDay).first().rows.single().status)
-        assertEquals("delete", ops().last().kind)
+        // They are not hours: the day screen, the month table and the history show no mark...
+        assertNull(vm.dayState(farmDay).first().rows.single().hours)
+        assertEquals("", vm.monthDocument(YearMonth.of(2026, 11)).first().rows.single().cells[farmDay.dayOfMonth - 1].text)
+        assertNull(vm.history(id, YearMonth.of(2026, 11)).first()!!.days.first { it.day == farmDay }.hours)
+        // ...and marking hours on the same day leaves the old record exactly as it was (nothing deleted, nothing rewritten).
+        assertNull(vm.tapHours(employee(id), farmDay, 8))
+        assertNull(vm.tapHours(employee(id), farmDay, 8))
+        assertEquals(before + 2, ops().size)
+        assertTrue(ops().drop(before).all { it.entity == Entities.hoursMark })
+        assertEquals("6 — Я, 7 — В", vm.oldMarks(YearMonth.of(2026, 11)).first().lines[0].days)
+        val kept = db.records().ofEntity(Entities.attendanceRecord)
+        assertEquals(listOf("r-1", "r-2", "r-3", "r-4"), kept.map { it.id })
+        assertTrue(kept.none { it.deleted })
+        assertEquals(JsonPrimitive("В"), kept[1].json()["status"])
     }
 
     @Test
@@ -181,7 +211,7 @@ class TimesheetViewModelTest {
         // Hidden from the day...
         assertEquals(listOf(other), vm.dayState(farmDay).first().rows.map { it.employee.id })
         // ...but the month's timesheet and the history keep the marks.
-        val document = vm.monthDocument(YearMonth.of(2026, 11), TimesheetKind.HOURS).first()
+        val document = vm.monthDocument(YearMonth.of(2026, 11)).first()
         val row = document.rows.first { it.employee.id == id }
         assertEquals(12, row.cells[farmDay.dayOfMonth - 1].hours)
         assertEquals(12, row.hoursTotals?.hours)
@@ -198,16 +228,6 @@ class TimesheetViewModelTest {
     }
 
     @Test
-    fun monthOfCodesShowsTheStatusMark() = runTest {
-        val id = addEmployee()
-        vm.togglePresence(employee(id), farmDay)
-        val codes = vm.monthDocument(YearMonth.of(2026, 11), TimesheetKind.CODES).first()
-        assertEquals("Я", codes.rows.single().cells[farmDay.dayOfMonth - 1].text)
-        val hours = vm.monthDocument(YearMonth.of(2026, 11), TimesheetKind.HOURS).first()
-        assertEquals("", hours.rows.single().cells[farmDay.dayOfMonth - 1].text)
-    }
-
-    @Test
     fun viewerCannotChangeAnything() = runTest {
         val id = addEmployee()
         val e = employee(id)
@@ -215,9 +235,12 @@ class TimesheetViewModelTest {
         assertTrue(!vm.canEditMarks && !vm.canEditEmployees)
         val before = ops().size
         assertNotNull(vm.tapHours(e, farmDay, 8))
-        assertNotNull(vm.togglePresence(e, farmDay))
+        assertNotNull(vm.setHours(id, farmDay, 4))
+        assertNotNull(vm.markUnmarked(farmDay))
         assertNotNull(vm.archive(e))
         assertEquals(before, ops().size)
+        // The archive is read by every role.
+        assertEquals(0, vm.oldMarks(YearMonth.of(2026, 11)).first().total)
     }
 
     @Test
@@ -244,8 +267,9 @@ class TimesheetViewModelTest {
         assertEquals(eighth, vm.day.value)
         val state = vm.dayState(eighth).first()
         assertEquals(eighth, state.today)
-        assertTrue("«Я» is allowed on the new today", state.canPresent)
-        assertNull(vm.togglePresence(employee(id), eighth))
+        assertTrue("the new today is not a future day", !state.isFuture)
+        // A mark on the new today carries the farm midnight of the 8th.
+        assertNull(vm.tapHours(employee(id), eighth, 8))
         assertEquals("2026-11-07T15:00:00.000Z", ops().last().fieldsJson()["day"]!!.let { (it as JsonPrimitive).content })
 
         // A day chosen by hand stays where it is when midnight passes again.
@@ -294,9 +318,7 @@ class TimesheetViewModelTest {
         assertEquals(StableId.hoursMark(id, farmDay), op.recordId)
         assertEquals(JsonNull, op.fieldsJson()["hours"])
         assertNull(vm.history(id, YearMonth.of(2026, 11)).first()!!.days.first { it.day == farmDay }.hours)
-        // The status by id as well, and an id nobody has is refused with a message, not silently.
-        assertNull(vm.setStatus(id, farmDay, DayStatus.SICK))
-        assertEquals(DayStatus.SICK, vm.dayState(farmDay).first().rows.single().status)
+        // An id nobody has is refused with a message, not silently.
         val before = ops().size
         assertEquals("Сотрудник удалён", vm.setHours("00000000-0000-4000-8000-000000000000", farmDay, 8))
         assertEquals(before, ops().size)

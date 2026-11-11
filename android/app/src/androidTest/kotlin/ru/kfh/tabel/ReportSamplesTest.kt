@@ -79,12 +79,10 @@ class ReportSamplesTest {
         val farm = SampleDocuments.farm
         val hours = SampleDocuments.hours(12)
         xlsx("timesheet", TimesheetXlsx.make(hours, farm))
-        xlsx("timesheet-codes", TimesheetXlsx.make(SampleDocuments.codes(12), farm))
         val small = pdf("timesheet", 2) { ExportFiles.timesheetPdf(hours, farm).write(it) }
         assertEquals(1, small.pageCount)
         assertEquals(842, small.width)
         assertEquals(595, small.height)
-        assertEquals(1, pdf("timesheet-codes", 2) { ExportFiles.timesheetPdf(SampleDocuments.codes(12), farm).write(it) }.pageCount)
         val long = pdf("timesheet-60", 2) { ExportFiles.timesheetPdf(SampleDocuments.hours(60), farm).write(it) }
         assertTrue("60 employees need more than one page", long.pageCount > 1)
         assertTrue(File(folder, "timesheet-p1.png").exists())

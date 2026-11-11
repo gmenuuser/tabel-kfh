@@ -50,7 +50,6 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
-import ru.kfh.core.timesheet.DayStatus
 import ru.kfh.core.timesheet.HoursRules
 import ru.kfh.tabel.ui.theme.Tabel
 import java.io.ByteArrayOutputStream
@@ -112,70 +111,12 @@ object HoursStyle {
     fun title(h: Int): String = "$h ч"
 }
 
-/** Colours and words of the day statuses (`StatusStyle.swift`), the same on every screen. */
-object StatusStyle {
-    /** Next to the name: «Был на работе», «Выходной», «Больничный»… */
-    fun dayTitle(s: DayStatus): String = if (s == DayStatus.PRESENT) "Был на работе" else s.title
-
-    /** The cell background: Я light green, В light grey, Б light red, О light blue, ОТ light yellow, ПР orange, К light purple. */
-    @Composable
-    fun fill(s: DayStatus): Color {
-        val dark = isSystemInDarkTheme()
-        return when (s) {
-            DayStatus.PRESENT -> if (dark) Color(0xFF2B6138) else Color(0xFFCCEDCC)
-            DayStatus.DAY_OFF -> if (dark) Color(0xFF4D4D52) else Color(0xFFE6E6E8)
-            DayStatus.SICK -> if (dark) Color(0xFF733333) else Color(0xFFFAD1D1)
-            DayStatus.VACATION -> if (dark) Color(0xFF2B527A) else Color(0xFFCCE6FC)
-            DayStatus.TIME_OFF -> if (dark) Color(0xFF736624) else Color(0xFFFCF2B8)
-            DayStatus.ABSENT -> if (dark) Color(0xFF99591A) else Color(0xFFFCBD78)
-            DayStatus.BUSINESS_TRIP -> if (dark) Color(0xFF574280) else Color(0xFFE3D6FA)
-        }
-    }
-
-    /** `tertiarySystemFill` of the chip without a status. */
-    @Composable
-    fun noneFill(): Color = if (isSystemInDarkTheme()) Color(0x3D767680) else Color(0x1F767680)
-}
-
 /** `UIColor.separator` and `systemGray4` of the month table. */
 @Composable
 fun separatorColor(): Color = if (isSystemInDarkTheme()) Color(0x99545458) else Color(0x4A3C3C43)
 
 @Composable
 fun unemployedFill(): Color = if (isSystemInDarkTheme()) Color(0xFF3A3A3C) else Color(0xFFD1D1D6)
-
-/** A rounded chip with the status of the day; «Не отмечен» when there is none. */
-@Composable
-fun StatusChip(status: DayStatus?, modifier: Modifier = Modifier) {
-    Text(
-        status?.let { StatusStyle.dayTitle(it) } ?: "Не отмечен",
-        style = MaterialTheme.typography.bodyMedium,
-        fontWeight = FontWeight.SemiBold,
-        color = if (status == null) Tabel.colors.secondaryText else MaterialTheme.colorScheme.onBackground,
-        modifier = modifier
-            .clip(RoundedCornerShape(50))
-            .background(status?.let { StatusStyle.fill(it) } ?: StatusStyle.noneFill())
-            .padding(horizontal = 10.dp, vertical = 4.dp),
-    )
-}
-
-/** The codes and their colours, under the monthly timesheet of codes. */
-@Composable
-fun StatusLegend() {
-    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        for (s in DayStatus.entries) {
-            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                Text(
-                    s.code, style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Bold,
-                    textAlign = TextAlign.Center,
-                    modifier = Modifier.width(32.dp).clip(RoundedCornerShape(6.dp)).background(StatusStyle.fill(s))
-                        .padding(vertical = 4.dp),
-                )
-                Text(s.title, style = MaterialTheme.typography.bodyMedium)
-            }
-        }
-    }
-}
 
 /** The employee's photo, or the initials on a green circle (`EmployeeAvatar`). */
 @Composable
@@ -275,7 +216,7 @@ fun downscaledJpeg(image: Bitmap): ByteArray {
 
 private const val MAX_PHOTO_SIDE = 600
 
-/** The theme's green for a segmented choice («Часы / Обозначения», «Работают / Архив»), not Material's default tint. */
+/** The theme's green for a segmented choice («Работают / Архив», «За день / За месяц»), not Material's default tint. */
 @Composable
 fun segmentedColors(): SegmentedButtonColors = SegmentedButtonDefaults.colors(
     activeContainerColor = Tabel.colors.primary.copy(alpha = 0.15f),

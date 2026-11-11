@@ -54,6 +54,7 @@ import ru.kfh.tabel.ui.timesheet.EmployeeFormScreen
 import ru.kfh.tabel.ui.timesheet.EmployeeHistoryScreen
 import ru.kfh.tabel.ui.timesheet.EmployeesScreen
 import ru.kfh.tabel.ui.timesheet.MonthGridScreen
+import ru.kfh.tabel.ui.timesheet.OldMarksScreen
 import java.time.LocalDate
 
 /** Navigation routes inside a sign-in. Signed out / loading are not routes: [AppRoot] switches on the session. */
@@ -67,6 +68,7 @@ object Routes {
     const val MODULE = "module/{name}"
     const val TIMESHEET_DAY = "timesheet/day"
     const val TIMESHEET_MONTH = "timesheet/month"
+    const val TIMESHEET_OLD_MARKS = "timesheet/oldMarks"
     const val EMPLOYEES = "employees"
     const val EMPLOYEE = "employee/{id}"
     const val EMPLOYEE_FORM = "employeeForm?id={id}"
@@ -207,11 +209,15 @@ private fun FarmRoot(graph: AppGraph, me: Me) {
                 onBack = { nav.popBackStack() },
                 openMonth = { nav.navigate(Routes.TIMESHEET_MONTH) },
                 openEmployees = { nav.navigate(Routes.EMPLOYEES) },
+                openOldMarks = { nav.navigate(Routes.TIMESHEET_OLD_MARKS) },
                 addEmployee = { nav.navigate(Routes.employeeForm(null)) },
             )
         }
         composable(Routes.TIMESHEET_MONTH) {
             MonthGridScreen(graph.timesheet, onBack = { nav.popBackStack() })
+        }
+        composable(Routes.TIMESHEET_OLD_MARKS) {
+            OldMarksScreen(graph.timesheet, onBack = { nav.popBackStack() })
         }
         composable(Routes.EMPLOYEES) {
             EmployeesScreen(

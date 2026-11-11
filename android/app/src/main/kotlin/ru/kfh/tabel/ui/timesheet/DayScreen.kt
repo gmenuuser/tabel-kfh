@@ -21,6 +21,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.List
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.DateRange
+import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
@@ -31,9 +32,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -46,14 +45,12 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.Role
-import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.launch
-import ru.kfh.core.timesheet.DayStatus
 import ru.kfh.core.timesheet.fullName
 import ru.kfh.core.timesheet.initials
 import ru.kfh.tabel.ui.common.BigButton
@@ -68,8 +65,7 @@ import java.time.LocalDate
 
 /**
  * «Табель работников» (`HomeView`): the chosen day (Вчера / Сегодня / Завтра or any date) and everyone who works
- * then, each with the four buttons 0 ч, 4 ч, 8 ч, 12 ч, the large «Я» button and the menu of the other statuses.
- * No mark until one is pressed.
+ * then, each with four buttons: 0 ч, 4 ч, 8 ч, 12 ч. No mark until one is pressed.
  */
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalCoroutinesApi::class)
 @Composable
@@ -78,6 +74,7 @@ fun DayScreen(
     onBack: () -> Unit,
     openMonth: () -> Unit,
     openEmployees: () -> Unit,
+    openOldMarks: () -> Unit,
     addEmployee: () -> Unit,
 ) {
     val scope = rememberCoroutineScope()
@@ -117,6 +114,12 @@ fun DayScreen(
                         onClick = { more = false; openEmployees() },
                         modifier = Modifier.testTag("openEmployees"),
                     )
+                    DropdownMenuItem(
+                        text = { Text("Старые отметки (архив)") },
+                        leadingIcon = { Icon(Icons.Filled.Lock, contentDescription = null) },
+                        onClick = { more = false; openOldMarks() },
+                        modifier = Modifier.testTag("openOldMarks"),
+                    )
                 }
             }
         },
@@ -146,12 +149,7 @@ fun DayScreen(
                 val q = search.trim()
                 val shown = if (q.isEmpty()) s.rows else s.rows.filter { it.employee.fullName.lowercase(RU).contains(q.lowercase(RU)) }
                 for (row in shown) {
-                    EmployeeDayRow(
-                        row = row, statuses = s.statuses, canEdit = canEdit,
-                        onHours = { h -> run { vm.tapHours(row.employee, day, h) } },
-                        onToggle = { run { vm.togglePresence(row.employee, day) } },
-                        onStatus = { st -> run { vm.setStatus(row.employee, day, st) } },
-                    )
+                    EmployeeHoursRow(row = row, canEdit = canEdit, onHours = { h -> run { vm.tapHours(row.employee, day, h) } })
                 }
             }
             if (vm.canEditEmployees) {
@@ -232,27 +230,17 @@ private fun Summary(s: TimesheetViewModel.DayState, canEdit: Boolean, markAll: (
 }
 
 /**
- * One person: photo, ФИО, the day's hours and status; the four hour buttons; the large «Я» button and «Статус»
- * with the other statuses (`EmployeeHoursRow` + `EmployeeMarkRow`). Tapping the selected hours again removes the mark.
+ * One person: photo, ФИО, the day's hours and the four buttons (`EmployeeHoursRow`). Tapping the selected button
+ * again removes the mark.
  */
 @Composable
-private fun EmployeeDayRow(
-    row: TimesheetViewModel.DayRow,
-    statuses: List<DayStatus>,
-    canEdit: Boolean,
-    onHours: (Int) -> Unit,
-    onToggle: () -> Unit,
-    onStatus: (DayStatus?) -> Unit,
-) {
+private fun EmployeeHoursRow(row: TimesheetViewModel.DayRow, canEdit: Boolean, onHours: (Int) -> Unit) {
     val e = row.employee
-    val isPresent = row.status == DayStatus.PRESENT
-    val canPresent = DayStatus.PRESENT in statuses
-    var menu by remember { mutableStateOf(false) }
     Card(modifier = Modifier.testTag("row-${e.lastName}")) {
         Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
             Row(horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.CenterVertically) {
                 EmployeeAvatar(e.initials, row.photo, 44)
-                Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
                     Text(e.fullName, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold, maxLines = 2)
                     Text(
                         row.hours?.let { "Отмечено: $it ч" } ?: "Не отмечен",
@@ -260,63 +248,9 @@ private fun EmployeeDayRow(
                         color = row.hours?.let { HoursStyle.color(it) } ?: Tabel.colors.secondaryText,
                         modifier = Modifier.testTag("hoursText-${e.lastName}"),
                     )
-                    StatusChip(row.status, Modifier.testTag("status-${e.lastName}"))
                 }
             }
             HoursButtons(current = row.hours, enabled = canEdit, tagSuffix = e.lastName, onTap = onHours)
-            Row(horizontalArrangement = Arrangement.spacedBy(10.dp), verticalAlignment = Alignment.CenterVertically) {
-                if (canPresent) {
-                    Row(
-                        modifier = Modifier
-                            .weight(1f)
-                            .heightIn(min = 54.dp)
-                            .clip(RoundedCornerShape(12.dp))
-                            .background(if (isPresent) Tabel.colors.primary else StatusStyle.fill(DayStatus.PRESENT))
-                            .clickable(enabled = canEdit, role = Role.Button, onClick = onToggle)
-                            .semantics(mergeDescendants = true) {
-                                contentDescription = if (isPresent) "Снять явку ${e.fullName}" else "Явка ${e.fullName}"
-                            }
-                            .testTag("mark-${e.lastName}")
-                            .padding(horizontal = 12.dp),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.CenterHorizontally),
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        Icon(Icons.Filled.CheckCircle, contentDescription = null,
-                             tint = if (isPresent) Color.White else Tabel.colors.primary, modifier = Modifier.size(20.dp))
-                        Text(if (isPresent) "Я — был на работе" else "Отметить: Я",
-                             color = if (isPresent) Color.White else Tabel.colors.primary,
-                             style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
-                    }
-                }
-                Box(modifier = if (canPresent) Modifier.width(76.dp) else Modifier.weight(1f)) {
-                    Column(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .heightIn(min = 54.dp)
-                            .clip(RoundedCornerShape(12.dp))
-                            .background(Tabel.colors.background)
-                            .clickable(enabled = canEdit, role = Role.Button) { menu = true }
-                            .semantics(mergeDescendants = true) { contentDescription = "Статус ${e.fullName}" }
-                            .testTag("statusMenu-${e.lastName}"),
-                        horizontalAlignment = Alignment.CenterHorizontally,
-                        verticalArrangement = Arrangement.spacedBy(2.dp, Alignment.CenterVertically),
-                    ) {
-                        Icon(Icons.AutoMirrored.Filled.List, contentDescription = null, tint = Tabel.colors.primary)
-                        Text("Статус", style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.SemiBold,
-                             color = Tabel.colors.primary)
-                    }
-                    DropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
-                        for (s in statuses) {
-                            DropdownMenuItem(text = { Text("${s.code} — ${s.title}") }, onClick = { menu = false; onStatus(s) },
-                                             modifier = Modifier.testTag("set-${s.code}-${e.lastName}"))
-                        }
-                        if (row.status != null) {
-                            DropdownMenuItem(text = { Text("Снять отметку", color = Tabel.colors.error) },
-                                             onClick = { menu = false; onStatus(null) })
-                        }
-                    }
-                }
-            }
         }
     }
 }
