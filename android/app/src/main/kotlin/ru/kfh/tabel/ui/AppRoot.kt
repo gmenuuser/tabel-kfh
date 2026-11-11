@@ -155,6 +155,7 @@ private fun FarmRoot(graph: AppGraph, me: Me) {
     // Between sign-ins there is no engine for a moment: the line then says «synced» until the next one reports.
     val statusFlow = remember(engine) { engine?.status ?: MutableStateFlow<SyncStatus>(SyncStatus.Synced) }
     val status by statusFlow.collectAsState()
+    val update by graph.updates.state.collectAsState()
 
     NavHost(navController = nav, startDestination = Routes.HOME) {
         composable(Routes.HOME) {
@@ -164,6 +165,8 @@ private fun FarmRoot(graph: AppGraph, me: Me) {
                 status = status,
                 onSync = graph.scheduler::syncNow,
                 open = { m -> nav.navigate(if (m == Module.settings) Routes.SETTINGS else Routes.module(m)) },
+                update = update,
+                installer = graph.installer,
             )
         }
         composable(Routes.SETTINGS) {
@@ -179,6 +182,7 @@ private fun FarmRoot(graph: AppGraph, me: Me) {
                     openServerBackups = { nav.navigate(Routes.SETTINGS_BACKUPS) },
                 ),
                 onBack = { nav.popBackStack() },
+                installer = graph.installer,
             )
         }
         composable(Routes.SETTINGS_HELPERS) { HelpersScreen(graph.settings, onBack = { nav.popBackStack() }) }

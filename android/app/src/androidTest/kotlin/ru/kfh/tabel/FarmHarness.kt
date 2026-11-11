@@ -30,6 +30,8 @@ import org.junit.Assert.assertTrue
 import org.junit.rules.TestWatcher
 import org.junit.runner.Description
 import ru.kfh.tabel.session.MemoryTokenStore
+import ru.kfh.tabel.update.MemoryLastCheck
+import ru.kfh.tabel.update.PackageFactsSource
 import java.io.File
 import java.net.InetAddress
 import java.util.Collections
@@ -48,11 +50,18 @@ class FarmHarness(
     private val compose: ComposeTestRule,
     private val dbName: String,
     @Volatile var role: String = "owner",
+    /** The self-update's judgement of a downloaded file; null is the package manager's own ([UpdateBannerTest] fakes it). */
+    private val packageFacts: PackageFactsSource? = null,
 ) : TestWatcher() {
     val app: TabelApp = ApplicationProvider.getApplicationContext()
     val server = MockWebServer()
     val seen: MutableList<String> = Collections.synchronizedList(mutableListOf())
+    /** Answers asked before the farm's endpoints (the self-update's `version.json` and `.apk`); null falls through. */
+    @Volatile var extraRoutes: (path: String) -> MockResponse? = { null }
     lateinit var graph: AppGraph
+        private set
+    /** Where the self-update puts its files for this test (empty at the start). */
+    lateinit var updatesDir: File
         private set
     private var scenario: ActivityScenario<MainActivity>? = null
     private var tag = "FarmHarness"
@@ -64,6 +73,7 @@ class FarmHarness(
                 val body = request.body.readUtf8()
                 val path = request.requestUrl!!.encodedPath
                 seen += "${request.method} $path"
+                extraRoutes(path)?.let { return it }
                 return when (path) {
                     "/auth/login" ->
                         if (body.contains("\"password\":\"secret\"")) json("""{"token":"tok-ui","role":"$role"}""")
@@ -90,7 +100,12 @@ class FarmHarness(
         app.deleteDatabase(dbName)
         app.getSharedPreferences("agro", 0).edit().clear().commit()
         val photos = File(app.cacheDir, "uitest-$dbName-photos").apply { deleteRecursively() }
-        graph = AppGraph(app, baseUrl = server.url("/").toString(), tokens = MemoryTokenStore(), dbName = dbName, photosDir = photos)
+        updatesDir = File(app.cacheDir, "uitest-$dbName-updates").apply { deleteRecursively() }
+        graph = AppGraph(
+            app, baseUrl = server.url("/").toString(), tokens = MemoryTokenStore(), dbName = dbName, photosDir = photos,
+            packageFacts = packageFacts ?: ru.kfh.tabel.update.AndroidPackageFacts(app), updatesDir = updatesDir,
+            lastUpdateCheck = MemoryLastCheck(),
+        )
         app.useGraph(graph)
     }
 

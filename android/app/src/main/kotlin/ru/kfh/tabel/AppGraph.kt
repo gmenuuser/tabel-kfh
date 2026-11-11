@@ -31,12 +31,20 @@ import ru.kfh.tabel.ui.livestock.LivestockViewModel
 import ru.kfh.tabel.ui.settings.SettingsViewModel
 import ru.kfh.tabel.ui.settings.UpdateCheck
 import ru.kfh.tabel.ui.timesheet.TimesheetViewModel
+import ru.kfh.tabel.update.AndroidPackageFacts
+import ru.kfh.tabel.update.ApkDownloader
+import ru.kfh.tabel.update.LastCheckStore
+import ru.kfh.tabel.update.PackageFactsSource
+import ru.kfh.tabel.update.PrefsLastCheck
+import ru.kfh.tabel.update.UpdateInstaller
+import ru.kfh.tabel.update.UpdateManager
 import java.io.File
 import java.util.concurrent.TimeUnit
 
 /**
  * Everything the screens use, made once per process ([TabelApp.graph]). [baseUrl] is the farm server
- * (`https://kfh.cubely.ru`); only tests pass another one (a MockWebServer), with their own [tokens] and [dbName].
+ * (`https://kfh.cubely.ru`); only tests pass another one (a MockWebServer), with their own [tokens] and [dbName],
+ * and a [packageFacts] of their own when the self-update's judgement is under test.
  */
 class AppGraph(
     context: Context,
@@ -44,6 +52,9 @@ class AppGraph(
     val tokens: TokenStore = EncryptedTokenStore(context),
     dbName: String = TabelDb.FILE,
     photosDir: File = File(context.filesDir, "photos"),
+    packageFacts: PackageFactsSource = AndroidPackageFacts(context),
+    updatesDir: File = File(context.cacheDir, "updates"),
+    lastUpdateCheck: LastCheckStore = PrefsLastCheck(context),
 ) {
     private val app = context.applicationContext
 
@@ -72,6 +83,25 @@ class AppGraph(
 
     val scheduler = SyncScheduler(scope) { session.syncNow() }
 
+    /**
+     * The self-update: `version.json` at start and on every return to the foreground, the download and the check of
+     * the file, the banner's state. The address may be under our https host or under [baseUrl] (a test's server;
+     * in production the two are the same).
+     */
+    val updates = UpdateManager(
+        scope,
+        check = UpdateCheck(client, "${baseUrl.trimEnd('/')}/android/version.json", appVersionCode(app)),
+        downloader = ApkDownloader(client),
+        facts = packageFacts,
+        dir = updatesDir,
+        allowedPrefixes = listOf(UpdateCheck.APK_URL_PREFIX, baseUrl.trimEnd('/') + "/"),
+        lastCheck = lastUpdateCheck,
+    )
+
+    /** «Установить»: a sync first (best effort, 8 s), then the system's installer. */
+    val installer = UpdateInstaller(app, scope, "${app.packageName}.files", beforeInstall = { session.syncNow() },
+                                    onInvalidFile = updates::discard)
+
     /** Every change of the screens goes through here; a queued change syncs 1 s later. */
     val writer = RecordWriter(db, { session.role ?: Role.viewer }, scheduler::changed)
 
@@ -93,7 +123,7 @@ class AppGraph(
     /** «Настройки»: the farm's details, the sync, the owner's lists, the copy to a file, «Выйти». */
     val settings: SettingsViewModel by lazy {
         SettingsViewModel(session, db, writer, scope, photos, backupDir = LocalBackup.dir(app), appVersion = appVersion(app),
-                          updates = UpdateCheck(client, "$baseUrl/android/version.json", appVersionCode(app)))
+                          updates = updates)
     }
 
     init {
@@ -101,6 +131,11 @@ class AppGraph(
             session.restore()
             // ON_START comes at once once attached: the sync at app start.
             scheduler.attach(app)
+        }
+        scope.launch {
+            // The leftovers of the last update go first; then ON_START (at once) is the check at app start.
+            updates.start()
+            updates.attach()
         }
         // Every sign-in opens the timesheet on the farm's today and this month (another farm may be in another zone);
         // a refreshed `Me` of the same sign-in does not touch a day picked by hand.
@@ -111,6 +146,7 @@ class AppGraph(
     /** Tests only (a graph per test): the triggers go, the coroutines are cancelled, the database is closed. */
     fun close() {
         scheduler.detach()
+        updates.detach()
         scope.cancel()
         db.close()
     }

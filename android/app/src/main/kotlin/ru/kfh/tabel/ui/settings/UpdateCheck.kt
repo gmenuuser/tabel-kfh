@@ -19,13 +19,15 @@ class UpdateCheck(private val client: OkHttpClient, private val url: String, pri
     /** The newer build: its code, its name («1.0.42») and where the `.apk` is. */
     data class Update(val versionCode: Long, val versionName: String, val url: String)
 
-    suspend fun newer(): Update? = withContext(Dispatchers.IO) {
+    suspend fun newer(): Update? = latest()?.takeIf { it.versionCode > currentCode }
+
+    /** The build on the server whatever its code (the self-update tells «up to date» from «no answer»); null on trouble. */
+    suspend fun latest(): Update? = withContext(Dispatchers.IO) {
         try {
             client.newCall(Request.Builder().url(url).header("Accept", "application/json").build()).execute().use { r ->
                 if (!r.isSuccessful) return@withContext null
                 val o = Json.parseToJsonElement(r.body?.string() ?: return@withContext null).jsonObject
                 val code = o["versionCode"]?.jsonPrimitive?.longOrNull ?: return@withContext null
-                if (code <= currentCode) return@withContext null
                 val name = o["versionName"]?.jsonPrimitive?.takeIf { it.isString }?.content ?: "1.0.$code"
                 // Only our own https address is opened from the answer; anything else falls back to the `.apk` next
                 // to `version.json` (the answer is data from the network, not a place to send the person).

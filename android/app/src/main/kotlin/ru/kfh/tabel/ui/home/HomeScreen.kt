@@ -41,7 +41,10 @@ import ru.kfh.core.sync.SyncStatus
 import ru.kfh.tabel.ui.common.Card
 import ru.kfh.tabel.ui.common.ModuleButton
 import ru.kfh.tabel.ui.common.SyncStatusLine
+import ru.kfh.tabel.ui.common.UpdateBanner
 import ru.kfh.tabel.ui.theme.Tabel
+import ru.kfh.tabel.update.UpdateInstaller
+import ru.kfh.tabel.update.UpdateState
 import java.time.LocalDate
 import java.util.Locale
 
@@ -81,7 +84,8 @@ private fun String.capitalizedFirst(): String = if (isEmpty()) this else substri
 
 /**
  * Главный экран (`MainScreen`): the farm, today, the role (not for the owner), the sync line and the big buttons of
- * the modules the role sees; the gear opens «Настройки» for every role.
+ * the modules the role sees; the gear opens «Настройки» for every role. A verified newer build ([update]) adds the
+ * banner «Доступна новая версия …» with «Установить» between the farm and the sync line.
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -91,6 +95,8 @@ fun HomeScreen(
     status: SyncStatus,
     onSync: () -> Unit,
     open: (Module) -> Unit,
+    update: UpdateState = UpdateState.Idle,
+    installer: UpdateInstaller? = null,
 ) {
     Scaffold(
         containerColor = Tabel.colors.background,
@@ -131,6 +137,7 @@ fun HomeScreen(
                     }
                 }
             }
+            UpdateBanner(update, installer)
             SyncStatusLine(status, me.role, onSync)
             val shown = homeButtons(me.role)
             if (shown.isEmpty()) {

@@ -58,6 +58,12 @@ android {
             isMinifyEnabled = false
             if (canSign) signingConfig = signingConfigs.getByName("release")
         }
+        // `-PkfhSignDebug=true` (local only, never CI): a debug build signed with the release key, for the self-update's
+        // end-to-end check on an emulator — the debug build may point at a local server (`debug.kfh.base_url`), and the
+        // update is accepted only when the .apk carries the installed app's own certificate.
+        debug {
+            if (canSign && providers.gradleProperty("kfhSignDebug").orNull == "true") signingConfig = signingConfigs.getByName("release")
+        }
     }
 
     buildFeatures {

@@ -39,6 +39,8 @@ import ru.kfh.tabel.export.LocalBackup
 import ru.kfh.tabel.session.SessionManager
 import ru.kfh.tabel.session.SessionState
 import ru.kfh.tabel.session.farmInfo
+import ru.kfh.tabel.update.UpdateManager
+import ru.kfh.tabel.update.UpdateState
 import java.io.File
 import java.time.Instant
 import java.time.ZoneId
@@ -63,8 +65,8 @@ class SettingsViewModel(
     private val now: () -> Instant = { Instant.now() },
     /** «1.0.7 (7)»: the version name and code of the installed app. */
     private val appVersion: String = "",
-    /** `version.json` on the server; null (the tests) never offers an update. */
-    private val updates: UpdateCheck? = null,
+    /** The self-update; null (the tests) never offers one. */
+    private val updates: UpdateManager? = null,
 ) {
     /** «Конфликты: 2 — выбрать версию» (owner) or «Конфликты: 2 — обратитесь к владельцу»; null without conflicts. */
     data class ConflictsRow(val text: String, val canResolve: Boolean)
@@ -94,8 +96,19 @@ class SettingsViewModel(
     /** «Версия 1.0.7 (7)». */
     val versionText: String get() = "Версия $appVersion"
 
-    /** A newer build on the server, or null (none, or the server did not answer). */
-    suspend fun newerVersion(): UpdateCheck.Update? = updates?.newer()
+    /** The self-update's state: nothing, a download on its way, or a verified file to install. */
+    val update: Flow<UpdateState> = updates?.state ?: flowOf(UpdateState.Idle)
+
+    /** «Проверить обновления»: the server is asked now, whatever the throttle; the sentence for the screen. */
+    suspend fun checkForUpdates(): String = inApp {
+        when (val o = updates?.check(force = true) ?: UpdateManager.Outcome.UpToDate) {
+            UpdateManager.Outcome.Throttled, UpdateManager.Outcome.UpToDate -> "У вас последняя версия."
+            UpdateManager.Outcome.Unreachable -> "Не удалось связаться с сервером. Проверьте связь и попробуйте ещё раз."
+            is UpdateManager.Outcome.Ready -> "Доступна версия ${o.update.versionName} — нажмите «Установить»."
+            is UpdateManager.Outcome.DownloadFailed -> "Версия ${o.update.versionName} не скачалась. Попробуйте ещё раз при хорошей связи."
+            is UpdateManager.Outcome.Rejected -> "Файл обновления не прошёл проверку (${o.reason}). Сообщите владельцу."
+        }
+    }
 
     /** The farm's zone: the moments of the lists are shown in it. */
     val zone: ZoneId get() = session.farmTime.value.zone

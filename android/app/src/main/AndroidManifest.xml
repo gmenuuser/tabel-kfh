@@ -3,6 +3,10 @@
 
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+    <!-- The self-update: the downloaded .apk is handed to the system's installer («install unknown apps» is asked
+         for once, per app); from Android 12 the system may skip its dialog for an app that installed itself before. -->
+    <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
+    <uses-permission android:name="android.permission.UPDATE_PACKAGES_WITHOUT_USER_ACTION" />
 
     <application
         android:name=".TabelApp"
@@ -20,7 +24,11 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
-        <!-- «Поделиться» hands the exported PDF / XLSX to other apps by content URI. -->
+        <!-- The status of the self-update's PackageInstaller session (its confirmation dialog, success, failure). -->
+        <receiver
+            android:name=".update.InstallReceiver"
+            android:exported="false" />
+        <!-- «Поделиться» hands the exported PDF / XLSX to other apps by content URI; the self-update's .apk too. -->
         <provider
             android:name="androidx.core.content.FileProvider"
             android:authorities="${applicationId}.files"
