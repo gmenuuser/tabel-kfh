@@ -1,5 +1,6 @@
 import { useEffect, useState, type FormEvent } from 'react';
 import type { Session } from '../lib/sync.ts';
+import { AppLinks } from './app-links.tsx';
 
 type Mode = 'login' | 'register' | 'reset';
 
@@ -82,6 +83,7 @@ export function LoginPage({ onSignedIn }: { onSignedIn: (s: Session) => void }) 
           ? <button type="button" className="link" onClick={() => setMode('reset')}>Забыли пароль?</button>
           : <button type="button" className="link" onClick={() => setMode('login')}>Назад ко входу</button>}
       </form>
+      <AppLinks />
     </div>
   );
 }

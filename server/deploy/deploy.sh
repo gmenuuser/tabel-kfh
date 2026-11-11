@@ -78,6 +78,7 @@ git archive --format=tar HEAD | ssh -o BatchMode=yes "$HOST" "
   for f in tabel-kfh.apk version.json; do
     if [ -f /opt/kfh/android/\$f ]; then cp -p /opt/kfh/android/\$f /opt/kfh.new/android/\$f; fi
   done
+  if [ -f /opt/kfh/ios/TabelKFH.ipa ]; then mkdir -p /opt/kfh.new/ios; cp -p /opt/kfh/ios/TabelKFH.ipa /opt/kfh.new/ios/; fi
   rm -rf /opt/kfh.old
   mv /opt/kfh /opt/kfh.old
   mv /opt/kfh.new /opt/kfh

@@ -131,7 +131,12 @@ table.report { border-collapse: collapse; width: 100%; font-size: 14px; overflow
 .modal { position: fixed; inset: 0; background: rgba(0, 0, 0, 0.45); display: flex; align-items: center; justify-content: center; padding: 16px; z-index: 20; }
 .modal > .card { width: min(520px, 100%); max-height: 90vh; overflow: auto; background: var(--bg); }
 
-.login { min-height: 100vh; display: flex; align-items: center; justify-content: center; padding: 16px; }
+.login { min-height: 100vh; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 16px; padding: 16px; }
+.login .app-links { width: min(440px, 100%); }
+.app-links h2 { font-size: 19px; }
+.app-links-row { display: flex; flex-wrap: wrap; gap: 8px; }
+.app-link { flex: 1 1 180px; justify-content: center; font-weight: 600; color: var(--green); }
+.app-links-hint { font-size: 15px; margin-top: 10px; }
 .login-card { width: min(440px, 100%); display: flex; flex-direction: column; gap: 12px; }
 .login-card h1 { color: var(--green); text-align: center; }
 .tabs { display: flex; gap: 6px; flex-wrap: wrap; } .tab.active { background: var(--green); color: #fff; }
