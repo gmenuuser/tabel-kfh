@@ -96,5 +96,18 @@ eq "no snapshot: nothing" "$(printf '[]' | kfh_snapshot_id)" ""
 eq "grouped json" "$(printf '[{"group_key":{"hosts":["h"]},"snapshots":[{"time":"t","id":"%s","short_id":"9f86d081"}]}]' "$(printf 'a%.0s' $(seq 64))" | kfh_snapshot_id)" "$(printf 'a%.0s' $(seq 64))"
 eq "no snapshot without jq: nothing" "$(printf 'null' | KFH_NO_JQ=1 kfh_snapshot_id)" ""
 
+# deploy-android.sh: syntax, then its pure helpers (sourcing it defines the functions and returns before the main part).
+if bash -n "$(dirname "$0")/deploy-android.sh"; then echo "ok   deploy-android.sh syntax"; else echo "FAIL deploy-android.sh syntax"; fail=1; fi
+. "$(dirname "$0")/deploy-android.sh"
+eq "version.json text" "$(kfh_android_version_json 42 1.0.42)" '{"versionCode": 42, "versionName": "1.0.42", "url": "https://kfh.cubely.ru/android/tabel-kfh.apk"}'
+mkdir -p "$T/art/release" "$T/art/debug"; : > "$T/art/debug/app-debug.apk"
+eq "artifact with only a debug apk is refused" "$(kfh_android_pick_apk "$T/art" 2>/dev/null || echo "rc=$?")" "rc=1"
+: > "$T/art/release/app-release.apk"
+eq "the release apk is picked" "$(kfh_android_pick_apk "$T/art")" "$T/art/release/app-release.apk"
+eq "run id argument" "$(kfh_android_parse_target 43012345678)" "run 43012345678"
+eq "branch argument" "$(kfh_android_parse_target android)" "branch android"
+eq "no argument: main" "$(kfh_android_parse_target)" "branch main"
+eq "badging: versionCode and versionName" "$(printf "package: name='ru.kfh.tabel' versionCode='42' versionName='1.0.42' platformBuildVersionName='16'\n" | kfh_android_badging_version)" "42 1.0.42"
+
 exit "$fail"
 

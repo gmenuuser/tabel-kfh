@@ -1,6 +1,7 @@
 package ru.kfh.tabel
 
 import android.content.Context
+import android.content.pm.PackageInfo
 import android.os.Build
 import android.util.Log
 import kotlinx.coroutines.CoroutineExceptionHandler
@@ -28,6 +29,7 @@ import ru.kfh.tabel.ui.agro.PrefsAgroDraftStore
 import ru.kfh.tabel.ui.coal.CoalViewModel
 import ru.kfh.tabel.ui.livestock.LivestockViewModel
 import ru.kfh.tabel.ui.settings.SettingsViewModel
+import ru.kfh.tabel.ui.settings.UpdateCheck
 import ru.kfh.tabel.ui.timesheet.TimesheetViewModel
 import java.io.File
 import java.util.concurrent.TimeUnit
@@ -90,7 +92,8 @@ class AppGraph(
 
     /** «Настройки»: the farm's details, the sync, the owner's lists, the copy to a file, «Выйти». */
     val settings: SettingsViewModel by lazy {
-        SettingsViewModel(session, db, writer, scope, photos, backupDir = LocalBackup.dir(app), appVersion = appVersion(app))
+        SettingsViewModel(session, db, writer, scope, photos, backupDir = LocalBackup.dir(app), appVersion = appVersion(app),
+                          updates = UpdateCheck(client, "$baseUrl/android/version.json", appVersionCode(app)))
     }
 
     init {
@@ -121,10 +124,19 @@ class AppGraph(
         /** «1.0.7 (7)»: the installed version's name and code (`CFBundleShortVersionString (CFBundleVersion)`). */
         fun appVersion(context: Context): String = try {
             val info = context.packageManager.getPackageInfo(context.packageName, 0)
-            val code = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) info.longVersionCode else @Suppress("DEPRECATION") info.versionCode.toLong()
-            "${info.versionName ?: "1.0"} ($code)"
+            "${info.versionName ?: "1.0"} (${versionCode(info)})"
         } catch (e: Exception) {
             "1.0"
         }
+
+        /** The installed `versionCode` (the CI run number); 0 when the package manager has no answer. */
+        fun appVersionCode(context: Context): Long = try {
+            versionCode(context.packageManager.getPackageInfo(context.packageName, 0))
+        } catch (e: Exception) {
+            0L
+        }
+
+        private fun versionCode(info: PackageInfo): Long =
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) info.longVersionCode else @Suppress("DEPRECATION") info.versionCode.toLong()
     }
 }

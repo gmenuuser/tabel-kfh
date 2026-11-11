@@ -69,14 +69,28 @@ jobs:
             echo "gradle download failed (try $i), waiting"; sleep 30
           done
           exit 1
-      - name: Decode keystore
+      # Release signing: all four KFH_* secrets -> signed release (verified below); none -> debug apk, still green
+      # (the owner adds the secrets later: docs/android-signing.md); some but not all -> stop and name the missing ones.
+      - name: Signing secrets
         run: |
-          if [ -n "$KFH_KEYSTORE_B64" ]; then
-            echo "$KFH_KEYSTORE_B64" | base64 -d > "$RUNNER_TEMP/kfh.jks"
+          missing=""
+          for v in KFH_KEYSTORE_B64 KFH_KEYSTORE_PASSWORD KFH_KEY_ALIAS KFH_KEY_PASSWORD; do
+            [ -n "${!v}" ] || missing="$missing $v"
+          done
+          if [ -z "$missing" ]; then
+            if ! echo "$KFH_KEYSTORE_B64" | base64 -d > "$RUNNER_TEMP/kfh.jks"; then
+              echo "::error::KFH_KEYSTORE_B64 is not valid base64 (paste the whole kfh-release.jks.b64.txt, see docs/android-signing.md)"
+              exit 1
+            fi
             echo "KFH_KEYSTORE_FILE=$RUNNER_TEMP/kfh.jks" >> "$GITHUB_ENV"
             echo "SIGNED=true" >> "$GITHUB_ENV"
-          else
+            echo "all four signing secrets are set: building the signed release"
+          elif [ "$missing" = " KFH_KEYSTORE_B64 KFH_KEYSTORE_PASSWORD KFH_KEY_ALIAS KFH_KEY_PASSWORD" ]; then
             echo "SIGNED=false" >> "$GITHUB_ENV"
+            echo "::warning::no signing secrets (KFH_*): building the debug apk. Add them in Settings -> Secrets and variables -> Actions (docs/android-signing.md)"
+          else
+            echo "::error::signing secrets incomplete, missing:$missing. Add them in Settings -> Secrets and variables -> Actions (docs/android-signing.md), or remove all four to build unsigned"
+            exit 1
           fi
       - name: Assemble
         run: |
@@ -87,6 +101,18 @@ jobs:
           fi
         env:
           GITHUB_RUN_NUMBER: ${{ github.run_number }}
+      - name: Verify the release signature (kfh key)
+        if: env.SIGNED == 'true'
+        run: |
+          APK=app/build/outputs/apk/release/app-release.apk
+          APKSIGNER=$(ls "$ANDROID_HOME"/build-tools/*/apksigner | sort -V | tail -1)
+          "$APKSIGNER" verify --print-certs "$APK" | tee "$RUNNER_TEMP/certs.txt"
+          got=$(sed -nE 's/^Signer #1 certificate SHA-256 digest: *([0-9a-f]+).*/\1/p' "$RUNNER_TEMP/certs.txt")
+          want=f3ab556ccd7ef9013708a71e3a50aea21aa91acfe857f88826411f7cdcc16949
+          if [ "$got" != "$want" ]; then
+            echo "::error::app-release.apk is signed by another key ($got), not the kfh release key ($want): check KFH_KEYSTORE_B64 and KFH_KEY_ALIAS (docs/android-signing.md)"
+            exit 1
+          fi
       - uses: actions/upload-artifact@v4
         with:
           name: tabel-kfh-apk

@@ -63,6 +63,8 @@ class SettingsViewModel(
     private val now: () -> Instant = { Instant.now() },
     /** «1.0.7 (7)»: the version name and code of the installed app. */
     private val appVersion: String = "",
+    /** `version.json` on the server; null (the tests) never offers an update. */
+    private val updates: UpdateCheck? = null,
 ) {
     /** «Конфликты: 2 — выбрать версию» (owner) or «Конфликты: 2 — обратитесь к владельцу»; null without conflicts. */
     data class ConflictsRow(val text: String, val canResolve: Boolean)
@@ -91,6 +93,9 @@ class SettingsViewModel(
 
     /** «Версия 1.0.7 (7)». */
     val versionText: String get() = "Версия $appVersion"
+
+    /** A newer build on the server, or null (none, or the server did not answer). */
+    suspend fun newerVersion(): UpdateCheck.Update? = updates?.newer()
 
     /** The farm's zone: the moments of the lists are shown in it. */
     val zone: ZoneId get() = session.farmTime.value.zone

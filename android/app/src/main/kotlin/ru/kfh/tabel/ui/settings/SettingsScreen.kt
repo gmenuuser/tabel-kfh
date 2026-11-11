@@ -1,5 +1,8 @@
 package ru.kfh.tabel.ui.settings
 
+import android.content.ActivityNotFoundException
+import android.content.Intent
+import android.net.Uri
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -25,6 +28,7 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -80,6 +84,7 @@ class SettingsLinks(
 @Composable
 fun SettingsScreen(vm: SettingsViewModel, me: Me, links: SettingsLinks, onBack: () -> Unit) {
     val scope = rememberCoroutineScope()
+    val context = LocalContext.current
     val settings by vm.settings.collectAsState(initial = null)
     val sync by vm.sync.collectAsState(initial = SettingsViewModel.SyncRow(SyncStatus.Synced, null, null))
     val refused by vm.refused.collectAsState(initial = emptyList())
@@ -161,7 +166,13 @@ fun SettingsScreen(vm: SettingsViewModel, me: Me, links: SettingsLinks, onBack: 
                           modifier = Modifier.padding(vertical = 6.dp).testTag("signOut"))
             }
 
-            AboutSection(vm.versionText)
+            AboutSection(vm.versionText, newer = vm::newerVersion, onDownload = { url ->
+                try {
+                    context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url)))
+                } catch (e: ActivityNotFoundException) {
+                    note = "Нет браузера, чтобы скачать файл. Адрес: $url"
+                }
+            })
         }
     }
 

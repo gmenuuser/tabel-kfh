@@ -6,7 +6,9 @@
 #   bash server/deploy/deploy.sh [ssh-host]                 update
 #
 # Ships `git archive HEAD` over ssh (no rsync on this PC; no node_modules/.git/build in the archive),
-# keeps /opt/kfh/server/.env (created once with a random POSTGRES_PASSWORD, mode 600),
+# keeps /opt/kfh/server/.env (created once with a random POSTGRES_PASSWORD, mode 600) and the Android files
+# /opt/kfh/android/tabel-kfh.apk + version.json (put there by deploy-android.sh), installs the nginx snippet
+# for /android/ (snippets/kfh-android.conf) on every run,
 # runs docker compose (project "kfh") with deploy/compose.prod.yml and waits for /health on 127.0.0.1:8090.
 # `up --build` builds on the VDS: deploy at a quiet hour.
 set -euo pipefail
@@ -73,6 +75,9 @@ git archive --format=tar HEAD | ssh -o BatchMode=yes "$HOST" "
   mkdir -p /opt/kfh /opt/kfh.new
   tar -x -C /opt/kfh.new
   if [ -f /opt/kfh/server/.env ]; then cp -p /opt/kfh/server/.env /opt/kfh.new/server/.env; fi
+  for f in tabel-kfh.apk version.json; do
+    if [ -f /opt/kfh/android/\$f ]; then cp -p /opt/kfh/android/\$f /opt/kfh.new/android/\$f; fi
+  done
   rm -rf /opt/kfh.old
   mv /opt/kfh /opt/kfh.old
   mv /opt/kfh.new /opt/kfh
@@ -104,6 +109,32 @@ nginx_reload_or_rollback() {
     exit 1
   fi
 }
+
+# /android/ (download page, .apk, version.json) lives in a snippet included from the site file. The snippet is
+# refreshed on every deploy; a site file certbot already rewrote gets the include line once. A failing nginx -t
+# puts the previous snippet and site file back (the site stays up) and stops.
+echo "==> nginx: android snippet"
+SNIP=/etc/nginx/snippets/kfh-android.conf
+mkdir -p /etc/nginx/snippets
+[ ! -e "$SNIP" ] || cp -p "$SNIP" "$SNIP.prev"
+[ ! -e "$SITE" ] || cp -p "$SITE" "$SITE.prev"
+install -m 644 deploy/nginx-kfh-android.conf "$SNIP"
+if [ -e "$SITE" ] && ! grep -q 'snippets/kfh-android.conf' "$SITE"; then
+  # under every `server_name kfh.cubely.ru;` - certbot's https block and its redirect block alike
+  sed -i 's|^\([[:space:]]*\)server_name kfh.cubely.ru;|&\n\1include snippets/kfh-android.conf;|' "$SITE"
+  echo "  include line added to $SITE"
+fi
+if [ -L "$LINK" ]; then
+  if nginx -t; then
+    systemctl reload nginx
+  else
+    echo "nginx -t FAILED with the android snippet - putting the previous files back" >&2
+    [ ! -e "$SNIP.prev" ] || cp -p "$SNIP.prev" "$SNIP"
+    [ ! -e "$SITE.prev" ] || cp -p "$SITE.prev" "$SITE"
+    nginx -t || echo "nginx -t still fails with the previous files - look at it by hand" >&2
+    exit 1
+  fi
+fi
 
 if [ "$FIRST" = 1 ]; then
   echo "==> restic environment /etc/kfh/restic.env"
