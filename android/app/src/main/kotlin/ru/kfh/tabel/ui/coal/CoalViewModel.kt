@@ -311,13 +311,13 @@ class CoalViewModel(
 
     suspend fun updateLocation(location: DeliveryLocation, name: String, deliveryKopecks: Long, driverPaymentKopecks: Long?): String? = action {
         val l = CoalRules.updateLocation(location, locations.first(), name, deliveryKopecks, driverPaymentKopecks)
-        writer.save(Entities.deliveryLocation, l.id, RecordCodec.encode(l))
+        writer.update(Entities.deliveryLocation, l.id, RecordCodec.encode(l))
     }
 
     /** «Удалить»: the village leaves the list of a new sale; saved sales keep its name and prices. */
     suspend fun removeLocation(location: DeliveryLocation): String? = action {
         val l = CoalRules.removeLocation(location)
-        writer.save(Entities.deliveryLocation, l.id, RecordCodec.encode(l))
+        writer.update(Entities.deliveryLocation, l.id, RecordCodec.encode(l))
     }
 
     // MARK: Running

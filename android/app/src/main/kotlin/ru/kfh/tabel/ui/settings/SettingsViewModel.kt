@@ -161,8 +161,11 @@ class SettingsViewModel(
     suspend fun conflicts(): Result<List<Conflict>> = load { it.conflicts() }
 
     /** «Взять с сервера» / «Взять с устройства», then a sync (the chosen version comes to this phone with it). */
-    suspend fun resolve(c: Conflict, choice: ConflictChoice): String? = act(null) { it.resolve(c.id, choice) }.also {
-        if (it == null) session.syncNow()
+    suspend fun resolve(c: Conflict, choice: ConflictChoice): String? = inApp {
+        // The sync after the answer belongs to the action: backing out of «Конфликты» must not cancel it.
+        val error = act(null) { it.resolve(c.id, choice) }
+        if (error == null) session.syncNow()
+        error
     }
 
     // MARK: Helpers (owner)

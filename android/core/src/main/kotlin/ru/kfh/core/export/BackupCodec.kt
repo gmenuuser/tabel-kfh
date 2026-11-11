@@ -371,6 +371,69 @@ object BackupCodec {
         return BigDecimal(d.toString()).stripTrailingZeros().toPlainString()
     }
 
+    // MARK: Key order
+
+    /**
+     * How Swift's `JSONEncoder` orders keys under `.sortedKeys` — two answers, by OS:
+     * - iOS 18 and later (swift-foundation's `JSONWriter`, an app linked against the iOS 18 SDK — ours is built with
+     *   Xcode 16): the UTF-8 bytes (`a.key.utf8.lexicographicallyPrecedes(b.key.utf8)`) — [UTF8_KEY_ORDER];
+     * - iOS 17 and before (and `JSONEncoder.compatibility1` for apps linked against older SDKs): `NSString.compare`
+     *   with `[.numeric, .caseInsensitive, .forcedOrdering]` — [LEGACY_KEY_ORDER].
+     * Every fixed key set of the payload orders the same either way (`BackupCodecTest.fixedKeySetsAgreeUnderBothOrders`);
+     * only `agro[].inputs` with ten or more plots (`plot.10.*`) tells them apart. The file follows the current OS;
+     * should the on-device check show the iPhone still on the old order, switch [KEY_ORDER] to [LEGACY_KEY_ORDER].
+     */
+    val UTF8_KEY_ORDER: Comparator<String> = Comparator { a, b -> compareUtf8(a, b) }
+
+    val LEGACY_KEY_ORDER: Comparator<String> = Comparator { a, b -> compareLegacy(a, b) }
+
+    val KEY_ORDER: Comparator<String> = UTF8_KEY_ORDER
+
+    private fun compareUtf8(a: String, b: String): Int {
+        val x = a.toByteArray(Charsets.UTF_8)
+        val y = b.toByteArray(Charsets.UTF_8)
+        for (i in 0 until minOf(x.size, y.size)) {
+            val c = (x[i].toInt() and 0xff).compareTo(y[i].toInt() and 0xff)
+            if (c != 0) return c
+        }
+        return x.size.compareTo(y.size)
+    }
+
+    /**
+     * `NSString.compare(_:options:[.numeric, .caseInsensitive, .forcedOrdering])`: runs of digits by their value
+     * («plot.2» before «plot.10»), letters regardless of case, and two keys equal that way ordered by their bytes
+     * («Zebra» before «zebra») so the order is total. Locale collation of punctuation is not modelled (keys are ASCII
+     * names and dots).
+     */
+    private fun compareLegacy(a: String, b: String): Int {
+        var i = 0
+        var j = 0
+        while (i < a.length && j < b.length) {
+            val ca = a[i]
+            val cb = b[j]
+            if (ca in '0'..'9' && cb in '0'..'9') {
+                var ei = i
+                while (ei < a.length && a[ei] in '0'..'9') ei++
+                var ej = j
+                while (ej < b.length && b[ej] in '0'..'9') ej++
+                val na = a.substring(i, ei).trimStart('0')
+                val nb = b.substring(j, ej).trimStart('0')
+                val c = if (na.length != nb.length) na.length.compareTo(nb.length) else na.compareTo(nb)
+                if (c != 0) return c
+                i = ei
+                j = ej
+                continue
+            }
+            val c = ca.lowercaseChar().compareTo(cb.lowercaseChar())
+            if (c != 0) return c
+            i++
+            j++
+        }
+        val rest = (a.length - i).compareTo(b.length - j)
+        if (rest != 0) return rest
+        return compareUtf8(a, b)
+    }
+
     // MARK: Writing
 
     /** Swift's `.sortedKeys` without `.prettyPrinted`: the text the checksum is over. */
@@ -403,8 +466,7 @@ object BackupCodec {
                     return
                 }
                 out.append('{')
-                // Byte order of the keys: what Swift's `sortedKeys` gives for these ASCII names.
-                e.entries.sortedBy { it.key }.forEachIndexed { i, (k, v) ->
+                e.entries.sortedWith(compareBy(KEY_ORDER) { it.key }).forEachIndexed { i, (k, v) ->
                     if (i > 0) out.append(',')
                     newline(out, indent, depth + 1)
                     escape(k, out)

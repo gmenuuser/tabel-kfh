@@ -8,6 +8,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -35,17 +36,21 @@ fun FarmSection(vm: SettingsViewModel, me: Me, settings: FarmSettings?, note: (S
     val farmChanged = farmName.trim() != me.farmName || managerName.trim() != me.managerName.orEmpty()
 
     var draft by remember { mutableStateOf<FarmSettings?>(null) }
+    /** Counts the keystrokes; the save 0.7 s after the last one is keyed on it, so finishing a save restarts nothing. */
+    var edits by remember { mutableIntStateOf(0) }
     var dirty by remember { mutableStateOf(false) }
     LaunchedEffect(settings) {
         // The stored row, unless the person is in the middle of typing.
         if (!dirty) draft = settings ?: FarmSettings()
     }
-    LaunchedEffect(draft, dirty) {
-        if (!dirty) return@LaunchedEffect
+    LaunchedEffect(edits) {
+        if (edits == 0) return@LaunchedEffect
         delay(700)
         val d = draft ?: return@LaunchedEffect
-        dirty = false
+        val saved = edits
         vm.saveSettings(d)?.let(note)
+        // Typed on while saving: still dirty, the next save is on its way.
+        if (edits == saved) dirty = false
     }
     DisposableEffect(Unit) {
         onDispose { if (dirty) draft?.let(vm::saveSettingsInBackground) }
@@ -54,6 +59,7 @@ fun FarmSection(vm: SettingsViewModel, me: Me, settings: FarmSettings?, note: (S
     fun change(f: (FarmSettings) -> FarmSettings) {
         draft = f(draft ?: FarmSettings())
         dirty = true
+        edits++
     }
 
     SettingsSection(

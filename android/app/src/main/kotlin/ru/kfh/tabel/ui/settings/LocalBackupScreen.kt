@@ -11,6 +11,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
@@ -33,10 +34,11 @@ fun LocalBackupSection(vm: SettingsViewModel, note: (String) -> Unit) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     var making by remember { mutableStateOf(false) }
-    var pending by remember { mutableStateOf<File?>(null) }
+    // The path, saved across a configuration change while the system's file picker is open.
+    var pending by rememberSaveable { mutableStateOf<String?>(null) }
 
     val save = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument(LocalBackup.JSON)) { uri ->
-        val file = pending ?: return@rememberLauncherForActivityResult
+        val file = pending?.let(::File) ?: return@rememberLauncherForActivityResult
         pending = null
         if (uri == null) return@rememberLauncherForActivityResult
         scope.launch {
@@ -60,7 +62,7 @@ fun LocalBackupSection(vm: SettingsViewModel, note: (String) -> Unit) {
                 scope.launch {
                     try {
                         val file = vm.makeBackupFile()
-                        pending = file
+                        pending = file.path
                         save.launch(file.name)
                     } catch (e: Exception) {
                         if (e is CancellationException) throw e
