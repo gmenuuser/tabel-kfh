@@ -106,10 +106,8 @@ jobs:
             adb shell settings put secure show_first_crash_dialog 0 || true
             adb shell input keyevent 82 || true
             # The apks stay installed so the review samples can be pulled afterwards; shots=true makes the flow
-            # tests of Tasks 9–15 keep their pictures too.
-            ./gradlew :app:connectedDebugAndroidTest \
-              -Pandroid.injected.androidTest.leaveApksInstalledAfterRun=true \
-              -Pandroid.testInstrumentationRunnerArguments.shots=true
+            # tests of Tasks 9–15 keep their pictures too. One line: the action runs each line as its own command.
+            ./gradlew :app:connectedDebugAndroidTest -Pandroid.injected.androidTest.leaveApksInstalledAfterRun=true -Pandroid.testInstrumentationRunnerArguments.shots=true
       - name: Pull the review samples
         if: always()
         working-directory: android
