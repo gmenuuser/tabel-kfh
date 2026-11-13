@@ -1,9 +1,11 @@
-import { test, before, after } from 'node:test';
+import { test, before, beforeEach, after } from 'node:test';
 import assert from 'node:assert/strict';
-import { harness, register, login, auth, pushOps, pullAll, upsert, remove, randomUUID, type Harness } from './helpers.ts';
+import { harness, resetDb, seedOwner, owner, appDevice, login, auth, pushOps, pullAll, upsert, remove, randomUUID, type Harness } from './helpers.ts';
 
 let h: Harness;
-before(async () => { h = await harness({ registrationOpen: true }); });
+before(async () => { h = await harness(); });
+// An app device joins the oldest farm, so every test starts with an empty database.
+beforeEach(async () => { await resetDb(h.db); });
 after(async () => { await h.close(); });
 
 const sale = (over: object = {}) => ({
@@ -13,16 +15,16 @@ const sale = (over: object = {}) => ({
   driverPaymentAmount: 100000, comment: '', ...over,
 });
 
-test('регистрация, вход второго устройства, чужое хозяйство не видно', async () => {
-  const email = `a${Date.now()}@example.com`;
-  const iphone = await register(h.app, { email });
+test('вход владельца, приложение в том же хозяйстве, чужое хозяйство не видно', async () => {
+  const { email, password } = await seedOwner(h.db);
+  const iphone = await login(h.app, email, password, 'web');
   assert.equal(iphone.role, 'owner');
-  const android = await login(h.app, email, 'пароль-12345');
+  const android = await appDevice(h.app);
   assert.equal(android.farmId, iphone.farmId);
-  const bad = await h.app.inject({ method: 'POST', url: '/auth/login', payload: { email, password: 'неверный-пароль' } });
+  const bad = await h.app.inject({ method: 'POST', url: '/auth/login', payload: { email, password: 'неверный-пароль', platform: 'web' } });
   assert.equal(bad.statusCode, 401);
 
-  const other = await register(h.app);
+  const other = await owner(h.app, h.db);
   await pushOps(h.app, other, [upsert('employee', randomUUID(), { lastName: 'Чужой', firstName: 'Пётр' })]);
   const me = await h.app.inject({ method: 'GET', url: '/me', headers: auth(iphone) });
   assert.equal(me.json().farm.region, 'Приаргунский район, Забайкальский край, Россия');
@@ -34,10 +36,9 @@ test('регистрация, вход второго устройства, чу
 
 // Тест 2 и 3: изменения одного устройства приходят на другие, без дублей.
 test('работник с iPhone появляется на Android и сайте, правка с сайта — на iPhone', async () => {
-  const iphone = await register(h.app, { email: `b${Date.now()}@example.com` });
-  const email = (await h.app.inject({ method: 'GET', url: '/members', headers: auth(iphone) })).json()[0].email;
-  const android = await login(h.app, email, 'пароль-12345', 'android');
-  const web = await login(h.app, email, 'пароль-12345', 'web');
+  const web = await owner(h.app, h.db);
+  const iphone = await appDevice(h.app, 'ios');
+  const android = await appDevice(h.app, 'android');
   const employeeId = randomUUID();
   const markId = randomUUID();
   const queue = [
@@ -68,9 +69,8 @@ test('работник с iPhone появляется на Android и сайте
 
 // Тест 4: одновременное редактирование.
 test('разные поля объединяются, одно поле — конфликт, данные не теряются', async () => {
-  const iphone = await register(h.app, { email: `c${Date.now()}@example.com` });
-  const email = (await h.app.inject({ method: 'GET', url: '/members', headers: auth(iphone) })).json()[0].email;
-  const android = await login(h.app, email, 'пароль-12345');
+  const iphone = await owner(h.app, h.db);
+  const android = await appDevice(h.app);
   const id = randomUUID();
   await pushOps(h.app, iphone, [upsert('employee', id, { lastName: 'Петров', firstName: 'Пётр', position: '' })]);
   // Both saw version 1.
@@ -97,9 +97,8 @@ test('разные поля объединяются, одно поле — ко
 });
 
 test('продажу не сливают по полям: при конфликте не применяется ничего', async () => {
-  const a = await register(h.app, { email: `d${Date.now()}@example.com` });
-  const email = (await h.app.inject({ method: 'GET', url: '/members', headers: auth(a) })).json()[0].email;
-  const b = await login(h.app, email, 'пароль-12345');
+  const a = await owner(h.app, h.db);
+  const b = await appDevice(h.app);
   const id = randomUUID();
   await pushOps(h.app, a, [upsert('coalSale', id, sale())]);
   await pushOps(h.app, a, [upsert('coalSale', id, { coalAmount: 1250000, totalAmount: 1350000 }, 1)]);
@@ -113,7 +112,7 @@ test('продажу не сливают по полям: при конфлик�
 
 // Тест 5: повторная отправка.
 test('повторная отправка не создаёт двойных продаж, выплат и забоя', async () => {
-  const d = await register(h.app, { email: `e${Date.now()}@example.com` });
+  const d = await owner(h.app, h.db);
   const category = randomUUID();
   const ops = [
     upsert('coalSale', randomUUID(), sale()),
@@ -132,7 +131,7 @@ test('повторная отправка не создаёт двойных п�
 });
 
 test('сервер проверяет деньги и поголовье', async () => {
-  const d = await register(h.app, { email: `f${Date.now()}@example.com` });
+  const d = await owner(h.app, h.db);
   const bad = await pushOps(h.app, d, [upsert('coalSale', randomUUID(), sale({ totalAmount: 1 }))]);
   assert.equal(bad[0].status, 'rejected');
   const own = await pushOps(h.app, d, [upsert('coalSale', randomUUID(), sale({ vehicleType: 'own', driverPaymentAmount: 100000 }))]);
@@ -148,9 +147,8 @@ test('сервер проверяет деньги и поголовье', async
 
 // Тест 6: удаление.
 test('удаление доходит до других устройств, удалённое не возвращается', async () => {
-  const a = await register(h.app, { email: `g${Date.now()}@example.com` });
-  const email = (await h.app.inject({ method: 'GET', url: '/members', headers: auth(a) })).json()[0].email;
-  const b = await login(h.app, email, 'пароль-12345');
+  const a = await owner(h.app, h.db);
+  const b = await appDevice(h.app);
   const id = randomUUID();
   await pushOps(h.app, a, [upsert('driver', id, { lastName: 'Мунгалов' })]);
   const cursor = (await pullAll(h.app, b)).next;
@@ -171,45 +169,23 @@ test('удаление доходит до других устройств, уд
   assert.equal((await pushOps(h.app, b, [remove('driver', id2, 1)]))[0].status, 'conflict');
 });
 
-test('роли помощников и отзыв устройства', async () => {
-  const owner = await register(h.app, { email: `h${Date.now()}@example.com` });
-  const created = await h.app.inject({ method: 'POST', url: '/members', headers: auth(owner),
-    payload: { login: 'brigadir', password: 'помощник-123', role: 'timesheet' } });
-  assert.equal(created.statusCode, 201);
-  const helper = await login(h.app, 'brigadir', 'помощник-123', 'android');
-  assert.equal(helper.role, 'timesheet');
-  assert.equal((await pushOps(h.app, helper, [upsert('hoursMark', randomUUID(), { employeeId: randomUUID(), day: '2026-11-06', hours: 8 })]))[0].status, 'applied');
-  const sales = await pushOps(h.app, helper, [upsert('coalSale', randomUUID(), sale())]);
-  assert.equal(sales[0].status, 'rejected', 'бригадир не трогает продажи');
-
-  const devices = (await h.app.inject({ method: 'GET', url: '/devices', headers: auth(owner) })).json();
-  assert.equal(devices.length, 2);
-  const lost = devices.find((d: { id: string }) => d.id === helper.deviceId);
-  assert.equal((await h.app.inject({ method: 'POST', url: `/devices/${lost.id}/revoke`, headers: auth(owner) })).statusCode, 200);
-  assert.equal((await h.app.inject({ method: 'GET', url: '/sync/pull', headers: auth(helper) })).statusCode, 401, 'отозванное устройство отключено');
-  const notOwner = await h.app.inject({ method: 'POST', url: '/members', headers: auth(helper),
-    payload: { login: 'second', password: 'помощник-123', role: 'manager' } });
-  assert.equal(notOwner.statusCode, 401);
-});
-
 test('восстановление доступа кодом выключает старые устройства', async () => {
-  const email = `r${Date.now()}@example.com`;
-  const d = await register(h.app, { email });
+  const { email, password } = await seedOwner(h.db);
+  const d = await login(h.app, email, password, 'web');
   await h.app.inject({ method: 'POST', url: '/auth/reset-request', payload: { email } });
   const code = h.logs.find((l) => l.includes(email))!.split(': ').pop()!;
   const r = await h.app.inject({ method: 'POST', url: '/auth/reset', payload: { email, code, password: 'новый-пароль-1' } });
   assert.equal(r.statusCode, 200);
   assert.equal((await h.app.inject({ method: 'GET', url: '/me', headers: auth(d) })).statusCode, 401);
-  await login(h.app, email, 'новый-пароль-1');
+  await login(h.app, email, 'новый-пароль-1', 'web');
   const again = await h.app.inject({ method: 'POST', url: '/auth/reset', payload: { email, code, password: 'ещё-пароль-12' } });
   assert.equal(again.statusCode, 400, 'код одноразовый');
 });
 
 // Тест 7: файлы.
 test('файл загружается один раз и открывается с другого устройства', async () => {
-  const a = await register(h.app, { email: `i${Date.now()}@example.com` });
-  const email = (await h.app.inject({ method: 'GET', url: '/members', headers: auth(a) })).json()[0].email;
-  const b = await login(h.app, email, 'пароль-12345');
+  const a = await owner(h.app, h.db);
+  const b = await appDevice(h.app);
   const photo = Buffer.from([0xff, 0xd8, 0xff, 1, 2, 3, 4, 5]);
   const up = await h.app.inject({ method: 'PUT', url: '/files', headers: { ...auth(a), 'content-type': 'image/jpeg',
     'x-file-name': encodeURIComponent('поле.jpg') }, payload: photo });
@@ -220,12 +196,12 @@ test('файл загружается один раз и открывается 
   const got = await h.app.inject({ method: 'GET', url: `/files/${up.json().id}`, headers: auth(b) });
   assert.equal(got.statusCode, 200);
   assert.deepEqual(got.rawPayload, photo);
-  const stranger = await register(h.app);
+  const stranger = await owner(h.app, h.db);
   assert.equal((await h.app.inject({ method: 'GET', url: `/files/${up.json().id}`, headers: auth(stranger) })).statusCode, 404);
 });
 
 test('серверная резервная копия: проверка и восстановление', async () => {
-  const d = await register(h.app, { email: `j${Date.now()}@example.com` });
+  const d = await owner(h.app, h.db);
   const id = randomUUID();
   await pushOps(h.app, d, [upsert('driver', id, { lastName: 'Мунгалов' })]);
   const backup = await h.app.inject({ method: 'POST', url: '/backups', headers: auth(d) });

@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { harness, register, auth, pushOps, pullAll, upsert, randomUUID, type Device, type Harness } from './helpers.ts';
+import { harness, owner as seedFarm, auth, pushOps, pullAll, upsert, randomUUID, type Device, type Harness } from './helpers.ts';
 import { sha256, newToken } from '../src/auth.ts';
 
 const SQL_003 = join(import.meta.dirname, '..', 'sql', '003_open_apps.sql');
@@ -15,9 +15,9 @@ const asDevice = (d: { token: string; farmId: string; deviceId: string }): Devic
   ({ token: d.token, farmId: d.farmId, userId: '', deviceId: d.deviceId, role: 'manager' });
 
 test('регистрация устройства без входа', async () => {
-  const h = await harness({ registrationOpen: true });
+  const h = await harness();
   try {
-    await register(h.app); // the farm and its owner
+    await seedFarm(h.app, h.db); // the farm and its owner
     const r = await registerApp(h);
     assert.equal(r.statusCode, 201);
     const d = r.json();
@@ -43,7 +43,7 @@ test('регистрация устройства без входа', async () =
 });
 
 test('регистрация без хозяйства даёт 503', async () => {
-  const h = await harness({ registrationOpen: true });
+  const h = await harness();
   try {
     const r = await registerApp(h);
     assert.equal(r.statusCode, 503);
@@ -54,9 +54,9 @@ test('регистрация без хозяйства даёт 503', async () =
 });
 
 test('переключатель закрывает новые устройства', async () => {
-  const h = await harness({ registrationOpen: true });
+  const h = await harness();
   try {
-    const owner = await register(h.app);
+    const owner = await seedFarm(h.app, h.db);
     const before = (await registerApp(h)).json();
     const meOwner = (await h.app.inject({ method: 'GET', url: '/me', headers: auth(owner) })).json();
     assert.equal(meOwner.kind, 'owner');
@@ -76,9 +76,9 @@ test('переключатель закрывает новые устройст�
 });
 
 test('не больше 5 регистраций в час с адреса', async () => {
-  const h = await harness({ registrationOpen: true });
+  const h = await harness();
   try {
-    await register(h.app);
+    await seedFarm(h.app, h.db);
     const codes: number[] = [];
     for (let i = 0; i < 6; i += 1) codes.push((await registerApp(h, {}, '7.7.7.7')).statusCode);
     assert.deepEqual(codes, [201, 201, 201, 201, 201, 429]);
@@ -89,7 +89,7 @@ test('не больше 5 регистраций в час с адреса', asy
 });
 
 test('миграция 003 переводит устройства', async () => {
-  const h = await harness({ registrationOpen: true });
+  const h = await harness();
   try {
     const sql = readFileSync(SQL_003, 'utf8');
     const q = async (text: string, params: unknown[] = []) => (await h.db.query(text, params)).rows;
@@ -105,6 +105,9 @@ test('миграция 003 переводит устройства', async () =>
     };
     const helperIos = await dev(helper, 'ios', 'iPhone');
     const helperWeb = await dev(helper, 'web', 'Браузер');
+    const helperTest = await dev(helper, 'test', 'Тест');
+    const helperBlank = await dev(helper, '', 'Без платформы');
+    const ownerBlank = await dev(owner, '', 'Старое устройство владельца');
     const ownerIos = await dev(owner, 'ios', 'iPhone владельца');
     const ownerWeb = await dev(owner, 'web', 'Сайт владельца');
     const rec = randomUUID();
@@ -124,6 +127,10 @@ test('миграция 003 переводит устройства', async () =>
     assert.equal((await dr(helperIos.id)).user_id, null);
     assert.equal((await dr(helperIos.id)).revoked_at, null);
     assert.notEqual((await dr(helperWeb.id)).revoked_at, null);
+    // only phones become app devices: a helper's other sessions end, the owner's stay
+    assert.notEqual((await dr(helperTest.id)).revoked_at, null);
+    assert.notEqual((await dr(helperBlank.id)).revoked_at, null);
+    assert.equal((await dr(ownerBlank.id)).revoked_at, null);
     assert.equal((await dr(ownerIos.id)).user_id, null);
     assert.equal((await dr(ownerIos.id)).name, 'iPhone владельца');
     assert.equal((await dr(ownerWeb.id)).revoked_at, null);

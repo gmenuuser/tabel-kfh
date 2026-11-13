@@ -4,8 +4,8 @@ import { mkdirSync, writeFileSync, readFileSync, existsSync } from 'node:fs';
 import { join } from 'node:path';
 import type { Db } from './db.ts';
 import { inTransaction } from './db.ts';
-import { hashPassword, verifyPassword, newToken, sha256, sessionOf, validPassword, normalEmail, normalLogin, type Session } from './auth.ts';
-import { ROLES, ENTITIES, canRead, type Role } from './entities.ts';
+import { hashPassword, verifyPassword, newToken, sha256, sessionOf, validPassword, normalEmail, type Session } from './auth.ts';
+import { ENTITIES, canRead } from './entities.ts';
 import { push, pull, openConflicts, resolveConflict, type PushOp } from './sync.ts';
 
 export interface AppOptions {
@@ -18,8 +18,6 @@ export interface AppOptions {
   authAttemptsPerMinute?: number;
   /** The built site (web/dist): served from the same address, so no CORS and no second server. */
   webDir?: string;
-  /** Anyone may open a new farm (`POST /auth/register`). Closed by default: the owner's farm already exists. */
-  registrationOpen?: boolean;
 }
 
 const STATIC_TYPES: Record<string, string> = {
@@ -39,8 +37,14 @@ const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 /** A small per-address limit (default window: a minute). */
 function limiter(max: number, windowMs = 60_000) {
   const hits = new Map<string, { n: number; until: number }>();
+  let nextSweep = Date.now() + windowMs;
   return (key: string) => {
     const now = Date.now();
+    // Expired entries are dropped once per window, so the map cannot grow forever.
+    if (now >= nextSweep) {
+      for (const [k, v] of hits) if (v.until < now) hits.delete(k);
+      nextSweep = now + windowMs;
+    }
     const h = hits.get(key);
     if (!h || h.until < now) { hits.set(key, { n: 1, until: now + windowMs }); return true; }
     h.n += 1;
@@ -111,59 +115,27 @@ export function buildApp(o: AppOptions): FastifyInstance {
 
   // MARK: Accounts
 
-  app.get('/auth/config', async () => ({ registrationOpen: o.registrationOpen === true }));
+  /** Registration of farms is gone; old builds still ask. */
+  app.get('/auth/config', async () => ({ registrationOpen: false }));
 
-  /** A new account and its farm; the device is signed in. */
-  app.post('/auth/register', async (req, reply) => {
-    if (o.registrationOpen !== true) return fail(reply, 403, 'Регистрация закрыта');
-    if (!allow(`auth:${req.ip}`)) return fail(reply, 429, 'Слишком много попыток, подождите минуту');
-    const b = (req.body ?? {}) as Record<string, unknown>;
-    const email = normalEmail(b.email);
-    if (!email) return fail(reply, 400, 'Укажите почту');
-    if (!validPassword(b.password)) return fail(reply, 400, 'Пароль — не короче 8 символов');
-    const farmName = String(b.farmName ?? '').trim() || 'КФХ';
-    const hash = await hashPassword(b.password);
-    try {
-      const out = await inTransaction(db, async (tx) => {
-        const u = await tx.query('INSERT INTO users (email, name, password_hash) VALUES ($1, $2, $3) RETURNING id',
-          [email, String(b.name ?? '').trim(), hash]);
-        const f = await tx.query(
-          `INSERT INTO farms (name, manager_name, region, timezone) VALUES ($1, $2, COALESCE($3, 'Приаргунский район, Забайкальский край, Россия'),
-           COALESCE($4, 'Asia/Chita')) RETURNING id`,
-          [farmName, String(b.name ?? '').trim(), typeof b.region === 'string' && b.region.trim() ? b.region.trim() : null,
-           typeof b.timezone === 'string' && b.timezone ? b.timezone : null]);
-        await tx.query("INSERT INTO memberships (farm_id, user_id, role) VALUES ($1, $2, 'owner')", [f.rows[0].id, u.rows[0].id]);
-        const d = await issueDevice(tx, f.rows[0].id, u.rows[0].id, b.deviceName, b.platform);
-        return { token: d.token, deviceId: d.deviceId, farmId: f.rows[0].id, userId: u.rows[0].id, role: 'owner' };
-      });
-      await audit({ farmId: out.farmId, userId: out.userId, deviceId: out.deviceId, role: 'owner' }, 'auth.register');
-      return reply.code(201).send(out);
-    } catch (e: unknown) {
-      if ((e as { code?: string }).code === '23505') return fail(reply, 409, 'Эта почта уже зарегистрирована');
-      throw e;
-    }
-  });
-
-  /** Signs a device in to one of the user's farms (the only one, or `farmId`). */
+  /** The owner signs in to the site with an e-mail. Phones no longer sign in: they connect themselves (`/devices/register`). */
   app.post('/auth/login', async (req, reply) => {
     if (!allow(`auth:${req.ip}`)) return fail(reply, 429, 'Слишком много попыток, подождите минуту');
     const b = (req.body ?? {}) as Record<string, unknown>;
-    // `login` (or the older `email`) is an e-mail first, otherwise a helper's login.
-    const who = typeof b.login === 'string' ? b.login : b.email;
-    const email = normalEmail(who);
-    const login = email ? null : normalLogin(who);
-    const u = email ? (await db.query('SELECT id, password_hash FROM users WHERE email = $1', [email])).rows[0]
-            : login ? (await db.query('SELECT id, password_hash FROM users WHERE login = $1', [login])).rows[0] : undefined;
+    // `login` (or the older `email`) must be an e-mail; a login or any platform but the site is the cancelled way.
+    const email = normalEmail(typeof b.login === 'string' ? b.login : b.email);
+    if (!email || b.platform !== 'web') return fail(reply, 403, 'Вход по логину отменён — скачайте новую версию приложения у владельца');
+    const u = (await db.query('SELECT id, password_hash FROM users WHERE email = $1', [email])).rows[0];
     if (!u || typeof b.password !== 'string' || !(await verifyPassword(b.password, u.password_hash))) {
-      await audit(null, 'auth.login.failed', { email, login });
+      await audit(null, 'auth.login.failed', { email });
       return fail(reply, 401, 'Неверный логин или пароль');
     }
-    const farms = (await db.query('SELECT farm_id, role FROM memberships WHERE user_id = $1 ORDER BY created_at', [u.id])).rows;
+    const farms = (await db.query("SELECT farm_id, role FROM memberships WHERE user_id = $1 AND role = 'owner' ORDER BY created_at", [u.id])).rows;
     const m = typeof b.farmId === 'string' ? farms.find((f) => f.farm_id === b.farmId) : farms[0];
-    if (!m) return fail(reply, 403, 'Нет доступа к хозяйству');
-    const d = await issueDevice(db, m.farm_id, u.id, b.deviceName, b.platform);
-    await audit({ farmId: m.farm_id, userId: u.id, deviceId: d.deviceId, role: m.role }, 'auth.login');
-    return { token: d.token, deviceId: d.deviceId, farmId: m.farm_id, userId: u.id, role: m.role,
+    if (!m) return fail(reply, 403, 'Вход на сайт — только для владельца хозяйства');
+    const d = await issueDevice(db, m.farm_id, u.id, b.deviceName, 'web');
+    await audit({ farmId: m.farm_id, userId: u.id, deviceId: d.deviceId, role: 'owner' }, 'auth.login');
+    return { token: d.token, deviceId: d.deviceId, farmId: m.farm_id, userId: u.id, role: 'owner',
              farms: farms.map((f) => ({ farmId: f.farm_id, role: f.role })) };
   });
 
@@ -251,111 +223,33 @@ export function buildApp(o: AppOptions): FastifyInstance {
     return { ok: true };
   });
 
-  /** The owner creates a helper: a login (no e-mail), a password and a role. */
-  app.post('/members', { preHandler: [signedIn, ownerOnly] }, async (req, reply) => {
-    const b = (req.body ?? {}) as Record<string, unknown>;
-    const login = normalLogin(b.login);
-    const role = b.role as Role;
-    if (!login) return fail(reply, 400, 'Логин — от 3 до 32 латинских букв, цифр, «_» и «-»');
-    if (!validPassword(b.password)) return fail(reply, 400, 'Пароль — не короче 8 символов');
-    if (!ROLES.includes(role) || role === 'owner') return fail(reply, 400, 'Роль: manager, timesheet, coal, livestock или viewer');
-    const hash = await hashPassword(b.password);
-    try {
-      const id = await inTransaction(db, async (tx) => {
-        const u = await tx.query('INSERT INTO users (login, name, password_hash) VALUES ($1, $2, $3) RETURNING id', [login, login, hash]);
-        await tx.query('INSERT INTO memberships (farm_id, user_id, role) VALUES ($1, $2, $3)', [req.session.farmId, u.rows[0].id, role]);
-        return u.rows[0].id as string;
-      });
-      await audit(req.session, 'member.create', { userId: id, login, role });
-      return reply.code(201).send({ id, login, role });
-    } catch (e: unknown) {
-      if ((e as { code?: string }).code === '23505') return fail(reply, 409, 'Такой логин уже есть');
-      throw e;
-    }
-  });
-
-  /** The owner sets a new password for a helper; all the helper's devices of this farm are signed out. */
-  app.post('/members/:userId/password', { preHandler: [signedIn, ownerOnly] }, async (req, reply) => {
-    const { userId } = req.params as { userId: string };
-    if (!UUID.test(userId)) return fail(reply, 404, 'Помощник не найден');
-    const password = (req.body as Record<string, unknown> | undefined)?.password;
-    if (!validPassword(password)) return fail(reply, 400, 'Пароль — не короче 8 символов');
-    if (userId === req.session.userId) return fail(reply, 400, 'Свой пароль владелец меняет через восстановление доступа');
-    const hash = await hashPassword(password);
-    const found = await inTransaction(db, async (tx) => {
-      // Only a login-only helper of this farm: an account with an e-mail or another farm has a password of its own.
-      const m = await tx.query(
-        `SELECT 1 FROM memberships m JOIN users u ON u.id = m.user_id
-          WHERE m.farm_id = $1 AND m.user_id = $2 AND u.email IS NULL
-            AND NOT EXISTS (SELECT 1 FROM memberships o WHERE o.user_id = m.user_id AND o.farm_id <> m.farm_id)`,
-        [req.session.farmId, userId]);
-      if (!m.rowCount) return false;
-      await tx.query('UPDATE users SET password_hash = $2 WHERE id = $1', [userId, hash]);
-      await tx.query('UPDATE devices SET revoked_at = now() WHERE user_id = $1 AND revoked_at IS NULL', [userId]);
-      return true;
-    });
-    if (!found) return fail(reply, 404, 'Помощник не найден');
-    await audit(req.session, 'member.password', { userId });
-    return { ok: true };
-  });
-
-  app.get('/members', { preHandler: signedIn }, async (req) => {
-    return (await db.query(
-      `SELECT u.id, u.login, u.email, u.name, m.role FROM memberships m JOIN users u ON u.id = m.user_id WHERE m.farm_id = $1 ORDER BY m.created_at`,
-      [req.session.farmId])).rows;
-  });
-
-  app.patch('/members/:userId', { preHandler: [signedIn, ownerOnly] }, async (req, reply) => {
-    const role = (req.body as Record<string, unknown> | undefined)?.role as Role;
-    const { userId } = req.params as { userId: string };
-    if (!UUID.test(userId)) return fail(reply, 404, 'Помощник не найден');
-    if (!ROLES.includes(role) || role === 'owner' || userId === req.session.userId) return fail(reply, 400, 'Неверная роль');
-    // The helper signs in again to get the new rights.
-    const found = await inTransaction(db, async (tx) => {
-      const m = await tx.query('UPDATE memberships SET role = $3 WHERE farm_id = $1 AND user_id = $2', [req.session.farmId, userId, role]);
-      if (!m.rowCount) return false;
-      await tx.query('UPDATE devices SET revoked_at = now() WHERE farm_id = $1 AND user_id = $2 AND revoked_at IS NULL', [req.session.farmId, userId]);
-      return true;
-    });
-    if (!found) return fail(reply, 404, 'Помощник не найден');
-    await audit(req.session, 'member.role', { userId, role });
-    return { ok: true };
-  });
-
-  /** Removes a helper from the farm and signs all their devices of this farm out. */
-  app.delete('/members/:userId', { preHandler: [signedIn, ownerOnly] }, async (req, reply) => {
-    const { userId } = req.params as { userId: string };
-    if (!UUID.test(userId)) return fail(reply, 404, 'Помощник не найден');
-    if (userId === req.session.userId) return fail(reply, 400, 'Владельца удалить нельзя');
-    const found = await inTransaction(db, async (tx) => {
-      const m = await tx.query('DELETE FROM memberships WHERE farm_id = $1 AND user_id = $2', [req.session.farmId, userId]);
-      if (!m.rowCount) return false;
-      await tx.query('UPDATE devices SET revoked_at = now() WHERE farm_id = $1 AND user_id = $2 AND revoked_at IS NULL', [req.session.farmId, userId]);
-      return true;
-    });
-    if (!found) return fail(reply, 404, 'Помощник не найден');
-    await audit(req.session, 'member.remove', { userId });
-    return { ok: true };
-  });
-
-  app.get('/devices', { preHandler: signedIn }, async (req) => {
+  /** Every device of the farm: phones (`app`, no account) and the owner's site sessions (`owner`). */
+  app.get('/devices', { preHandler: [signedIn, ownerOnly] }, async (req) => {
     const s = req.session;
     const rows = (await db.query(
-      `SELECT d.id, d.name, d.platform, d.created_at, d.last_seen_at, d.revoked_at, u.email, u.login
-         FROM devices d LEFT JOIN users u ON u.id = d.user_id
-        WHERE d.farm_id = $1 AND ($2 OR d.user_id = $3) ORDER BY d.created_at`,
-      [s.farmId, s.role === 'owner', s.userId])).rows;
-    return rows.map((d) => ({ id: d.id, name: d.name, platform: d.platform, email: d.email, login: d.login, createdAt: d.created_at,
+      `SELECT id, name, platform, user_id, created_at, last_seen_at, revoked_at FROM devices WHERE farm_id = $1 ORDER BY created_at`,
+      [s.farmId])).rows;
+    return rows.map((d) => ({ id: d.id, name: d.name, platform: d.platform, kind: d.user_id ? 'owner' : 'app', createdAt: d.created_at,
                               lastSeenAt: d.last_seen_at, revoked: !!d.revoked_at, current: d.id === s.deviceId }));
   });
 
-  /** «Отозвать доступ» for a lost device: the owner for any device of the farm, a member for their own. */
-  app.post('/devices/:id/revoke', { preHandler: signedIn }, async (req, reply) => {
+  app.patch('/devices/:id', { preHandler: [signedIn, ownerOnly] }, async (req, reply) => {
+    const { id } = req.params as { id: string };
+    const name = (req.body as Record<string, unknown> | undefined)?.name;
+    if (typeof name !== 'string' || name.trim().length < 1 || name.trim().length > 100) return fail(reply, 400, 'Название — от 1 до 100 символов');
+    if (!UUID.test(id)) return fail(reply, 404, 'Устройство не найдено');
+    const r = await db.query('UPDATE devices SET name = $3 WHERE id = $1 AND farm_id = $2', [id, req.session.farmId, name.trim()]);
+    if (!r.rowCount) return fail(reply, 404, 'Устройство не найдено');
+    await audit(req.session, 'device.rename', { deviceId: id });
+    return { ok: true };
+  });
+
+  /** «Отключить» a lost or unwanted device. */
+  app.post('/devices/:id/revoke', { preHandler: [signedIn, ownerOnly] }, async (req, reply) => {
     const s = req.session;
     const { id } = req.params as { id: string };
-    const r = await db.query(
-      `UPDATE devices SET revoked_at = now() WHERE id = $1 AND farm_id = $2 AND revoked_at IS NULL AND ($3 OR user_id = $4)`,
-      [id, s.farmId, s.role === 'owner', s.userId]);
+    if (!UUID.test(id)) return fail(reply, 404, 'Устройство не найдено');
+    const r = await db.query('UPDATE devices SET revoked_at = now() WHERE id = $1 AND farm_id = $2 AND revoked_at IS NULL', [id, s.farmId]);
     if (!r.rowCount) return fail(reply, 404, 'Устройство не найдено');
     await audit(s, 'device.revoke', { deviceId: id });
     return { ok: true };
@@ -378,7 +272,7 @@ export function buildApp(o: AppOptions): FastifyInstance {
 
   app.get('/conflicts', { preHandler: signedIn }, async (req) => ({ conflicts: await openConflicts(db, req.session) }));
 
-  app.post('/conflicts/:id/resolve', { preHandler: signedIn }, async (req, reply) => {
+  app.post('/conflicts/:id/resolve', { preHandler: [signedIn, ownerOnly] }, async (req, reply) => {
     const choice = (req.body as Record<string, unknown> | undefined)?.choice;
     if (choice !== 'server' && choice !== 'client') return fail(reply, 400, 'choice — server или client');
     const r = await resolveConflict(db, req.session, (req.params as { id: string }).id, choice);

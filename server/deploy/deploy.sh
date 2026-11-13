@@ -91,7 +91,7 @@ cd /opt/kfh/server
 dc() { docker compose -f docker-compose.yml -f deploy/compose.prod.yml "$@"; }
 
 if [ ! -f .env ]; then
-  (umask 077; printf 'POSTGRES_PASSWORD=%s\nREGISTRATION_OPEN=false\n' "$(openssl rand -hex 24)" > .env)
+  (umask 077; printf 'POSTGRES_PASSWORD=%s\n' "$(openssl rand -hex 24)" > .env)
   echo "==> created .env"
 fi
 chmod 600 .env

@@ -7,9 +7,9 @@ ALTER TABLE devices ALTER COLUMN user_id DROP NOT NULL;
 ALTER TABLE devices DROP CONSTRAINT IF EXISTS devices_user_id_fkey;
 ALTER TABLE devices ADD CONSTRAINT devices_user_id_fkey FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE SET NULL;
 
--- Helpers' site sessions end; the owner's stay.
+-- A helper's sessions other than phones (site, test, unknown platform) end; the owner's stay.
 UPDATE devices d SET revoked_at = now()
- WHERE d.platform = 'web' AND d.revoked_at IS NULL
+ WHERE d.platform NOT IN ('ios', 'android') AND d.revoked_at IS NULL
    AND NOT EXISTS (SELECT 1 FROM memberships m WHERE m.user_id = d.user_id AND m.role = 'owner');
 
 -- Phones keep their tokens and become app devices; a helper's phone is named after the helper so the owner can tell them apart.
