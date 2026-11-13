@@ -10,7 +10,7 @@
   "scripts": {
     "start": "node src/main.ts",
     "typecheck": "tsc --noEmit",
-    "test": "node --test --test-concurrency=1 test/",
+    "test": "node --test --test-concurrency=1 \"test/**/*.test.ts\"",
     "test:db": "docker run -d --name kfh-test-db -e POSTGRES_USER=kfh -e POSTGRES_PASSWORD=kfh -e POSTGRES_DB=kfh_test -p 127.0.0.1:55432:5432 postgres:17.6-alpine"
   },
   "dependencies": {
