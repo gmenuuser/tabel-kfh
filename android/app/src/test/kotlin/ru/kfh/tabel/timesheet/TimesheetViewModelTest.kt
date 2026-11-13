@@ -365,7 +365,9 @@ class TimesheetViewModelTest {
     }
 
     @Test
-    fun pickedDaySurvivesAProfileRefreshButNotANewConnect() = runTest {
+    // Real time, not runTest: the reset's collector runs on Dispatchers.Default, and the pauses below must let it see
+    // each state (runTest's virtual delays pass at once, and a StateFlow collector then misses the short states).
+    fun pickedDaySurvivesAProfileRefreshButNotANewConnect() = kotlinx.coroutines.runBlocking {
         val me = Me(null, Role.app, "КФХ Зубахин", null, null, chita)
         val states = MutableStateFlow<SessionState>(SessionState.NotConnected(ConnectReason.Offline))
         // Another day before the connect: the wait below sees the reset itself, not the day the screen started on
