@@ -72,7 +72,8 @@ class RoomLocalStore(
         val o = db.meta().get(MetaDao.ME)?.let(::parseObject) ?: return null
         fun s(k: String) = o[k]?.takeIf { it !is JsonNull }?.jsonPrimitive?.contentOrNull
         return Me(
-            userId = s("userId") ?: return null,
+            // A phone that connected itself has no user ([Role.app]).
+            userId = s("userId"),
             role = s("role")?.let { Role.fromWire(it) } ?: return null,
             farmName = s("farmName") ?: "",
             managerName = s("managerName"),
@@ -85,7 +86,7 @@ class RoomLocalStore(
     suspend fun saveMe(me: Me) {
         val o = JsonObject(
             mapOf(
-                "userId" to JsonPrimitive(me.userId),
+                "userId" to (me.userId?.let(::JsonPrimitive) ?: JsonNull),
                 "role" to JsonPrimitive(me.role.name),
                 "farmName" to JsonPrimitive(me.farmName),
                 "managerName" to (me.managerName?.let(::JsonPrimitive) ?: JsonNull),

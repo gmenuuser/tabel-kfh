@@ -125,7 +125,8 @@ fun HomeScreen(
                     Text(me.farmName, style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold,
                          color = Tabel.colors.primary, maxLines = 2, modifier = Modifier.testTag("farmName"))
                     Text(longDate(today), style = MaterialTheme.typography.titleMedium)
-                    if (me.role != Role.owner) {
+                    // A phone that connected itself has no role of a person to name.
+                    if (me.role != Role.owner && me.role != Role.app) {
                         Row(horizontalArrangement = Arrangement.spacedBy(6.dp),
                             verticalAlignment = Alignment.CenterVertically) {
                             Icon(Icons.Filled.AccountCircle, contentDescription = null, tint = Tabel.colors.primary,

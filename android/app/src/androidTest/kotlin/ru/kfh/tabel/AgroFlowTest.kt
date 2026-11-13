@@ -71,7 +71,7 @@ class AgroFlowTest {
                 request.body.readUtf8()
                 seen += "${request.method} ${request.path}"
                 return when (request.requestUrl!!.encodedPath) {
-                    "/auth/login" -> json("""{"token":"tok-ui","role":"owner"}""")
+                    "/devices/register" -> json("""{"token":"tok-ui","deviceId":"d9","farmId":"f1","role":"manager","kind":"app"}""").setResponseCode(201)
                     "/me" -> json(
                         """{"userId":"u1","role":"owner","farm":{"id":"f1","name":"КФХ Зубахин",""" +
                             """"region":"Приаргунский район","managerName":"Зубахин А. В.","timezone":"Asia/Chita"}}""",
@@ -109,10 +109,6 @@ class AgroFlowTest {
 
     @Test
     fun seedingCalculationIsSavedToHistory() {
-        compose.waitUntilExactlyOneExists(hasTestTag("signInLogin"), 10_000)
-        compose.onNodeWithTag("signInLogin").performTextInput("anna")
-        compose.onNodeWithTag("signInPassword").performTextInput("secret")
-        compose.onNodeWithTag("signInButton").performClick()
         compose.waitUntilExactlyOneExists(hasTestTag("openAgro"), 20_000)
         compose.onNodeWithTag("openAgro").performScrollTo().performClick()
 

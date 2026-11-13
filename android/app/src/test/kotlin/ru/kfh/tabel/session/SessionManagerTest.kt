@@ -22,6 +22,7 @@ import org.junit.Test
 import org.junit.rules.TemporaryFolder
 import ru.kfh.core.roles.Module
 import ru.kfh.core.roles.Role
+import ru.kfh.core.sync.Me
 import ru.kfh.tabel.db.PhotoStore
 import ru.kfh.tabel.db.RecordWriter
 import ru.kfh.tabel.db.RoomLocalStore
@@ -30,6 +31,8 @@ import ru.kfh.tabel.db.obj
 import ru.kfh.tabel.db.openTestDb
 import ru.kfh.tabel.ui.home.homeButtons
 import ru.kfh.tabel.ui.home.reportsSubtitle
+import ru.kfh.tabel.ui.signin.connectButton
+import ru.kfh.tabel.ui.signin.connectText
 import java.time.ZoneId
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
@@ -56,8 +59,6 @@ class SessionManagerTest {
         store = RoomLocalStore(db, photos)
         tokens = MemoryTokenStore()
         session = newSession()
-        // Launch: no token, so signed out.
-        runBlocking { session.restore() }
         writer = RecordWriter(db, { session.role ?: Role.viewer })
     }
 
@@ -71,10 +72,17 @@ class SessionManagerTest {
 
     private fun test(body: suspend CoroutineScope.() -> Unit) = runBlocking { withTimeout(20_000) { body() } }
 
-    private suspend fun signedIn(role: String = "owner") {
-        server.role = role
-        assertNull(session.signIn("zubakhin", "secret"))
-        assertTrue(session.state.value is SessionState.SignedIn)
+    /**
+     * Launch without a token: the phone connects itself. [role] given: `/me` answers as the server before `kind`
+     * (the role decides, as for a device of the old builds).
+     */
+    private suspend fun connected(role: String? = null) {
+        if (role != null) {
+            server.kind = null
+            server.role = role
+        }
+        session.restore()
+        assertTrue(session.state.value.toString(), session.state.value is SessionState.SignedIn)
     }
 
     private suspend fun wiped() {
@@ -85,55 +93,149 @@ class SessionManagerTest {
         assertEquals(0L, store.cursor())
     }
 
-    // MARK: Sign in
+    private fun registers() = server.requests("/devices/register").size
+
+    // MARK: Connect
 
     @Test
-    fun signInLoadsEverythingBeforeTheHomeScreen() = test {
+    fun firstLaunchConnectsByItselfAndLoadsEverything() = test {
         server.timezone = "Europe/Moscow"
         server.records = listOf(FarmServer.driver(driverA))
         server.pullGate = CountDownLatch(1)
-        val signIn = async(Dispatchers.IO) { session.signIn("  zubakhin ", "secret") }
+        val launch = async(Dispatchers.IO) { session.restore() }
         assertTrue(server.pullStarted.await(10, TimeUnit.SECONDS))
         // The first pull is on its way: «Загрузка данных…».
         assertEquals(SessionState.Loading, session.state.value)
         server.pullGate!!.countDown()
-        assertNull(signIn.await())
+        launch.await()
 
         val me = (session.state.value as SessionState.SignedIn).me
-        assertEquals(Role.owner, me.role)
+        assertEquals(Role.app, me.role)
+        assertNull(me.userId)
         assertEquals("КФХ Зубахин", me.farmName)
         assertEquals("tok-1", tokens.get())
         assertEquals(me, store.me())
         assertNotNull(db.records().get("driver", driverA))
         assertEquals(ZoneId.of("Europe/Moscow"), session.farmTime.value.zone)
 
-        val login = server.requests("/auth/login").single().json
-        assertEquals("zubakhin", login["login"]!!.jsonPrimitive.content)
-        assertEquals("android", login["platform"]!!.jsonPrimitive.content)
-        assertEquals("Google Pixel 9", login["deviceName"]!!.jsonPrimitive.content)
-        // The login itself goes without a token.
-        assertNull(server.requests("/auth/login").single().authorization)
+        val register = server.requests("/devices/register").single()
+        assertEquals("POST", register.method)
+        assertEquals("android", register.json["platform"]!!.jsonPrimitive.content)
+        assertEquals("Google Pixel 9", register.json["name"]!!.jsonPrimitive.content)
+        // The registration itself goes without a token.
+        assertNull(register.authorization)
+        assertTrue(server.requests("/auth/login").isEmpty())
     }
 
     @Test
-    fun wrongPasswordShowsTheErrorAndStaysSignedOut() = test {
-        assertEquals("Неверный логин или пароль", session.signIn("zubakhin", "wrong"))
-        assertEquals(SessionState.SignedOut, session.state.value)
-        assertNull(tokens.get())
-        assertTrue(server.requests("/me").isEmpty())
+    fun appRoleSeesEveryModuleButWritesNoSettings() = test {
+        connected()
+        assertEquals(Role.app, session.role)
+        assertEquals(
+            listOf(Module.timesheet, Module.coal, Module.livestock, Module.agro, Module.reports),
+            homeButtons(Role.app),
+        )
+        assertTrue(writer.canWrite("coalSale"))
+        assertTrue(writer.canWrite("hoursMark"))
+        assertFalse(writer.canWrite("coalSettings"))
+        assertFalse(writer.canWrite("farmSettings"))
+        assertFalse(writer.canWrite("livestockSettings"))
     }
 
     @Test
-    fun noNetworkOnSignIn() = test {
-        server.server.shutdown()
-        assertEquals("Нет связи с сервером", session.signIn("zubakhin", "secret"))
-        assertEquals(SessionState.SignedOut, session.state.value)
+    fun noNetworkIsOfflineAndRetriedWhenTheNetworkReturns() = test {
+        server.offline = true
+        session.restore()
+        assertEquals(SessionState.NotConnected(ConnectReason.Offline), session.state.value)
         assertNull(tokens.get())
+        assertNull(session.engine.value)
+
+        // The network came back: the scheduler's sync (network, foreground, the period) connects.
+        server.offline = false
+        session.syncNow()
+        assertTrue(session.state.value is SessionState.SignedIn)
+        assertEquals("tok-1", tokens.get())
+        assertEquals(1, registers())
+    }
+
+    @Test
+    fun offlineConnectFromTheButtonReturnsTheText() = test {
+        server.offline = true
+        session.restore()
+        assertEquals("Нет связи с сервером", session.connect())
+        assertEquals(SessionState.NotConnected(ConnectReason.Offline), session.state.value)
+        server.offline = false
+        assertNull(session.connect())
+        assertTrue(session.state.value is SessionState.SignedIn)
+    }
+
+    @Test
+    fun closedRegistrationIsNotRetriedByItself() = test {
+        server.registerClosed = true
+        session.restore()
+        assertEquals(SessionState.NotConnected(ConnectReason.Closed), session.state.value)
+        assertEquals(1, registers())
+
+        // Every attempt counts towards the server's 5 an hour: only «Повторить» asks again.
+        session.syncNow()
+        assertEquals(1, registers())
+
+        assertEquals("Владелец сейчас не подключает новые устройства", session.connect())
+        assertEquals(SessionState.NotConnected(ConnectReason.Closed), session.state.value)
+        server.registerClosed = false
+        assertNull(session.connect())
+        assertTrue(session.state.value is SessionState.SignedIn)
+        assertEquals(3, registers())
+    }
+
+    @Test
+    fun tooManyAttemptsShowsTheServerTextAndWaitsForTheButton() = test {
+        server.registerStatus = 429
+        session.restore()
+        assertEquals(SessionState.NotConnected(ConnectReason.Offline), session.state.value)
+        assertEquals("Слишком много попыток, попробуйте позже", session.notice.value)
+        session.syncNow()
+        assertEquals(1, registers())
+    }
+
+    @Test
+    fun connectWhileConnectedDoesNothing() = test {
+        connected()
+        assertNull(session.connect())
+        assertEquals(1, registers())
+        assertTrue(session.state.value is SessionState.SignedIn)
+    }
+
+    // MARK: Upgrade over an old build
+
+    @Test
+    fun upgradeKeepsTheTokenTheDataAndThePendingChanges() = test {
+        // What the old build left: its token, its `Me` (the owner), a record and a change not yet sent.
+        tokens.set("tok-1")
+        store.saveMe(Me("u1", Role.owner, "КФХ Зубахин", null, null, ZoneId.of("Asia/Chita")))
+        RecordWriter(db, { Role.owner }).save("driver", driverA, obj("lastName" to "Мунгалов"))
+
+        session.restore()
+        val me = (session.state.value as SessionState.SignedIn).me
+        // Until the next /me the phone is as before.
+        assertEquals(Role.owner, me.role)
+        assertEquals(0, registers())
+        assertEquals(1, db.outbox().count())
+        assertNotNull(db.records().get("driver", driverA))
+        assertEquals("tok-1", tokens.get())
+
+        // The next sync sends the change, and /me (kind app) makes the phone an app.
+        session.syncNow()
+        assertEquals(0, registers())
+        assertEquals(0, db.outbox().count())
+        assertNotNull(db.records().get("driver", driverA))
+        assertEquals(Role.app, session.role)
+        assertEquals(Role.app, store.me()!!.role)
     }
 
     @Test
     fun farmTimeIsRefreshedFromMeOnEverySync() = test {
-        signedIn()
+        connected()
         assertEquals(ZoneId.of("Asia/Chita"), session.farmTime.value.zone)
         server.timezone = "Europe/Moscow"
         server.farmName = "КФХ Новое"
@@ -145,7 +247,7 @@ class SessionManagerTest {
 
     @Test
     fun timesheetRoleSeesOnlyTimesheet() = test {
-        signedIn(role = "timesheet")
+        connected(role = "timesheet")
         val me = (session.state.value as SessionState.SignedIn).me
         assertEquals(Role.timesheet, me.role)
         assertEquals(listOf(Module.timesheet, Module.reports), homeButtons(me.role))
@@ -162,42 +264,37 @@ class SessionManagerTest {
         assertEquals(listOf(Module.livestock, Module.reports), homeButtons(Role.livestock))
     }
 
-    // MARK: Sign out
+    // MARK: Sign out (until the settings lose «Выйти»)
 
     @Test
     fun signOutWithPendingAsksConfirmation() = test {
-        signedIn()
+        connected()
         writer.save("driver", driverA, obj("lastName" to "Мунгалов"))
         writer.save("driver", driverB, obj("lastName" to "Бянкин"))
 
         assertEquals(2, session.signOut(force = false))
-        // Nothing went: still signed in, the data and the queue are whole.
+        // Nothing went: still connected, the data and the queue are whole.
         assertTrue(session.state.value is SessionState.SignedIn)
         assertEquals(2, db.outbox().count())
         assertNotNull(db.records().get("driver", driverA))
         assertEquals("tok-1", tokens.get())
         assertTrue(server.requests("/auth/logout").isEmpty())
 
+        val first = session.engine.value
         assertEquals(0, session.signOut(force = true))
-        assertEquals(SessionState.SignedOut, session.state.value)
-        wiped()
-        assertNull(tokens.get())
-        assertNull(session.engine.value)
         assertEquals("Bearer tok-1", server.requests("/auth/logout").single().authorization)
-        assertNull(session.signOutNotice.value)
-    }
-
-    @Test
-    fun signOutWithNothingPendingSignsOutAtOnce() = test {
-        signedIn()
-        assertEquals(0, session.signOut(force = false))
-        assertEquals(SessionState.SignedOut, session.state.value)
-        wiped()
+        // The phone forgot the farm and connected again as a new device.
+        assertEquals(0, db.outbox().count())
+        assertNull(db.records().get("driver", driverA))
+        assertTrue(session.state.value is SessionState.SignedIn)
+        assertEquals(2, registers())
+        assertTrue(first!!.stopped)
+        assertNull(session.notice.value)
     }
 
     @Test
     fun signOutWaitsForTheRunningSyncBeforeWiping() = test {
-        signedIn()
+        connected()
         server.records = listOf(FarmServer.driver(driverA))
         server.pullStarted = CountDownLatch(1)
         server.pullGate = CountDownLatch(1)
@@ -210,47 +307,63 @@ class SessionManagerTest {
         assertFalse(signOut.isCompleted)
         assertEquals("tok-1", tokens.get())
 
+        // The connect after the sign-out is refused: the wipe is what is left to see.
+        server.registerClosed = true
         server.pullGate!!.countDown()
         assertEquals(0, signOut.await())
         sync.await()
         // The pulled page came after the stop: nothing of it was written.
         wiped()
         assertNull(tokens.get())
-        assertEquals(SessionState.SignedOut, session.state.value)
+        assertEquals(SessionState.NotConnected(ConnectReason.Closed), session.state.value)
     }
 
+    // MARK: Revoked
+
     @Test
-    fun unauthorizedWipes() = test {
-        signedIn()
+    fun unauthorizedWipesAndWaitsForTheButton() = test {
+        connected()
         writer.save("driver", driverA, obj("lastName" to "Мунгалов"))
         val first = session.engine.value
         server.unauthorized = true
 
         // The engine stops and wipes under its own lock; onSignedOut only clears the session (no deadlock).
         session.syncNow()
-        assertEquals(SessionState.SignedOut, session.state.value)
+        assertEquals(SessionState.NotConnected(ConnectReason.Revoked), session.state.value)
         wiped()
         assertNull(tokens.get())
+        assertTrue(tokens.revoked())
         assertNull(session.engine.value)
-        // The unsent change was lost with the wipe: the sign-in screen says how many (as the iPhone's notice).
-        assertEquals("Доступ к хозяйству отключён. Неотправленных изменений удалено: 1.", session.signOutNotice.value)
+        // The unsent change was lost with the wipe: the screen says how many.
+        assertEquals("Неотправленных изменений удалено: 1.", session.notice.value)
         assertTrue(first!!.stopped)
 
-        // A new sign-in gets a new engine (a stopped one never restarts) and the notice goes.
+        // Never again by itself: not on a sync, not at the next launch.
         server.unauthorized = false
+        session.syncNow()
+        assertEquals(1, registers())
+        val again = newSession()
+        again.restore()
+        assertEquals(SessionState.NotConnected(ConnectReason.Revoked), again.state.value)
+        assertEquals(1, registers())
+
+        // «Подключиться снова»: a new registration, a new engine, the flag and the notice go.
         val pulls = server.requests("/sync/pull").size
-        signedIn()
-        val second = session.engine.value
+        assertNull(again.connect())
+        assertTrue(again.state.value is SessionState.SignedIn)
+        assertEquals(2, registers())
+        assertFalse(tokens.revoked())
+        assertNull(again.notice.value)
+        val second = again.engine.value
         assertNotNull(second)
         assertNotSame(first, second)
         assertFalse(second!!.stopped)
-        assertNull(session.signOutNotice.value)
         assertTrue(server.requests("/sync/pull").size > pulls)
     }
 
     @Test
-    fun unauthorizedOnMeSignsOut() = test {
-        signedIn()
+    fun unauthorizedOnMeIsRevoked() = test {
+        connected()
         // The sync itself goes through; only /me answers 401 (the device was revoked in between).
         server.server.dispatcher.let { d ->
             server.server.dispatcher = object : okhttp3.mockwebserver.Dispatcher() {
@@ -260,17 +373,18 @@ class SessionManagerTest {
             }
         }
         session.syncNow()
-        assertEquals(SessionState.SignedOut, session.state.value)
+        assertEquals(SessionState.NotConnected(ConnectReason.Revoked), session.state.value)
         wiped()
         assertNull(tokens.get())
-        assertEquals("Доступ к хозяйству отключён.", session.signOutNotice.value)
+        assertTrue(tokens.revoked())
+        assertNull(session.notice.value)
     }
 
     // MARK: Launch
 
     @Test
     fun launchWithTokenOpensSignedInOffline() = test {
-        signedIn(role = "coal")
+        connected(role = "coal")
         val again = newSession()
         server.server.shutdown()
         again.restore()
@@ -295,14 +409,24 @@ class SessionManagerTest {
             if (broken) throw IllegalStateException("token not saved")
             this.token = token
         }
+
+        @Volatile private var revoked = false
+
+        override fun revoked(): Boolean = revoked
+
+        override fun setRevoked(revoked: Boolean) {
+            this.revoked = revoked
+        }
     }
 
     @Test
-    fun launchWithABrokenTokenStoreSignsOutInsteadOfCrashing() = test {
+    fun launchWithABrokenTokenStoreDoesNotCrash() = test {
         val broken = BrokenTokenStore().apply { broken = true }
         val again = SessionManager(store, broken, server.url, OkHttpClient(), "Google Pixel 9")
         again.restore()
-        assertEquals(SessionState.SignedOut, again.state.value)
+        // The token cannot be kept: not connected, with the reason on the screen.
+        assertEquals(SessionState.NotConnected(ConnectReason.Offline), again.state.value)
+        assertEquals("Не удалось сохранить подключение на телефоне", again.notice.value)
         assertNull(again.engine.value)
     }
 
@@ -311,16 +435,15 @@ class SessionManagerTest {
         val broken = BrokenTokenStore()
         val again = SessionManager(store, broken, server.url, OkHttpClient(), "Google Pixel 9")
         again.restore()
-        server.role = "owner"
-        assertNull(again.signIn("zubakhin", "secret"))
+        assertTrue(again.state.value is SessionState.SignedIn)
         val engine = again.engine.value!!
         val w = RecordWriter(db, { again.role ?: Role.viewer })
         w.save("driver", driverA, obj("lastName" to "Мунгалов"))
         broken.broken = true
 
-        // Neither the token read nor its removal works: the phone still ends signed out, wiped, engine stopped.
+        // Neither the token read nor its removal works: the phone still ends wiped, engine stopped.
         assertEquals(0, again.signOut(force = true))
-        assertEquals(SessionState.SignedOut, again.state.value)
+        assertTrue(again.state.value is SessionState.NotConnected)
         wiped()
         assertTrue(engine.stopped)
         assertNull(again.engine.value)
@@ -329,40 +452,43 @@ class SessionManagerTest {
     }
 
     @Test
-    fun tokenLostDuringTheFirstDownloadSignsOutWithANotice() = test {
+    fun tokenLostDuringTheFirstDownloadIsNotConnectedWithANotice() = test {
         val broken = BrokenTokenStore()
         val again = SessionManager(store, broken, server.url, OkHttpClient(), "Google Pixel 9")
-        again.restore()
         server.pullGate = CountDownLatch(1)
-        val signIn = async(Dispatchers.IO) { again.signIn("zubakhin", "secret") }
+        val launch = async(Dispatchers.IO) { again.restore() }
         assertTrue(server.pullStarted.await(10, TimeUnit.SECONDS))
         assertEquals(SessionState.Loading, again.state.value)
         broken.broken = true
         server.pullGate!!.countDown()
+        launch.await()
 
-        // The sign-in screen that comes back shows the reason (the one that started the sign-in is gone).
-        assertEquals("Не удалось сохранить вход на телефоне", signIn.await())
-        assertEquals(SessionState.SignedOut, again.state.value)
-        assertEquals("Не удалось сохранить вход на телефоне", again.signOutNotice.value)
+        assertEquals(SessionState.NotConnected(ConnectReason.Offline), again.state.value)
+        assertEquals("Не удалось сохранить подключение на телефоне", again.notice.value)
         assertNull(again.engine.value)
         wiped()
     }
 
     @Test
-    fun signInWhileSignedInIsRefused() = test {
-        signedIn()
-        assertEquals("Вход уже выполнен", session.signIn("zubakhin", "secret"))
+    fun launchWithoutTokenWipesLeftoversThenConnects() = test {
+        // A token gone, its farm's rows left behind (a wipe that failed).
+        store.saveMe(Me("u1", Role.owner, "КФХ Старое", null, null, ZoneId.of("Asia/Chita")))
+        RecordWriter(db, { Role.owner }).save("driver", driverA, obj("lastName" to "Мунгалов"))
+        session.restore()
         assertTrue(session.state.value is SessionState.SignedIn)
+        assertEquals(0, db.outbox().count())
+        assertNull(db.records().get("driver", driverA))
+        assertEquals("КФХ Зубахин", store.me()!!.farmName)
     }
 
     @Test
-    fun launchWithoutTokenWipesLeftovers() = test {
-        signedIn()
-        writer.save("driver", driverA, obj("lastName" to "Мунгалов"))
-        tokens.set(null)
-        val again = newSession()
-        again.restore()
-        assertEquals(SessionState.SignedOut, again.state.value)
-        wiped()
+    fun connectScreenTexts() {
+        assertEquals("Нет связи с сервером", connectText(ConnectReason.Offline, null))
+        assertEquals("Слишком много попыток, попробуйте позже", connectText(ConnectReason.Offline, "Слишком много попыток, попробуйте позже"))
+        assertEquals("Владелец сейчас не подключает новые устройства", connectText(ConnectReason.Closed, null))
+        assertEquals("Это устройство отключено владельцем", connectText(ConnectReason.Revoked, "Неотправленных изменений удалено: 1."))
+        assertEquals("Повторить", connectButton(ConnectReason.Offline))
+        assertEquals("Повторить", connectButton(ConnectReason.Closed))
+        assertEquals("Подключиться снова", connectButton(ConnectReason.Revoked))
     }
 }

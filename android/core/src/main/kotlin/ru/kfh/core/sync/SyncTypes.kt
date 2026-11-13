@@ -46,10 +46,11 @@ data class PullPage(val changes: List<RemoteRecord>, val next: Long, val more: B
 
 /**
  * `GET /me` (server/src/app.ts): the user, their role and the farm. [timeZone] is the farm's zone (`farm.timezone`),
- * `Asia/Chita` when absent or unknown: "today" is counted in it.
+ * `Asia/Chita` when absent or unknown: "today" is counted in it. [userId] is null for a phone that connected itself
+ * ([Role.app]).
  */
 data class Me(
-    val userId: String,
+    val userId: String?,
     val role: Role,
     val farmName: String,
     val managerName: String?,

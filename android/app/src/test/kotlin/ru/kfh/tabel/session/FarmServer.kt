@@ -2,6 +2,7 @@ package ru.kfh.tabel.session
 
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
+import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonArray
@@ -14,6 +15,7 @@ import okhttp3.mockwebserver.Dispatcher
 import okhttp3.mockwebserver.MockResponse
 import okhttp3.mockwebserver.MockWebServer
 import okhttp3.mockwebserver.RecordedRequest
+import okhttp3.mockwebserver.SocketPolicy
 import java.util.Collections
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
@@ -32,7 +34,8 @@ data class Seen(
 }
 
 /**
- * The farm server for the session tests: `/auth/login` (password [password]), `/me` ([role], [timezone]),
+ * The farm server for the session tests: `/devices/register` ([registerClosed], [registerStatus]), `/auth/login`
+ * (password [password]), `/me` ([kind], [role], [timezone]),
  * `/sync/pull` (one page with [records], then empty), `/sync/push` (everything applied, or everything `rejected`
  * with [rejectPush]), `/conflicts` ([conflicts], resolved away by `POST /conflicts/{id}/resolve`), `/auth/logout`,
  * the owner's lists (`/members`, `/devices`, `/backups`) with canned rows, `PATCH /farm`. [unauthorized] answers
@@ -48,6 +51,18 @@ class FarmServer {
     @Volatile var farmName = "КФХ Зубахин"
     @Volatile var managerName = "Зубахин А. В."
     @Volatile var unauthorized = false
+    /**
+     * `GET /me`'s `kind`: `"app"` (a phone that connected itself: no user, role «manager» for the old builds) or
+     * `"owner"`; null answers as the server before the apps connected themselves (only `userId` and [role]).
+     */
+    @Volatile var kind: String? = "app"
+    /** `POST /devices/register` answers 403 «Владелец сейчас не подключает новые устройства». */
+    @Volatile var registerClosed = false
+    /** `POST /devices/register` answers this status with [registerError] (429, 503). */
+    @Volatile var registerStatus: Int? = null
+    @Volatile var registerError = "Слишком много попыток, попробуйте позже"
+    /** Every request: the connection drops at once (no network). */
+    @Volatile var offline = false
     /** Every pushed op is answered `rejected` with «Нет прав на изменение». */
     @Volatile var rejectPush = false
     /** `GET /sync/pull` answers 500 (a push before it went through). */
@@ -68,6 +83,14 @@ class FarmServer {
                 val query = u.queryParameterNames.associateWith { u.queryParameter(it).orEmpty() }
                 val s = Seen(request.method!!, u.encodedPath, request.getHeader("Authorization"), request.body.readUtf8(), query)
                 seen += s
+                if (offline) return MockResponse().setSocketPolicy(SocketPolicy.DISCONNECT_AT_START)
+                if (s.path == "/devices/register") {
+                    if (registerClosed) {
+                        return MockResponse().setResponseCode(403).setBody("""{"error":"Владелец сейчас не подключает новые устройства"}""")
+                    }
+                    registerStatus?.let { return MockResponse().setResponseCode(it).setBody("""{"error":"$registerError"}""") }
+                    return json("""{"token":"tok-1","deviceId":"d9","farmId":"f1","role":"manager","kind":"app"}""").setResponseCode(201)
+                }
                 if (s.path == "/auth/login") {
                     val ok = s.json["password"]!!.jsonPrimitive.content == password
                     return if (ok) json("""{"token":"tok-1","role":"$role"}""")
@@ -78,8 +101,15 @@ class FarmServer {
                 }
                 return when (s.path) {
                     "/me" -> json(buildJsonObject {
-                        put("userId", "u1")
-                        put("role", role)
+                        val k = kind
+                        if (k == "app") {
+                            put("userId", JsonNull)
+                            put("role", "manager")
+                        } else {
+                            put("userId", "u1")
+                            put("role", role)
+                        }
+                        if (k != null) put("kind", k)
                         put("farm", buildJsonObject {
                             put("id", "f1"); put("name", farmName); put("region", "Приаргунский район")
                             put("managerName", managerName); put("timezone", timezone)

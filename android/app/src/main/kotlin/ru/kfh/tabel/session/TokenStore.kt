@@ -5,22 +5,38 @@ import android.content.SharedPreferences
 import androidx.security.crypto.EncryptedSharedPreferences
 import androidx.security.crypto.MasterKey
 
-/** The device token of the sign-in (`POST /auth/login`). Never logged, never put into an exception. */
+/**
+ * The device token (`POST /devices/register`, or `POST /auth/login` of the old builds). Never logged, never put
+ * into an exception. Also [revoked]: the owner switched this phone off, so it waits for «Подключиться снова» and
+ * never registers again by itself (also after a restart).
+ */
 interface TokenStore {
     fun get(): String?
 
-    /** null — signed out: the token is removed. */
+    /** null — not connected: the token is removed. */
     fun set(token: String?)
+
+    fun revoked(): Boolean
+
+    /** Never throws: a flag that cannot be written is lost (the phone then connects by itself again). */
+    fun setRevoked(revoked: Boolean)
 }
 
 /** In memory only: JVM tests and the instrumented UI test. */
 class MemoryTokenStore(initial: String? = null) : TokenStore {
     @Volatile private var token: String? = initial
+    @Volatile private var revoked = false
 
     override fun get(): String? = token
 
     override fun set(token: String?) {
         this.token = token
+    }
+
+    override fun revoked(): Boolean = revoked
+
+    override fun setRevoked(revoked: Boolean) {
+        this.revoked = revoked
     }
 
     override fun toString(): String = "MemoryTokenStore"
@@ -88,10 +104,26 @@ class EncryptedTokenStore(context: Context) : TokenStore {
         reset()
     }
 
+    /** In the same file: a file that is thrown away loses it too (the phone then connects by itself). */
+    override fun revoked(): Boolean = try {
+        prefs().getBoolean(REVOKED, false)
+    } catch (e: Exception) {
+        false
+    }
+
+    override fun setRevoked(revoked: Boolean) {
+        try {
+            prefs().edit().putBoolean(REVOKED, revoked).commit()
+        } catch (e: Exception) {
+            // The Keystore is unwell: the flag is lost, nothing else.
+        }
+    }
+
     override fun toString(): String = "EncryptedTokenStore"
 
     private companion object {
         const val FILE = "session"
         const val KEY = "token"
+        const val REVOKED = "revoked"
     }
 }

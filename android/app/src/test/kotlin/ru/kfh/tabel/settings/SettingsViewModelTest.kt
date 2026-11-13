@@ -67,7 +67,6 @@ class SettingsViewModelTest {
         photos = PhotoStore(tmp.newFolder("photos"))
         store = RoomLocalStore(db, photos)
         session = SessionManager(store, MemoryTokenStore(), server.url, OkHttpClient(), "Google Pixel 9")
-        runBlocking { session.restore() }
         writer = RecordWriter(db, { session.role ?: Role.viewer })
         scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
         vm = SettingsViewModel(session, db, writer, scope, photos, now = { moment }, appVersion = "1.0.7 (7)")
@@ -82,9 +81,11 @@ class SettingsViewModelTest {
 
     private fun test(body: suspend CoroutineScope.() -> Unit) = runBlocking { withTimeout(20_000) { body() } }
 
+    /** The launch connects the phone; `/me` answers [role] as for a device of the old builds (no `kind`). */
     private suspend fun signedIn(role: String = "owner") {
+        server.kind = null
         server.role = role
-        assertNull(session.signIn("zubakhin", "secret"))
+        session.restore()
         assertTrue(session.state.value is SessionState.SignedIn)
     }
 
@@ -147,8 +148,10 @@ class SettingsViewModelTest {
         assertEquals(1, db.outbox().count())
 
         assertEquals(0, vm.signOut(force = true))
-        assertEquals(SessionState.SignedOut, session.state.value)
+        // Wiped, then connected again as a new device.
+        assertTrue(session.state.value is SessionState.SignedIn)
         assertEquals(0, db.outbox().count())
+        assertEquals(2, server.requests("/devices/register").size)
     }
 
     @Test

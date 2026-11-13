@@ -76,6 +76,45 @@ class ApiTest {
     }
 
     @Test
+    fun registerSendsPlatformAndNameWithoutToken() = runBlocking {
+        answer("""{"token":"tok-app","deviceId":"d9","farmId":"f1","role":"manager","kind":"app"}""", 201)
+        val t = api.register("Honor X8")
+
+        assertEquals("tok-app", t)
+        val r = server.seen.single()
+        assertEquals("POST", r.method)
+        assertEquals("/devices/register", r.path)
+        assertNull(r.authorization)
+        assertEquals("android", r.json["platform"]?.jsonPrimitive?.content)
+        assertEquals("Honor X8", r.json["name"]?.jsonPrimitive?.content)
+    }
+
+    /** Registration closed by the owner: 403 with the server's text, never [Unauthorized]. */
+    @Test
+    fun registerClosedIsApiError403() = runBlocking {
+        answer("""{"error":"Владелец сейчас не подключает новые устройства"}""", 403)
+        val e = assertFailsWith<ApiError> { runBlocking { api.register("Honor X8") } }
+        assertEquals(403, e.status)
+        assertEquals("Владелец сейчас не подключает новые устройства", e.text)
+    }
+
+    @Test
+    fun registerCutsTheNameTo100Characters() = runBlocking {
+        answer("""{"token":"tok-app","deviceId":"d9","farmId":"f1","role":"manager","kind":"app"}""", 201)
+        api.register("Ж".repeat(150))
+        assertEquals(100, server.seen.single().json["name"]?.jsonPrimitive?.content?.length)
+    }
+
+    /** An app device: no user, `kind: app` (its `role` says «manager» only for the old builds). */
+    @Test
+    fun meOfAnAppDeviceIsTheAppRole() = runBlocking {
+        answer("""{"userId":null,"deviceId":"d9","role":"manager","kind":"app","farm":{"id":"f1","name":"КФХ","region":null,"managerName":null,"timezone":"Asia/Chita"}}""")
+        val m = api.me()
+        assertEquals(Role.app, m.role)
+        assertNull(m.userId)
+    }
+
+    @Test
     fun meZoneDefaultsToChita() = runBlocking {
         for (tz in listOf(null, "null", "\"\"", "\"Mars/Olympus\"")) {
             answer(me(tz))

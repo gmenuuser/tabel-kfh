@@ -57,4 +57,17 @@ class RolesTest {
         }
         assertFalse(Role.owner.canWrite("нечто"))
     }
+
+    /** A phone connected by itself: every module; everything but the three settings rows (the owner's, on the site). */
+    @Test
+    fun appSeesEverythingButWritesNoSettings() {
+        assertEquals(everything, Role.app.modules() - Module.settings)
+        assertFalse(Role.app.isReadOnly)
+        for (e in listOf("farmSettings", "coalSettings", "livestockSettings")) assertFalse(e, Role.app.canWrite(e))
+        for (e in listOf("employee", "hoursMark", "attendanceRecord", "timesheetSnapshot", "deliveryLocation", "driver",
+                         "coalSale", "driverPayment", "coalWorkDay", "livestockCategory", "livestockOperation",
+                         "slaughterRecord", "agroCalculation")) assertTrue(e, Role.app.canWrite(e))
+        assertFalse(Role.app.canWrite("нечто"))
+        assertFalse(Role.app in Role.helperRoles)
+    }
 }

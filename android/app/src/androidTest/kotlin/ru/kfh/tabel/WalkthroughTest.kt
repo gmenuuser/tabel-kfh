@@ -59,7 +59,7 @@ class WalkthroughTest {
     @Test
     fun timesheetDay() {
         farm.launch()
-        farm.signIn("14-sign-in")
+        farm.connected()
         compose.waitUntilExactlyOneExists(hasText("Все данные синхронизированы"), 10_000)
         for (tag in listOf("openTimesheet", "openCoal", "openLivestock", "openAgro", "openReports")) compose.onNodeWithTag(tag).assertExists()
         farm.shot("00-main")
@@ -126,7 +126,7 @@ class WalkthroughTest {
     fun timesheetHelperHome() {
         farm.role = "timesheet"
         farm.launch()
-        farm.signIn()
+        farm.connected()
         compose.onNodeWithTag("openReports").assertExists()
         for (hidden in listOf("openCoal", "openLivestock", "openAgro")) compose.onNodeWithTag(hidden).assertDoesNotExist()
         compose.onNodeWithTag("syncStatus").assertExists()
@@ -140,7 +140,7 @@ class WalkthroughTest {
     fun viewerReadsOnly() {
         farm.role = "viewer"
         farm.launch()
-        farm.signIn()
+        farm.connected()
         compose.onNodeWithTag("openCoal").assertExists()
         compose.onNodeWithTag("openTimesheet").performClick()
         compose.waitUntilExactlyOneExists(hasText("Табель работников"), 10_000)
@@ -157,7 +157,7 @@ class WalkthroughTest {
     @Test
     fun coalDay() {
         farm.launch()
-        farm.signIn()
+        farm.connected()
         openCoal()
         farm.shot("30-coal-empty")
 
@@ -234,7 +234,7 @@ class WalkthroughTest {
     @Test
     fun herdAndSlaughter() {
         farm.launch()
-        farm.signIn()
+        farm.connected()
         compose.onNodeWithTag("openLivestock").performScrollTo().performClick()
         compose.waitUntilExactlyOneExists(hasTestTag("openHerd"), 10_000)
         compose.waitUntil(10_000) { ops().count { it.entity == "livestockCategory" } == 15 }
@@ -304,7 +304,7 @@ class WalkthroughTest {
     @Test
     fun calculators() {
         farm.launch()
-        farm.signIn()
+        farm.connected()
         compose.onNodeWithTag("openAgro").performScrollTo().performClick()
         compose.waitUntilExactlyOneExists(hasTestTag("agro-seeding"), 10_000)
         farm.shot("70-agro")
@@ -351,7 +351,7 @@ class WalkthroughTest {
         assertTrue("the system is in night mode", app.isNight())
 
         farm.launch()
-        farm.signIn("20-dark-sign-in")
+        farm.connected()
         compose.waitUntilExactlyOneExists(hasText("Все данные синхронизированы"), 10_000)
         farm.shot("20-dark-main")
         compose.onNodeWithTag("openTimesheet").performClick()

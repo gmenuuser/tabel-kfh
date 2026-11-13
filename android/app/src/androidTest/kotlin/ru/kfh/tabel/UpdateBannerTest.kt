@@ -70,7 +70,7 @@ class UpdateBannerTest {
         val next = installed + 1
         serve(next)
         farm.launch()
-        farm.signIn()
+        farm.connected()
         compose.waitUntilExactlyOneExists(hasTestTag("updateBanner"), 20_000)
         compose.onNodeWithTag("updateTitle", useUnmergedTree = true).assertTextEquals("Доступна новая версия 1.0.$next")
         compose.onNodeWithTag("installUpdate").assertIsDisplayed()
@@ -91,7 +91,7 @@ class UpdateBannerTest {
     fun nothingForTheSameVersionAndTheCheckSaysSo() {
         serve(installed)
         farm.launch()
-        farm.signIn()
+        farm.connected()
         compose.waitUntil(10_000) { farm.seen.any { it == "GET /android/version.json" } }
         compose.waitForIdle()
         assertEquals(0, compose.onAllNodes(hasTestTag("updateBanner")).fetchSemanticsNodes().size)

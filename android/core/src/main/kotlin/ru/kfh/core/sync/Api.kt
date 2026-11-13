@@ -50,6 +50,18 @@ class Api(base: String, private val client: OkHttpClient, private val token: () 
         return parse(send("POST", "/auth/login", body, signedIn = false)) { it.obj.str("token")!! }
     }
 
+    /**
+     * `POST /devices/register`: the phone connects itself, no account; returns the device token. The owner closing
+     * new devices is an [ApiError] 403 with the server's text; too many attempts — 429.
+     */
+    suspend fun register(name: String): String {
+        val body = buildJsonObject {
+            put("platform", "android")
+            put("name", name.take(MAX_DEVICE_NAME))
+        }
+        return parse(send("POST", "/devices/register", body, signedIn = false)) { it.obj.str("token")!! }
+    }
+
     suspend fun logout() {
         send("POST", "/auth/logout", JsonObject(emptyMap()))
     }
@@ -58,8 +70,9 @@ class Api(base: String, private val client: OkHttpClient, private val token: () 
         val o = root.obj
         val farm = o["farm"]!!.jsonObject
         Me(
-            userId = o.str("userId")!!,
-            role = Role.fromWire(o.str("role").orEmpty()) ?: Role.viewer,
+            userId = o.str("userId"),
+            // An app device: `role` says «manager» only for the old builds.
+            role = if (o.str("kind") == "app") Role.app else Role.fromWire(o.str("role").orEmpty()) ?: Role.viewer,
             farmName = farm.str("name").orEmpty(),
             managerName = farm.str("managerName"),
             region = farm.str("region"),
@@ -250,6 +263,9 @@ class Api(base: String, private val client: OkHttpClient, private val token: () 
     }
 
     private companion object {
+        /** The server's limit on a device's name. */
+        const val MAX_DEVICE_NAME = 100
+
         val JSON = "application/json; charset=utf-8".toMediaType()
 
         val JsonElement.obj: JsonObject get() = this.jsonObject

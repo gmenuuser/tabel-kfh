@@ -48,7 +48,7 @@ import ru.kfh.tabel.ui.settings.HelpersScreen
 import ru.kfh.tabel.ui.settings.ServerBackupsScreen
 import ru.kfh.tabel.ui.settings.SettingsLinks
 import ru.kfh.tabel.ui.settings.SettingsScreen
-import ru.kfh.tabel.ui.signin.SignInScreen
+import ru.kfh.tabel.ui.signin.ConnectScreen
 import ru.kfh.tabel.ui.timesheet.DayScreen
 import ru.kfh.tabel.ui.timesheet.EmployeeFormScreen
 import ru.kfh.tabel.ui.timesheet.EmployeeHistoryScreen
@@ -128,17 +128,17 @@ object Routes {
     fun employeeForm(id: String?) = if (id == null) "employeeForm" else "employeeForm?id=$id"
 }
 
-/** Signed out: the sign-in screen; loading: «Загрузка данных…»; signed in: the farm (`AppRootView`). */
+/** Not connected: the connect screen; loading: «Загрузка данных…»; connected: the farm (`AppRootView`). */
 @Composable
 fun AppRoot(graph: AppGraph) {
     val state by graph.session.state.collectAsState()
     when (val s = state) {
-        SessionState.SignedOut -> {
-            val notice by graph.session.signOutNotice.collectAsState()
-            // The sign-in runs in the app's scope: as soon as it reaches «Загрузка данных…» this screen is gone,
-            // and a sign-in in the screen's own scope would be cancelled in the middle of the first download.
-            SignInScreen(notice) { login, password ->
-                graph.scope.async { graph.session.signIn(login, password) }.await()
+        is SessionState.NotConnected -> {
+            val notice by graph.session.notice.collectAsState()
+            // The connect runs in the app's scope: as soon as it reaches «Загрузка данных…» this screen is gone,
+            // and a connect in the screen's own scope would be cancelled in the middle of the first download.
+            ConnectScreen(s.reason, notice) {
+                graph.scope.async { graph.session.connect() }.await()
             }
         }
         SessionState.Loading -> LoadingScreen()

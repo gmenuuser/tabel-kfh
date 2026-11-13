@@ -67,7 +67,7 @@ class SmallScreenLargeFontTest {
     @Test
     fun homeButtonsAndSaveSaleAreWholeOnASmallScreenWithHugeText() {
         farm.launch()
-        farm.signIn()
+        farm.connected()
 
         // The screen is what the test says it is: 360 dp wide, 640 dp tall, the text twice its size.
         val root = compose.onRoot().getBoundsInRoot()

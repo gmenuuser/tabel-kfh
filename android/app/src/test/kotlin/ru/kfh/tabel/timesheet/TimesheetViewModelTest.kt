@@ -31,6 +31,7 @@ import ru.kfh.tabel.db.RecordRow
 import ru.kfh.tabel.db.RecordWriter
 import ru.kfh.tabel.db.TabelDb
 import ru.kfh.tabel.db.openTestDb
+import ru.kfh.tabel.session.ConnectReason
 import ru.kfh.tabel.session.SessionState
 import ru.kfh.tabel.ui.timesheet.TimesheetViewModel
 import java.time.Clock
@@ -366,7 +367,7 @@ class TimesheetViewModelTest {
     @Test
     fun pickedDaySurvivesAProfileRefreshButNotANewSignIn() = runTest {
         val me = Me("u1", Role.owner, "КФХ Зубахин", null, null, chita)
-        val states = MutableStateFlow<SessionState>(SessionState.SignedOut)
+        val states = MutableStateFlow<SessionState>(SessionState.NotConnected(ConnectReason.Offline))
         vm.resetOnSignIn(states)
         states.value = SessionState.SignedIn(me)
         awaitUntil { vm.day.value == farmDay }

@@ -7,7 +7,13 @@ enum class Role(val title: String) {
     timesheet("Только табель"),
     coal("Только уголь"),
     livestock("Только скот"),
-    viewer("Только просмотр");
+    viewer("Только просмотр"),
+
+    /**
+     * A phone that connected itself (`POST /devices/register`, `GET /me` → `kind: "app"`): no account, every module,
+     * everything but the farm's settings (the owner changes those on the site).
+     */
+    app("Приложение");
 
     companion object {
         /** The roles the owner can give a helper, in the order of the site's list. */
@@ -22,7 +28,7 @@ enum class Module { timesheet, coal, livestock, agro, reports, settings }
 
 /** What the role sees. Reports exist when the role sees a module other than agro. */
 fun Role.modules(): Set<Module> = when (this) {
-    Role.owner, Role.manager, Role.viewer ->
+    Role.owner, Role.manager, Role.viewer, Role.app ->
         setOf(Module.timesheet, Module.coal, Module.livestock, Module.agro, Module.reports)
     Role.timesheet -> setOf(Module.timesheet, Module.reports)
     Role.coal -> setOf(Module.coal, Module.reports)
@@ -35,6 +41,8 @@ private val timesheetEntities = setOf("employee", "hoursMark", "attendanceRecord
 private val coalEntities = setOf("coalSettings", "deliveryLocation", "driver", "coalSale", "driverPayment", "coalWorkDay")
 private val livestockEntities = setOf("livestockCategory", "livestockOperation", "slaughterRecord", "livestockSettings")
 private val otherEntities = setOf("farmSettings", "agroCalculation")
+/** The server refuses these to an app device: only the owner sets them, on the site. */
+private val settingsEntities = setOf("farmSettings", "coalSettings", "livestockSettings")
 
 /** The server's `canWrite`: an unknown entity is refused for everyone. */
 fun Role.canWrite(entity: String): Boolean {
@@ -46,5 +54,6 @@ fun Role.canWrite(entity: String): Boolean {
         Role.coal -> entity in coalEntities
         Role.livestock -> entity in livestockEntities
         Role.viewer -> false
+        Role.app -> entity !in settingsEntities
     }
 }

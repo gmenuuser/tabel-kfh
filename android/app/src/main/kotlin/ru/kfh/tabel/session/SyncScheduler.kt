@@ -26,7 +26,7 @@ import kotlinx.coroutines.withContext
  * - [syncNow]: the button of the status line.
  *
  * Requests are conflated: during a sync any number of them make one more sync after it. [sync] is
- * `SessionManager.syncNow` (it does nothing when signed out).
+ * `SessionManager.syncNow` (not connected for want of a network, it tries to connect instead).
  */
 class SyncScheduler(
     private val scope: CoroutineScope,

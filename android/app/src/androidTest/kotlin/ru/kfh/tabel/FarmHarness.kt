@@ -13,9 +13,7 @@ import androidx.compose.ui.test.junit4.ComposeTestRule
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onRoot
 import androidx.compose.ui.test.performClick
-import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.performSemanticsAction
-import androidx.compose.ui.test.performTextInput
 import androidx.compose.ui.test.printToLog
 import androidx.compose.ui.text.TextLayoutResult
 import androidx.test.core.app.ActivityScenario
@@ -70,14 +68,11 @@ class FarmHarness(
         tag = description.testClass.simpleName
         server.dispatcher = object : Dispatcher() {
             override fun dispatch(request: RecordedRequest): MockResponse {
-                val body = request.body.readUtf8()
                 val path = request.requestUrl!!.encodedPath
                 seen += "${request.method} $path"
                 extraRoutes(path)?.let { return it }
                 return when (path) {
-                    "/auth/login" ->
-                        if (body.contains("\"password\":\"secret\"")) json("""{"token":"tok-ui","role":"$role"}""")
-                        else MockResponse().setResponseCode(401).setBody("""{"error":"Неверный логин или пароль"}""")
+                    "/devices/register" -> json("""{"token":"tok-ui","deviceId":"d9","farmId":"f1","role":"manager","kind":"app"}""").setResponseCode(201)
                     "/me" -> json(
                         """{"userId":"u1","role":"$role","farm":{"id":"f1","name":"КФХ Зубахин",""" +
                             """"region":"Приаргунский район","managerName":"Зубахин А. В.","timezone":"Asia/Chita"}}""",
@@ -130,16 +125,8 @@ class FarmHarness(
 
     private fun json(s: String) = MockResponse().setHeader("Content-Type", "application/json").setBody(s)
 
-    /** anna / secret on the sign-in screen; returns once the main screen offers «ТАБЕЛЬ РАБОТНИКОВ». */
-    fun signIn(shotName: String? = null) {
-        compose.waitUntilExactlyOneExists(hasTestTag("signInLogin"), 15_000)
-        compose.onNodeWithTag("signInLogin").performTextInput("anna")
-        compose.onNodeWithTag("signInPassword").performTextInput("secret")
-        if (shotName != null) shot(shotName)
-        // The keyboard's inset animation moves the button on a small screen: let it settle, then scroll to it.
-        androidx.test.espresso.Espresso.closeSoftKeyboard()
-        compose.waitForIdle()
-        compose.onNodeWithTag("signInButton").performScrollTo().performClick()
+    /** The phone connects itself at launch: returns once the main screen offers «ТАБЕЛЬ РАБОТНИКОВ». */
+    fun connected() {
         compose.waitUntilExactlyOneExists(hasTestTag("openTimesheet"), 30_000)
     }
 

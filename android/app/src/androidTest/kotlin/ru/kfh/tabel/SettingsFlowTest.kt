@@ -70,13 +70,10 @@ class SettingsFlowTest {
     fun setUp() {
         server.dispatcher = object : Dispatcher() {
             override fun dispatch(request: RecordedRequest): MockResponse {
-                val body = request.body.readUtf8()
                 val path = request.requestUrl!!.encodedPath
                 seen += "${request.method} $path"
                 return when (path) {
-                    "/auth/login" ->
-                        if (body.contains("\"password\":\"secret\"")) json("""{"token":"tok-ui","role":"$role"}""")
-                        else MockResponse().setResponseCode(401).setBody("""{"error":"Неверный логин или пароль"}""")
+                    "/devices/register" -> json("""{"token":"tok-ui","deviceId":"d9","farmId":"f1","role":"manager","kind":"app"}""").setResponseCode(201)
                     "/me" -> json(
                         """{"userId":"u2","role":"$role","farm":{"id":"f1","name":"КФХ Зубахин",""" +
                             """"region":"Приаргунский район","managerName":"Зубахин А. В.","timezone":"Asia/Chita"}}""",
@@ -124,11 +121,8 @@ class SettingsFlowTest {
 
     private fun json(s: String) = MockResponse().setHeader("Content-Type", "application/json").setBody(s)
 
-    private fun signInAndOpenSettings() {
-        compose.waitUntilExactlyOneExists(hasTestTag("signInLogin"), 10_000)
-        compose.onNodeWithTag("signInLogin").performTextInput("zubakhin")
-        compose.onNodeWithTag("signInPassword").performTextInput("secret")
-        compose.onNodeWithTag("signInButton").performClick()
+    /** The phone connects itself at launch (`/me` answers [role] as for a device of the old builds). */
+    private fun connectAndOpenSettings() {
         compose.waitUntilExactlyOneExists(hasTestTag("openSettings"), 15_000)
         compose.onNodeWithTag("openSettings").performClick()
         compose.waitUntilExactlyOneExists(hasTestTag("signOut"), 5_000)
@@ -137,7 +131,7 @@ class SettingsFlowTest {
     @Test
     fun ownerSeesEverythingResolvesAConflictRevokesADeviceAndSignsOut() {
         role = "owner"
-        signInAndOpenSettings()
+        connectAndOpenSettings()
 
         // The farm: the owner's fields and the printed ones; the sync with its conflict; the owner's rows; the version.
         compose.onNodeWithTag("farmName").assertIsDisplayed()
@@ -185,19 +179,19 @@ class SettingsFlowTest {
         compose.waitUntilExactlyOneExists(hasTestTag("signOut"), 5_000)
         compose.waitUntilDoesNotExist(hasTestTag("openConflicts"), 10_000)
 
-        // «Выйти»: the question, then the sign-in screen.
+        // «Выйти»: the question, then the phone forgets the farm and connects again as a new device.
         compose.onNodeWithTag("signOut").performScrollTo().performClick()
         compose.waitUntilExactlyOneExists(hasText("Выйти из хозяйства?"), 5_000)
         compose.onNodeWithTag("confirm").performClick()
-        compose.waitUntilExactlyOneExists(hasTestTag("signInLogin"), 10_000)
-        assertEquals(null, app.graph.tokens.get())
+        compose.waitUntilExactlyOneExists(hasTestTag("openTimesheet"), 15_000)
         assertTrue(seen.contains("POST /auth/logout"))
+        assertEquals(2, seen.count { it == "POST /devices/register" })
     }
 
     @Test
     fun helperSeesTheConflictsCountOnly() {
         role = "coal"
-        signInAndOpenSettings()
+        connectAndOpenSettings()
         compose.waitUntilExactlyOneExists(hasTestTag("conflictsNote"), 10_000)
         compose.onNodeWithTag("conflictsNote").assertTextEquals("Конфликты: 1 — обратитесь к владельцу")
         compose.onNodeWithTag("openConflicts").assertDoesNotExist()

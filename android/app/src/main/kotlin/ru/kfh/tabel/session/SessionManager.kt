@@ -25,24 +25,39 @@ import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
 import javax.net.ssl.SSLException
 
-/** Signed out: the sign-in screen; [Loading]: «Загрузка данных…» (the first pull, or reading the store at launch). */
+/** Why the phone is not connected: the connect screen's text ([SessionManager.OFFLINE], …). */
+enum class ConnectReason {
+    /** No network or no answer: «Нет связи с сервером», «Повторить» (and again by itself when the network returns). */
+    Offline,
+
+    /** The owner lets no new devices in: «Владелец сейчас не подключает новые устройства», «Повторить». */
+    Closed,
+
+    /** The owner switched this phone off (401): «Это устройство отключено владельцем», «Подключиться снова». */
+    Revoked,
+}
+
+/** [NotConnected]: the connect screen; [Loading]: «Загрузка данных…» (connecting, the first pull, reading the store). */
 sealed interface SessionState {
-    data object SignedOut : SessionState
+    data class NotConnected(val reason: ConnectReason) : SessionState
     data object Loading : SessionState
     data class SignedIn(val me: Me) : SessionState
 }
 
 /**
- * The signed-in device, as `TabelKFH/Sync/SessionStore.swift`: the token ([TokenStore]), `Me` (kept in the store's
- * meta, so the app opens offline as the same person), the farm's time and one [SyncEngine] per sign-in.
+ * The connected device, as `TabelKFH/Sync/SessionStore.swift`: the token ([TokenStore]), `Me` (kept in the store's
+ * meta, so the app opens offline as the same device), the farm's time and one [SyncEngine] per connection.
  *
  * Rules:
- * - Every sign-in makes a new engine (a stopped engine never restarts). Its requests carry the token only while it is
- *   the current engine (a gate closed on sign-out), so a run of an earlier sign-in never sends a later token.
+ * - No account: without a token the phone registers itself (`POST /devices/register` with [deviceName]). The token
+ *   of an old build (with its `Me`) is kept as it is: never registered again, the data and the queue stay.
+ * - Every connection makes a new engine (a stopped engine never restarts). Its requests carry the token only while
+ *   it is the current engine (a gate closed when it ends), so a run of an earlier connection never sends a later token.
  * - Sign-out: `engine.stopAndWait()` first (the run on its way finishes its last write), then `POST /auth/logout`,
- *   then `store.wipe()`, then the token is cleared.
+ *   then `store.wipe()`, then the token is cleared; then the phone connects again as a new device.
  * - A 401 inside a sync: the engine has already stopped and wiped under its own lock and calls `onSignedOut`, which
- *   only clears the token and the session (never `stopAndWait`: the engine's mutex is not reentrant).
+ *   only clears the token and the session (never `stopAndWait`: the engine's mutex is not reentrant). The phone is
+ *   then [ConnectReason.Revoked] (kept in the token store across restarts) and registers again only by [connect].
  * - After every sync `GET /me` refreshes the role, the farm and [farmTime].
  */
 class SessionManager(
@@ -61,36 +76,47 @@ class SessionManager(
     val farmTime: StateFlow<FarmTime> = _farmTime.asStateFlow()
 
     private val _engine = MutableStateFlow<SyncEngine?>(null)
-    /** The engine of this sign-in (its `status` is the main screen's line); null when signed out. */
+    /** The engine of this connection (its `status` is the main screen's line); null when not connected. */
     val engine: StateFlow<SyncEngine?> = _engine.asStateFlow()
 
     private val _notice = MutableStateFlow<String?>(null)
-    /** Shown on the sign-in screen after the server refused the device. */
-    val signOutNotice: StateFlow<String?> = _notice.asStateFlow()
+    /**
+     * More for the connect screen. With [ConnectReason.Offline]: the text shown instead of «Нет связи с сервером»
+     * (the server's own, «Не удалось сохранить подключение на телефоне»); with [ConnectReason.Revoked]: how many
+     * unsent changes went with the wipe.
+     */
+    val notice: StateFlow<String?> = _notice.asStateFlow()
+
+    /** The last connect failed for want of a network or of a working server: a sync trigger tries again. */
+    @Volatile private var retryBySync = false
 
     /** The token as the current engine may use it. */
     private var gate: AtomicBoolean? = null
     private var engineApi: Api? = null
 
-    /** Sign-in, sign-out, launch and the store writes of `/me`: one at a time. Never taken by `onSignedOut`. */
+    /** Connect, sign-out, launch and the store writes of `/me`: one at a time. Never taken by `onSignedOut`. */
     private val mutex = Mutex()
 
     /** The logout of a sign-out is a courtesy: offline it must not hold the sign-out for long. */
     private val logoutClient: OkHttpClient by lazy { client.newBuilder().callTimeout(5, TimeUnit.SECONDS).build() }
 
-    /** The signed-in role, null when not signed in. */
+    /** The connected role, null when not connected. */
     val role: Role? get() = (_state.value as? SessionState.SignedIn)?.me?.role
 
     // MARK: Launch
 
     /**
-     * At launch: a token and a stored `Me` — signed in with them (the sync then runs on its triggers); otherwise
-     * signed out, and whatever a sign-in left behind (a wipe that failed, a sign-in that never finished) is wiped.
+     * At launch: a token and a stored `Me` — connected with them (the sync then runs on its triggers; an old build's
+     * token, data and queue are kept). Switched off by the owner — [ConnectReason.Revoked], nothing is asked.
+     * Otherwise whatever an earlier connection left behind (a wipe that failed, a connection that never finished) is
+     * wiped and the phone connects itself.
      */
-    suspend fun restore() = off { restoreLocked() }
+    suspend fun restore() {
+        off { restoreLocked() }
+    }
 
-    private suspend fun restoreLocked() = mutex.withLock {
-        // A token file or a store that cannot be read: the phone is signed out, never left on «Загрузка данных…».
+    private suspend fun restoreLocked(): Unit = mutex.withLock {
+        // A token file or a store that cannot be read: not connected, never left on «Загрузка данных…».
         val token = try { readToken() } catch (e: Exception) { if (e is CancellationException) throw e; null }
         val me = if (token != null) try { store.me() } catch (e: Exception) { if (e is CancellationException) throw e; null } else null
         if (token != null && me != null) {
@@ -98,79 +124,107 @@ class SessionManager(
             val engine = makeEngine()
             _state.value = SessionState.SignedIn(me)
             engine.refreshStatus()
-        } else {
-            wipeQuietly()
-            clearTokenQuietly()
-            _state.value = SessionState.SignedOut
+            return@withLock
         }
+        wipeQuietly()
+        if (isRevoked()) {
+            clearTokenQuietly()
+            endSession(SessionState.NotConnected(ConnectReason.Revoked), notice = null)
+            return@withLock
+        }
+        connectLocked()
     }
 
-    // MARK: Sign in
+    // MARK: Connect
 
     /**
-     * `POST /auth/login` → token → `GET /me` → wipe → `Me` saved → the first full pull («Загрузка данных…») →
-     * signed in. Returns the error text for the sign-in screen, or null. A wrong password, no network, a server
-     * error: signed out, the phone unchanged. The first pull failing offline: signed in all the same.
+     * «Повторить», «Подключиться снова», the launch without a token: `POST /devices/register` (or the token already
+     * kept) → `GET /me` → wipe → `Me` saved → the first full pull («Загрузка данных…») → connected. Returns null, or
+     * the error text. No network, closed, a server error: not connected, the phone unchanged. The first pull failing
+     * offline: connected all the same. Already connected: nothing, null.
      */
-    suspend fun signIn(login: String, password: String): String? = off { signInLocked(login, password) }
+    suspend fun connect(): String? = off { mutex.withLock { connectLocked() } }
 
-    private suspend fun signInLocked(login: String, password: String): String? = mutex.withLock {
-        if (_state.value != SessionState.SignedOut) return "Вход уже выполнен"
-        val token = try {
-            Api(base, client) { null }.login(login.trim(), password, deviceName)
-        } catch (e: ApiError) {
-            // The login's 401 is a wrong login or password, not a revoked device.
-            return if (e.status == 401) "Неверный логин или пароль" else e.text
+    private suspend fun connectLocked(): String? {
+        if (_state.value is SessionState.SignedIn) return null
+        retryBySync = false
+        // A token kept from a connect whose /me never answered: that device exists, it is not registered twice.
+        val kept = try { readToken() } catch (e: Exception) { if (e is CancellationException) throw e; null }
+        val token = kept ?: try {
+            Api(base, client) { null }.register(deviceName)
         } catch (e: Exception) {
-            return message(e)
+            return failed(e)
         }
-        try {
-            saveToken(token)
-        } catch (e: Exception) {
-            if (e is CancellationException) throw e
-            return "Не удалось сохранить вход на телефоне"
+        if (kept == null) {
+            try {
+                saveToken(token)
+            } catch (e: Exception) {
+                if (e is CancellationException) throw e
+                return notConnected(ConnectReason.Offline, TOKEN_NOT_SAVED)
+            }
         }
         val me = try {
             Api(base, client) { token }.me()
-        } catch (e: Exception) {
-            if (e is CancellationException) throw e
+        } catch (e: Unauthorized) {
             clearTokenQuietly()
-            return message(e)
+            setRevokedQuietly(true)
+            return notConnected(ConnectReason.Revoked, null, REVOKED)
+        } catch (e: Exception) {
+            // The token stays: the next attempt asks /me again without registering another device.
+            return failed(e)
         }
+        setRevokedQuietly(false)
         _notice.value = null
         _state.value = SessionState.Loading
-        // From here the sign-in screen is gone («Загрузка данных…»): an error is shown through the notice, which
-        // the fresh sign-in screen reads, not through the return value alone.
+        // From here the connect screen is gone («Загрузка данных…»): an error is shown through the notice, which the
+        // fresh connect screen reads, not through the return value alone.
         try {
             store.wipe()
             store.saveMe(me)
         } catch (e: Exception) {
             if (e is CancellationException) throw e
             clearTokenQuietly()
-            return failLoading("Не удалось подготовить телефон к входу")
+            return failLoading("Не удалось подготовить телефон")
         }
         _farmTime.value = FarmTime(me.timeZone, clock)
         val engine = makeEngine()
         engine.syncNow()
-        // A 401 during the download signed the phone out again (onSignedOut, with its own notice).
-        if (_engine.value !== engine) return "Нужно войти заново"
+        // A 401 during the download: the owner switched the phone off meanwhile (onSignedOut ended the session).
+        if (_engine.value !== engine) return REVOKED
         val still = try { readToken() } catch (e: Exception) { if (e is CancellationException) throw e; null }
         if (still == null) {
             // The token file broke during the download: not inside a run of the engine, stopAndWait is safe.
             engine.stopAndWait()
             closeGate()
             wipeQuietly()
-            return failLoading("Не удалось сохранить вход на телефоне")
+            return failLoading(TOKEN_NOT_SAVED)
         }
         _state.value = SessionState.SignedIn(me)
-        null
+        return null
     }
 
-    /** A sign-in that failed after «Загрузка данных…» began: signed out, [text] on the sign-in screen and returned. */
-    private fun failLoading(text: String): String {
-        endSession(notice = text)
+    /**
+     * A request of the connect failed. 403: closed. No network, an answer that cannot be read, a server error (5xx):
+     * offline, tried again by the sync triggers. Any other answer (429 «Слишком много попыток…»): its text, and only
+     * the button asks again — every attempt counts towards the server's limit.
+     */
+    private fun failed(e: Exception): String {
+        if (e is CancellationException) throw e
+        if (e is ApiError && e.status == 403) return notConnected(ConnectReason.Closed, null, e.text)
+        val text = errorText(e)
+        val result = notConnected(ConnectReason.Offline, text.takeIf { it != OFFLINE }, text)
+        retryBySync = e is IOException || (e is ApiError && (e.status >= 500 || e.status == 200))
+        return result
+    }
+
+    /** Not connected for [reason] with [notice] on the screen; returns [text] (the notice, or the offline text). */
+    private fun notConnected(reason: ConnectReason, notice: String?, text: String = notice ?: OFFLINE): String {
+        endSession(SessionState.NotConnected(reason), notice)
         return text
     }
+
+    /** A connect that failed after «Загрузка данных…» began: not connected, [text] on the screen and returned. */
+    private fun failLoading(text: String): String = notConnected(ConnectReason.Offline, text)
 
     // MARK: Sign out
 
@@ -182,13 +236,19 @@ class SessionManager(
     suspend fun unsent(): Unsent = Unsent(store.pendingCount(), store.refusedCount())
 
     /**
-     * «Выйти». `force = false`: returns N > 0 and changes nothing when N changes (waiting or refused) would be
-     * deleted — the screen asks first and calls again with `force = true`. Otherwise signs out and returns 0.
+     * «Выйти» (until the settings lose it). `force = false`: returns N > 0 and changes nothing when N changes (waiting
+     * or refused) would be deleted — the screen asks first and calls again with `force = true`. Otherwise the phone
+     * forgets the farm, connects again as a new device, and 0 is returned.
      */
-    suspend fun signOut(force: Boolean): Int = off { signOutLocked(force) }
+    suspend fun signOut(force: Boolean): Int = off {
+        val n = signOutLocked(force)
+        // Signed out just now (Loading): the phone connects again; nothing is left on «Загрузка данных…».
+        if (n == 0) mutex.withLock { if (_state.value == SessionState.Loading) connectLocked() }
+        n
+    }
 
     private suspend fun signOutLocked(force: Boolean): Int = mutex.withLock {
-        if (_state.value == SessionState.SignedOut) return 0
+        if (_state.value !is SessionState.SignedIn) return 0
         if (!force) {
             val n = unsent().total
             if (n > 0) return n
@@ -197,8 +257,8 @@ class SessionManager(
         // The run on its way finishes its last write; nothing of this engine touches the store afterwards.
         engine?.stopAndWait()
         closeGate()
-        // From here the engine is dead: whatever fails below, the session ends as signed out (never «signed in»
-        // with an engine that will not sync again).
+        // From here the engine is dead: whatever fails below, the session ends (never «connected» with an engine
+        // that will not sync again).
         try {
             val token = try { readToken() } catch (e: Exception) { if (e is CancellationException) throw e; null }
             if (token != null) {
@@ -212,16 +272,29 @@ class SessionManager(
             wipeQuietly()
             clearTokenQuietly()
         } finally {
-            endSession(notice = null)
+            endSession(SessionState.Loading, notice = null)
         }
         0
     }
 
     // MARK: Sync
 
-    /** A sync now, then `GET /me` (the role, the farm and its zone may have changed). Nothing when not signed in. */
+    /**
+     * A sync now, then `GET /me` (the role, the farm and its zone may have changed). Not connected for want of a
+     * network: the connect is tried again instead (the triggers: the network back, the foreground, every minute).
+     */
     suspend fun syncNow() = off {
-        if (_state.value !is SessionState.SignedIn) return@off
+        val s = _state.value
+        if (s is SessionState.NotConnected) {
+            if (s.reason == ConnectReason.Offline && retryBySync) {
+                mutex.withLock {
+                    val now = _state.value
+                    if (now is SessionState.NotConnected && now.reason == ConnectReason.Offline && retryBySync) connectLocked()
+                }
+            }
+            return@off
+        }
+        if (s !is SessionState.SignedIn) return@off
         val engine = _engine.value ?: return@off
         if (engine.stopped) return@off
         engine.syncNow()
@@ -229,17 +302,17 @@ class SessionManager(
     }
 
     /**
-     * The store, the pull pages' JSON and the token file are never worked on the caller's thread: the sign-in screen
+     * The store, the pull pages' JSON and the token file are never worked on the caller's thread: the connect screen
      * calls from the main thread.
      */
     private suspend fun <T> off(block: suspend CoroutineScope.() -> T): T = withContext(Dispatchers.Default, block)
 
     private suspend fun readToken(): String? = withContext(Dispatchers.IO) { tokens.get() }
 
-    /** Throws when the token could not be saved (the sign-in then fails with a message). */
+    /** Throws when the token could not be saved (the connect then fails with a message). */
     private suspend fun saveToken(token: String) = withContext(Dispatchers.IO) { tokens.set(token) }
 
-    /** Sign-out: the token goes; a store that cannot even forget it must not stop the sign-out. */
+    /** The token goes; a store that cannot even forget it must not stop the sign-out. */
     private suspend fun clearTokenQuietly() {
         try {
             withContext(Dispatchers.IO) { tokens.set(null) }
@@ -248,7 +321,22 @@ class SessionManager(
         }
     }
 
-    /** `GET /me` of the sign-in [engine] belongs to: nothing when that sign-in ended before or while it was asked. */
+    private suspend fun isRevoked(): Boolean = try {
+        withContext(Dispatchers.IO) { tokens.revoked() }
+    } catch (e: Exception) {
+        if (e is CancellationException) throw e
+        false
+    }
+
+    private suspend fun setRevokedQuietly(revoked: Boolean) {
+        try {
+            withContext(Dispatchers.IO) { tokens.setRevoked(revoked) }
+        } catch (e: Exception) {
+            if (e is CancellationException) throw e
+        }
+    }
+
+    /** `GET /me` of the connection [engine] belongs to: nothing when that connection ended before or while it was asked. */
     private suspend fun refreshMe(engine: SyncEngine) {
         fun current() = _engine.value === engine && !engine.stopped && _state.value is SessionState.SignedIn
         val api = engineApi
@@ -264,7 +352,7 @@ class SessionManager(
             return
         }
         mutex.withLock {
-            // A sign-out that began meanwhile has wiped: nothing of the old sign-in is written back.
+            // A sign-out that began meanwhile has wiped: nothing of the old connection is written back.
             if (!current()) return
             try {
                 store.saveMe(me)
@@ -278,7 +366,7 @@ class SessionManager(
 
     /**
      * The server refused the device outside a run of the engine (`/me`, or an owner's request): not inside a run,
-     * so stopAndWait is safe. The sign-in screen says how many unsent changes went with the wipe.
+     * so stopAndWait is safe. The connect screen says how many unsent changes went with the wipe.
      */
     private suspend fun revoked(engine: SyncEngine) {
         mutex.withLock {
@@ -289,8 +377,9 @@ class SessionManager(
             try {
                 wipeQuietly()
                 clearTokenQuietly()
+                setRevokedQuietly(true)
             } finally {
-                endSession(notice = revokedNotice(lost))
+                endSession(SessionState.NotConnected(ConnectReason.Revoked), notice = lostNotice(lost))
             }
         }
     }
@@ -298,9 +387,9 @@ class SessionManager(
     // MARK: Owner's requests
 
     /**
-     * A request of this sign-in besides the sync (the owner's lists `/members`, `/devices`, `/conflicts`,
-     * `/backups`, `PATCH /farm`), as `SessionStore.send`: a 401 signs the phone out the way the sync does, and is
-     * rethrown as [Unauthorized]. Not signed in: [Unauthorized] at once.
+     * A request of this connection besides the sync (the owner's lists `/devices`, `/conflicts`, `/backups`,
+     * `PATCH /farm`), as `SessionStore.send`: a 401 switches the phone off the way the sync does, and is rethrown as
+     * [Unauthorized]. Not connected: [Unauthorized] at once.
      */
     suspend fun <T> request(block: suspend (Api) -> T): T {
         val engine = _engine.value
@@ -367,8 +456,9 @@ class SessionManager(
                 closeGate()
                 try {
                     clearTokenQuietly()
+                    setRevokedQuietly(true)
                 } finally {
-                    endSession(notice = revokedNotice(lost))
+                    endSession(SessionState.NotConnected(ConnectReason.Revoked), notice = lostNotice(lost))
                 }
             }
         }
@@ -385,14 +475,14 @@ class SessionManager(
         engineApi = null
     }
 
-    private fun endSession(notice: String?) {
+    private fun endSession(state: SessionState, notice: String?) {
         _engine.value = null
         _farmTime.value = FarmTime(DEFAULT_FARM_ZONE, clock)
         _notice.value = notice
-        _state.value = SessionState.SignedOut
+        _state.value = state
     }
 
-    /** Once more on failure; failing again, the next launch wipes (signed out with a sign-in's rows left). */
+    /** Once more on failure; failing again, the next launch wipes (not connected with a connection's rows left). */
     private suspend fun wipeQuietly() {
         try {
             store.wipe()
@@ -406,29 +496,25 @@ class SessionManager(
         }
     }
 
-    private fun message(e: Exception): String = when (e) {
-        is CancellationException -> throw e
-        is Unauthorized, is ApiError, is IOException -> errorText(e)
-        else -> "Не удалось войти"
-    }
-
     /** The text of a failed request, as the iPhone's `error.localizedDescription`. */
     fun errorText(e: Exception): String = when (e) {
         is CancellationException -> throw e
         is Unauthorized -> e.message!!
         is ApiError -> e.text
         is SSLException -> "Ошибка соединения с сервером"
-        is IOException -> "Нет связи с сервером"
+        is IOException -> OFFLINE
         else -> e.message ?: e::class.java.simpleName
     }
 
     override fun toString(): String = "SessionManager(${_state.value::class.simpleName})"
 
     companion object {
-        const val REVOKED = "Доступ к хозяйству отключён."
+        const val OFFLINE = "Нет связи с сервером"
+        const val CLOSED = "Владелец сейчас не подключает новые устройства"
+        const val REVOKED = "Это устройство отключено владельцем"
+        const val TOKEN_NOT_SAVED = "Не удалось сохранить подключение на телефоне"
 
-        /** The iPhone's notice: with the unsent changes that were lost, when there were any. */
-        fun revokedNotice(lost: Int): String =
-            if (lost > 0) "Доступ к хозяйству отключён. Неотправленных изменений удалено: $lost." else REVOKED
+        /** The unsent changes that went with the wipe of a switched-off phone, when there were any. */
+        fun lostNotice(lost: Int): String? = if (lost > 0) "Неотправленных изменений удалено: $lost." else null
     }
 }
