@@ -2,7 +2,6 @@ import { useApp, useRecords } from '../app.tsx';
 import { canOpen, modulesFor } from '../lib/roles.ts';
 import { coalTotals, herdBalances, rubles, plural } from '../lib/domain.ts';
 import { dayKey, longDate, todayKey } from '../lib/time.ts';
-import { AppLinks } from './app-links.tsx';
 
 /** Главная панель: today at a glance and the large entries. */
 export function HomePage({ go }: { go: (r: string) => void }) {
@@ -45,7 +44,6 @@ export function HomePage({ go }: { go: (r: string) => void }) {
           </button>
         ))}
       </div>
-      <AppLinks />
     </>
   );
 }

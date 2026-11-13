@@ -16,7 +16,7 @@ import { canEdit, canOpen } from './lib/roles.ts';
 
 const NAV: [string, string][] = [
   ['home', 'Главная'], ['timesheet', 'Табель'], ['coal', 'Уголь'], ['livestock', 'Скот'], ['agro', 'Калькуляторы'],
-  ['reports', 'Отчёты'], ['settings', 'Настройки'],
+  ['reports', 'Отчёты'], ['settings', 'Админка'],
 ];
 
 function useRoute(): [string, (r: string) => void] {

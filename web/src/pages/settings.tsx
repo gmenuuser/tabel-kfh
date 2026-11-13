@@ -2,9 +2,9 @@ import { useEffect, useState } from 'react';
 import { useApp, useStatus } from '../app.tsx';
 import type { QueuedOp } from '../lib/db.ts';
 import { download } from '../lib/xlsx.ts';
+import { AppLinks } from './app-links.tsx';
+import { DevicesSection } from './devices.tsx';
 
-const ROLES: Record<string, string> = { owner: 'Владелец', manager: 'Управляющий', timesheet: 'Только табель', coal: 'Только уголь',
-  livestock: 'Только скот', viewer: 'Только просмотр' };
 const ENTITY: Record<string, string> = { employee: 'Сотрудник', hoursMark: 'Часы', coalSale: 'Продажа угля', driver: 'Водитель',
   driverPayment: 'Выплата', deliveryLocation: 'Населённый пункт', coalSettings: 'Цена угля', coalWorkDay: 'Рабочий день',
   livestockCategory: 'Категория скота', livestockOperation: 'Операция со скотом', slaughterRecord: 'Забой', agroCalculation: 'Расчёт' };
@@ -14,19 +14,14 @@ export function SettingsPage() {
   const status = useStatus();
   const owner = session.role === 'owner';
   const [form, setForm] = useState(farm);
-  const [members, setMembers] = useState<{ id: string; login: string; email: string | null; name: string; role: string }[]>([]);
-  const [devices, setDevices] = useState<{ id: string; name: string; platform: string; login: string; email: string | null; lastSeenAt: string | null; revoked: boolean; current: boolean }[]>([]);
   const [conflicts, setConflicts] = useState<Awaited<ReturnType<typeof engine.conflicts>>>([]);
   const [failed, setFailed] = useState<QueuedOp[]>([]);
   const [backups, setBackups] = useState<{ id: string; records: number; created_at: string }[]>([]);
-  const [helper, setHelper] = useState({ login: '', password: '', role: 'timesheet' });
   const [note, setNote] = useState('');
 
   async function load() {
     setFailed(await engine.failedOps());
     try {
-      setMembers(await engine.call('/members'));
-      setDevices(await engine.call('/devices'));
       setConflicts(await engine.conflicts());
       if (owner) setBackups(await engine.call('/backups'));
     } catch { /* offline: the server lists come back with the connection */ }
@@ -39,7 +34,7 @@ export function SettingsPage() {
 
   return (
     <>
-      <h2>Настройки</h2>
+      <h2>Админка</h2>
       {note && <p className="note">{note}</p>}
 
       <section className="card form">
@@ -48,7 +43,7 @@ export function SettingsPage() {
           <label key={k}>{{ name: 'Название', managerName: 'Руководитель', region: 'Регион', timezone: 'Часовой пояс' }[k]}
             <input value={form[k]} disabled={!owner} onChange={(e) => setForm({ ...form, [k]: e.target.value })} /></label>
         ))}
-        {owner && <button onClick={() => act(async () => { await engine.call('/farm', { method: 'PATCH', body: JSON.stringify(form) }); setFarm(form); }, 'Сохранено')}>Сохранить</button>}
+        {owner && <button onClick={() => act(async () => { await engine.call('/farm', { method: 'PATCH', body: JSON.stringify({ name: form.name, managerName: form.managerName, region: form.region, timezone: form.timezone }) }); setFarm(form); }, 'Сохранено')}>Сохранить</button>}
       </section>
 
       <section className="card">
@@ -85,51 +80,9 @@ export function SettingsPage() {
         </section>
       )}
 
-      {owner && (
-        <section className="card">
-          <h3>Помощники</h3>
-          {members.filter((m) => m.role !== 'owner').map((m) => (
-            <div key={m.id} className="row between line">
-              <span>{m.login || m.email}</span>
-              <select value={m.role} onChange={(e) => act(() => engine.call(`/members/${m.id}`, { method: 'PATCH', body: JSON.stringify({ role: e.target.value }) }), 'Роль изменена')}>
-                {Object.entries(ROLES).filter(([k]) => k !== 'owner').map(([k, v]) => <option key={k} value={k}>{v}</option>)}
-              </select>
-              <button onClick={() => {
-                const password = prompt(`Новый пароль для ${m.login || m.email} (не короче 8 символов)`);
-                if (password) act(() => engine.call(`/members/${m.id}/password`, { method: 'POST', body: JSON.stringify({ password }) }), 'Пароль изменён');
-              }}>Новый пароль</button>
-              <button className="danger" onClick={() => { if (confirm(`Отключить ${m.login || m.email}?`)) act(() => engine.call(`/members/${m.id}`, { method: 'DELETE' }), 'Помощник отключён'); }}>Отключить</button>
-            </div>
-          ))}
-          <form className="row" onSubmit={(e) => {
-            e.preventDefault();
-            if (!helper.login.trim()) { setNote('Введите логин помощника'); return; }
-            act(async () => {
-              await engine.call('/members', { method: 'POST', body: JSON.stringify({ ...helper, login: helper.login.trim() }) });
-              setHelper({ login: '', password: '', role: 'timesheet' });
-            }, 'Помощник добавлен');
-          }}>
-            <input placeholder="Логин" autoCapitalize="none" value={helper.login} onChange={(e) => setHelper({ ...helper, login: e.target.value })} required />
-            <input type="password" placeholder="Пароль" autoComplete="new-password" minLength={8} value={helper.password} onChange={(e) => setHelper({ ...helper, password: e.target.value })} required />
-            <select value={helper.role} onChange={(e) => setHelper({ ...helper, role: e.target.value })}>
-              {Object.entries(ROLES).filter(([k]) => k !== 'owner').map(([k, v]) => <option key={k} value={k}>{v}</option>)}
-            </select>
-            <button>Добавить помощника</button>
-          </form>
-          <p className="muted">Помощник войдёт на iPhone или здесь по логину и паролю. После смены роли или пароля ему нужно войти заново.</p>
-        </section>
-      )}
+      <DevicesSection note={setNote} />
 
-      <section className="card">
-        <h3>Подключённые устройства</h3>
-        {devices.map((d) => (
-          <div key={d.id} className="row between line">
-            <span>{d.name || d.platform} · {d.login || d.email} {d.current ? '(это устройство)' : ''} {d.revoked ? '— отключено' : ''}</span>
-            <span className="muted">{d.lastSeenAt ? new Date(d.lastSeenAt).toLocaleString('ru-RU') : ''}</span>
-            {!d.revoked && !d.current && <button className="danger" onClick={() => { if (confirm('Отозвать доступ этого устройства?')) act(() => engine.call(`/devices/${d.id}/revoke`, { method: 'POST' }), 'Доступ отозван'); }}>Отозвать доступ</button>}
-          </div>
-        ))}
-      </section>
+      <AppLinks />
 
       <section className="card">
         <h3>Резервные копии</h3>

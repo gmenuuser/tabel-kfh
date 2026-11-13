@@ -2,7 +2,8 @@
 import 'fake-indexeddb/auto';
 import { test, before, after } from 'node:test';
 import assert from 'node:assert/strict';
-import { harness, register, login, type Harness } from '../../server/test/helpers.ts';
+import { harness, login, type Harness } from '../../server/test/helpers.ts';
+import { hashPassword } from '../../server/src/auth.ts';
 import { LocalDb } from '../src/lib/db.ts';
 import { SyncEngine, type Session } from '../src/lib/sync.ts';
 import { stableId, sha256 } from '../src/lib/ids.ts';
@@ -11,10 +12,18 @@ import { dayKey, dayStartISO } from '../src/lib/time.ts';
 let h: Harness;
 let base = '';
 before(async () => {
-  h = await harness({ registrationOpen: true });
+  h = await harness();
   base = await h.app.listen({ port: 0, host: '127.0.0.1' });
 });
 after(async () => { await h.close(); });
+
+/** An owner of a new farm (the server has no registration now: the owner is created by hand) with a site session. */
+async function register(app: Harness['app'], o: { email: string; platform: string }) {
+  const u = await h.db.query('INSERT INTO users (email, name, password_hash) VALUES ($1, $2, $3) RETURNING id', [o.email, 'Тест', await hashPassword('пароль-12345')]);
+  const f = await h.db.query("INSERT INTO farms (name) VALUES ('КФХ Тест') RETURNING id");
+  await h.db.query("INSERT INTO memberships (farm_id, user_id, role) VALUES ($1, $2, 'owner')", [f.rows[0].id, u.rows[0].id]);
+  return login(app, o.email, 'пароль-12345', o.platform);
+}
 
 /** fetch that can be switched off (no internet) or lose the answer after the server did the work. */
 function network() {
@@ -75,7 +84,7 @@ test('без интернета всё сохраняется, после — у
   await a2.engine.sync();
   assert.equal(a2.engine.status.pending, 0, 'всё подтверждено сервером');
 
-  const b = await device(await login(h.app, email, 'пароль-12345', 'android'));
+  const b = await device(await login(h.app, email, 'пароль-12345', 'web'));
   await b.engine.sync();
   assert.equal((await b.engine.list('employee')).length, 1, 'без дублей');
   assert.equal((await b.engine.list('coalSale')).length, 1);
@@ -98,7 +107,7 @@ test('the same person and day marked on two devices offline is one record', asyn
   const email = `web-same${Date.now()}@example.com`;
   const owner = await register(h.app, { email, platform: 'web' });
   const a = await device(owner);
-  const b = await device(await login(h.app, email, 'пароль-12345', 'android'));
+  const b = await device(await login(h.app, email, 'пароль-12345', 'web'));
   const employeeId = await a.engine.save('employee', null, { lastName: 'Петров' });
   await a.engine.sync();
   await b.engine.sync();
@@ -127,7 +136,7 @@ test('edits made offline on two devices: different fields merge, local unsent ed
   const email = `web-merge${Date.now()}@example.com`;
   const owner = await register(h.app, { email, platform: 'web' });
   const a = await device(owner);
-  const b = await device(await login(h.app, email, 'пароль-12345', 'android'));
+  const b = await device(await login(h.app, email, 'пароль-12345', 'web'));
   const id = await a.engine.save('driver', null, { lastName: 'Мунгалов', phone: '' });
   await a.engine.sync();
   await b.engine.sync();
@@ -179,7 +188,7 @@ test('an edit after a send whose answer was lost is not merged into the already 
   await a.engine.save('driver', id, { phone: '+7 914' });
   await a.engine.sync();
   assert.equal(a.engine.status.pending, 0);
-  const b = await device(await login(h.app, email, 'пароль-12345', 'android'));
+  const b = await device(await login(h.app, email, 'пароль-12345', 'web'));
   await b.engine.sync();
   const rec = (await b.engine.list('driver'))[0];
   assert.equal(rec.data.lastName, 'Мунгалов');
@@ -202,7 +211,7 @@ test('two quick edits of one field offline: both go, no conflict, the server kee
   assert.equal(a.engine.status.pending, 0);
   assert.equal(a.engine.status.failed, 0);
   assert.equal(a.engine.status.conflicts, 0, 'правки одного устройства не конфликтуют друг с другом');
-  const b = await device(await login(h.app, email, 'пароль-12345', 'android'));
+  const b = await device(await login(h.app, email, 'пароль-12345', 'web'));
   await b.engine.sync();
   assert.equal((await b.engine.list('driver'))[0].data.phone, '+7 914 2');
 });
@@ -222,7 +231,7 @@ test('a new record edited and then deleted offline: all three changes go in orde
   await a.engine.sync();
   assert.equal(a.engine.status.pending, 0);
   assert.equal(a.engine.status.conflicts, 0);
-  const b = await device(await login(h.app, email, 'пароль-12345', 'android'));
+  const b = await device(await login(h.app, email, 'пароль-12345', 'web'));
   await b.engine.sync();
   assert.equal((await b.engine.list('driver')).length, 0, 'удаление после правок дошло');
 });
@@ -263,7 +272,7 @@ test('a later op of a record is moved to the returned version whatever base it h
   a.net.state.online = true;
   await a.engine.sync();
   assert.equal(a.engine.status.conflicts, 0);
-  const b = await device(await login(h.app, email, 'пароль-12345', 'android'));
+  const b = await device(await login(h.app, email, 'пароль-12345', 'web'));
   await b.engine.sync();
   assert.equal((await b.engine.list('driver'))[0].data.phone, '3');
 });

@@ -3,7 +3,7 @@ import { LocalDb, type LocalRecord } from './lib/db.ts';
 import { SyncEngine, type Session } from './lib/sync.ts';
 import { setFarmZone } from './lib/time.ts';
 
-export interface Farm { id: string; name: string; region: string; managerName: string; timezone: string }
+export interface Farm { id: string; name: string; region: string; managerName: string; timezone: string; newDevicesAllowed?: boolean }
 
 interface Ctx { engine: SyncEngine; session: Session; farm: Farm; signOut: () => void; setFarm: (f: Farm) => void }
 const AppContext = createContext<Ctx | null>(null);
@@ -98,9 +98,9 @@ export function SyncBadge() {
   if (s.signedOut) { text = 'Нужно войти заново'; cls = 'bad'; }
   else if (s.syncing) { text = 'Синхронизация…'; cls = 'busy'; }
   else if (!s.online) { text = `Нет интернета. Все изменения сохранены на устройстве${s.pending ? `. Ожидают отправки: ${s.pending}` : ''}`; cls = 'warn'; }
-  else if (s.failed) { text = `Ошибка синхронизации: ${s.failed} — см. «Настройки»`; cls = 'bad'; }
+  else if (s.failed) { text = `Ошибка синхронизации: ${s.failed} — см. «Админку»`; cls = 'bad'; }
   else if (s.pending) { text = `Есть несинхронизированные данные: ${s.pending}`; cls = 'warn'; }
-  else if (s.conflicts) { text = `Конфликтов: ${s.conflicts} — выберите версию в «Настройки»`; cls = 'warn'; }
+  else if (s.conflicts) { text = `Конфликтов: ${s.conflicts} — выберите версию в «Админке»`; cls = 'warn'; }
   else if (s.lastError) { text = `Ошибка: ${s.lastError}`; cls = 'bad'; }
   else { text = 'Все данные синхронизированы'; }
   return (
