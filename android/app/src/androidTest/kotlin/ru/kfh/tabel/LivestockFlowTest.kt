@@ -109,6 +109,16 @@ class LivestockFlowTest {
 
     private fun json(s: String) = MockResponse().setHeader("Content-Type", "application/json").setBody(s)
 
+    /** Waits for the home's cattle count to be [heads], then asserts it (the failure names the node). */
+    private fun herdShows(heads: String) {
+        runCatching {
+            compose.waitUntil(10_000) {
+                runCatching { compose.onNodeWithTag("herd-cattle").assertTextEquals(heads) }.isSuccess
+            }
+        }
+        compose.onNodeWithTag("herd-cattle").assertTextEquals(heads)
+    }
+
     @Test
     fun addFiveCowsAndSlaughterTwo() {
         compose.waitUntilExactlyOneExists(hasTestTag("openLivestock"), 20_000)
@@ -137,7 +147,8 @@ class LivestockFlowTest {
         compose.onNodeWithTag("speciesTotal").assertTextEquals("Всего: 5 голов")
         compose.onNodeWithTag("back").performClick()
         compose.waitUntilExactlyOneExists(hasTestTag("openSlaughter"), 10_000)
-        compose.onNodeWithTag("herd-cattle").assertTextEquals("5")
+        // The home opens on an empty herd (`collectAsState(initial = Herd.EMPTY)`) until the count arrives.
+        herdShows("5")
 
         // «Записать забой»: КРС, Коровы (есть 5 голов), 2 heads, «На мясо» → confirm → the note; the form is clean.
         compose.onNodeWithTag("openSlaughter").performScrollTo().performClick()
@@ -160,7 +171,7 @@ class LivestockFlowTest {
         // The home counts the herd from the operations: 5 − 2.
         compose.waitUntilExactlyOneExists(hasTestTag("herdSummary"), 10_000)
         compose.waitUntil(10_000) { ops().count { it.entity == "slaughterRecord" } == 1 }
-        compose.onNodeWithTag("herd-cattle").assertTextEquals("3")
+        herdShows("3")
         compose.onNodeWithTag("herd-goats").assertTextEquals("0")
         compose.onNodeWithTag("herdTotal").assertTextEquals("3 головы")
         androidx.test.espresso.Espresso.closeSoftKeyboard()
