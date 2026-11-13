@@ -1,14 +1,8 @@
 import { useEffect, useState } from 'react';
 import { useApp } from '../app.tsx';
-
-interface Device { id: string; name: string; platform: string; kind: 'app' | 'owner'; createdAt: string; lastSeenAt: string | null; revoked: boolean; current: boolean }
+import { sortDevices, type Device } from '../lib/devices.ts';
 
 const PLATFORM: Record<string, string> = { android: 'Android', ios: 'iPhone', web: 'Сайт' };
-
-/** Revoked devices go last, the rest keep the server's order. */
-export function sortDevices(list: Device[]): Device[] {
-  return [...list].sort((a, b) => Number(a.revoked) - Number(b.revoked));
-}
 
 /** «Устройства»: the devices of the farm and the «new devices» switch. Owner only (the admin page). */
 export function DevicesSection({ note }: { note: (text: string) => void }) {
@@ -29,7 +23,7 @@ export function DevicesSection({ note }: { note: (text: string) => void }) {
   return (
     <section className="card">
       <h3>Устройства</h3>
-      <label className="row">
+      <label className="inline switch">
         <input type="checkbox" checked={allowed} onChange={(e) => {
           const value = e.target.checked;
           act(async () => {
@@ -42,12 +36,12 @@ export function DevicesSection({ note }: { note: (text: string) => void }) {
       <p className="muted">Когда выключено, приложение на новом телефоне не подключится. Уже подключённые продолжают работать.</p>
       {devices.length === 0 && <p className="muted">Устройств пока нет.</p>}
       {devices.map((d) => (
-        <div key={d.id} className="row between line" style={d.revoked ? { opacity: 0.5 } : undefined}>
+        <div key={d.id} className="device-row line" style={d.revoked ? { opacity: 0.5 } : undefined}>
           {editing?.id === d.id ? (
             <form className="row" onSubmit={async (e) => {
               e.preventDefault();
               const name = editing.name.trim();
-              if (!name) return;
+              if (!name) { note('Введите название устройства'); return; }
               if (await act(() => engine.call(`/devices/${d.id}`, { method: 'PATCH', body: JSON.stringify({ name }) }), 'Название сохранено')) setEditing(null);
             }}>
               <input value={editing.name} maxLength={100} autoFocus onChange={(e) => setEditing({ id: d.id, name: e.target.value })} />
@@ -61,11 +55,15 @@ export function DevicesSection({ note }: { note: (text: string) => void }) {
               {d.current ? ' · это устройство' : ''}{d.revoked ? ' · отключено' : ''}
             </span>
           )}
-          <span className="muted">{d.lastSeenAt ? `был(о) на связи ${new Date(d.lastSeenAt).toLocaleString('ru-RU')}` : 'не было на связи'}</span>
-          {editing?.id !== d.id && !d.revoked && <button onClick={() => setEditing({ id: d.id, name: d.name })}>Переименовать</button>}
-          {!d.revoked && !d.current && <button className="danger" onClick={() => {
-            if (confirm(`Отключить «${d.name || d.platform}»? Устройство потеряет доступ.`)) act(() => engine.call(`/devices/${d.id}/revoke`, { method: 'POST' }), 'Устройство отключено');
-          }}>Отключить</button>}
+          <span className="muted device-seen">{d.lastSeenAt ? `был(о) на связи ${new Date(d.lastSeenAt).toLocaleString('ru-RU')}` : 'не было на связи'}</span>
+          {!d.revoked && !d.current && editing?.id !== d.id && (
+            <span className="device-actions">
+              <button onClick={() => setEditing({ id: d.id, name: d.name })}>Переименовать</button>
+              <button className="danger" onClick={() => {
+                if (confirm(`Отключить «${d.name || d.platform}»? Устройство потеряет доступ.`)) act(() => engine.call(`/devices/${d.id}/revoke`, { method: 'POST' }), 'Устройство отключено');
+              }}>Отключить</button>
+            </span>
+          )}
         </div>
       ))}
     </section>

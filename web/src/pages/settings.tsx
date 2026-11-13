@@ -43,7 +43,7 @@ export function SettingsPage() {
           <label key={k}>{{ name: 'Название', managerName: 'Руководитель', region: 'Регион', timezone: 'Часовой пояс' }[k]}
             <input value={form[k]} disabled={!owner} onChange={(e) => setForm({ ...form, [k]: e.target.value })} /></label>
         ))}
-        {owner && <button onClick={() => act(async () => { await engine.call('/farm', { method: 'PATCH', body: JSON.stringify({ name: form.name, managerName: form.managerName, region: form.region, timezone: form.timezone }) }); setFarm(form); }, 'Сохранено')}>Сохранить</button>}
+        {owner && <button onClick={() => act(async () => { await engine.call('/farm', { method: 'PATCH', body: JSON.stringify({ name: form.name, managerName: form.managerName, region: form.region, timezone: form.timezone }) }); setFarm({ ...farm, name: form.name, managerName: form.managerName, region: form.region, timezone: form.timezone }); }, 'Сохранено')}>Сохранить</button>}
       </section>
 
       <section className="card">

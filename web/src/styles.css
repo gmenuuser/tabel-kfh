@@ -162,3 +162,11 @@ table.report { border-collapse: collapse; width: 100%; font-size: 14px; overflow
 input, select { max-width: 100%; min-width: 0; }
 .unit-input input { min-width: 0; width: 100%; }
 html, body { overflow-x: hidden; }
+
+/* Admin: the «new devices» switch and the device rows (name | last seen | buttons). */
+label.switch { font-size: 16px; color: var(--text); justify-content: flex-start; }
+label.switch input { width: 22px; height: 22px; min-height: 0; flex: none; }
+.device-row { display: grid; grid-template-columns: minmax(0, 1fr) 14rem auto; gap: 8px 12px; align-items: center; }
+.device-row .device-actions { display: flex; gap: 8px; justify-content: flex-end; min-width: 0; }
+.device-row form { grid-column: 1 / -1; }
+@media (max-width: 640px) { .device-row { grid-template-columns: minmax(0, 1fr); } .device-row .device-actions { justify-content: flex-start; flex-wrap: wrap; } }
