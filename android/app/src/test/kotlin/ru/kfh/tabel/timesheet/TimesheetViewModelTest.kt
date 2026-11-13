@@ -365,9 +365,12 @@ class TimesheetViewModelTest {
     }
 
     @Test
-    fun pickedDaySurvivesAProfileRefreshButNotANewSignIn() = runTest {
-        val me = Me("u1", Role.owner, "КФХ Зубахин", null, null, chita)
+    fun pickedDaySurvivesAProfileRefreshButNotANewConnect() = runTest {
+        val me = Me(null, Role.app, "КФХ Зубахин", null, null, chita)
         val states = MutableStateFlow<SessionState>(SessionState.NotConnected(ConnectReason.Offline))
+        // Another day before the connect: the wait below sees the reset itself, not the day the screen started on
+        // (the collector runs on its own dispatcher and may start after the first SignedIn).
+        vm.day.value = farmDay.minusDays(10)
         vm.resetOnSignIn(states)
         states.value = SessionState.SignedIn(me)
         awaitUntil { vm.day.value == farmDay }
@@ -376,13 +379,17 @@ class TimesheetViewModelTest {
         vm.day.value = picked
         vm.month.value = YearMonth.of(2026, 10)
         // After a sync the session re-emits SignedIn with a changed Me (role, name): nothing moves.
-        states.value = SessionState.SignedIn(me.copy(role = Role.manager, farmName = "КФХ Зубахин А. В."))
-        states.value = SessionState.SignedIn(me.copy(role = Role.manager, farmName = "КФХ Зубахин А. В.", region = "Забайкалье"))
+        states.value = SessionState.SignedIn(me.copy(farmName = "КФХ Зубахин А. В."))
+        states.value = SessionState.SignedIn(me.copy(farmName = "КФХ Зубахин А. В.", region = "Забайкалье"))
         kotlinx.coroutines.delay(200)
         assertEquals(picked, vm.day.value)
         assertEquals(YearMonth.of(2026, 10), vm.month.value)
-        // A sign-out and a new sign-in open on today and this month again.
+        // Switched off and connected again: today and this month again. Loading is held a moment, as a connect's
+        // requests hold it (a StateFlow collector that only ever sees SignedIn sees no new connect).
+        states.value = SessionState.NotConnected(ConnectReason.Revoked)
+        kotlinx.coroutines.delay(200)
         states.value = SessionState.Loading
+        kotlinx.coroutines.delay(200)
         states.value = SessionState.SignedIn(me)
         awaitUntil { vm.day.value == farmDay }
         assertEquals(YearMonth.of(2026, 11), vm.month.value)

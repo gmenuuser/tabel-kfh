@@ -61,7 +61,7 @@ class FarmServer {
     /** `POST /devices/register` answers this status with [registerError] (429, 503). */
     @Volatile var registerStatus: Int? = null
     @Volatile var registerError = "Слишком много попыток, попробуйте позже"
-    /** Every request: the connection drops at once (no network). */
+    /** Every request: the connection drops without an answer and nothing is recorded (no network). */
     @Volatile var offline = false
     /** Every pushed op is answered `rejected` with «Нет прав на изменение». */
     @Volatile var rejectPush = false
@@ -82,8 +82,11 @@ class FarmServer {
                 val u = request.requestUrl!!
                 val query = u.queryParameterNames.associateWith { u.queryParameter(it).orEmpty() }
                 val s = Seen(request.method!!, u.encodedPath, request.getHeader("Authorization"), request.body.readUtf8(), query)
+                // No network: the request never reaches the server (not recorded), the phone gets no answer.
+                // DISCONNECT_AFTER_REQUEST: a dispatcher's DISCONNECT_AT_START is not honoured (only `peek()` is
+                // read at the connection's start) and goes out as an empty 200.
+                if (offline) return MockResponse().setSocketPolicy(SocketPolicy.DISCONNECT_AFTER_REQUEST)
                 seen += s
-                if (offline) return MockResponse().setSocketPolicy(SocketPolicy.DISCONNECT_AT_START)
                 if (s.path == "/devices/register") {
                     if (registerClosed) {
                         return MockResponse().setResponseCode(403).setBody("""{"error":"Владелец сейчас не подключает новые устройства"}""")

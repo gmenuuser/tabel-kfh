@@ -78,7 +78,8 @@ class ConnectHomeTest {
                 val path = request.requestUrl!!.encodedPath
                 seen += "${request.method} $path"
                 if (path == "/devices/register") bodies += request.body.readUtf8()
-                if (offline) return MockResponse().setSocketPolicy(SocketPolicy.DISCONNECT_AT_START)
+                // DISCONNECT_AFTER_REQUEST: a dispatcher's DISCONNECT_AT_START goes out as an empty 200.
+                if (offline) return MockResponse().setSocketPolicy(SocketPolicy.DISCONNECT_AFTER_REQUEST)
                 if (path == "/devices/register") {
                     return if (closed) MockResponse().setResponseCode(403)
                         .setBody("""{"error":"Владелец сейчас не подключает новые устройства"}""")
