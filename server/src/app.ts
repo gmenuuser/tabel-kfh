@@ -36,15 +36,15 @@ const PLATFORMS = new Set(['ios', 'android', 'web', 'test']);
 /** A malformed id in a path is a record that does not exist (404), never a database error (500). */
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
-/** A small per-address limit for the sign-in endpoints. */
-function limiter(perMinute: number) {
+/** A small per-address limit (default window: a minute). */
+function limiter(max: number, windowMs = 60_000) {
   const hits = new Map<string, { n: number; until: number }>();
   return (key: string) => {
     const now = Date.now();
     const h = hits.get(key);
-    if (!h || h.until < now) { hits.set(key, { n: 1, until: now + 60_000 }); return true; }
+    if (!h || h.until < now) { hits.set(key, { n: 1, until: now + windowMs }); return true; }
     h.n += 1;
-    return h.n <= perMinute;
+    return h.n <= max;
   };
 }
 
@@ -55,6 +55,8 @@ export function buildApp(o: AppOptions): FastifyInstance {
   // so the per-IP attempt limit sees the real client and cannot be dodged by a forged header.
   const app = Fastify({ logger: false, bodyLimit: 20 * 1024 * 1024, trustProxy: ['127.0.0.1', '::1', '172.16.0.0/12'] });
   const allow = limiter(o.authAttemptsPerMinute ?? 20);
+  // Self-registration of app devices: a separate, hourly limit per address.
+  const allowRegister = limiter(5, 3_600_000);
   mkdirSync(join(o.dataDir, 'files'), { recursive: true });
   mkdirSync(join(o.dataDir, 'backups'), { recursive: true });
 
@@ -78,7 +80,7 @@ export function buildApp(o: AppOptions): FastifyInstance {
     db.query('INSERT INTO audit_log (farm_id, user_id, device_id, action, details) VALUES ($1, $2, $3, $4, $5)',
       [s?.farmId || null, s?.userId || null, s?.deviceId || null, action, JSON.stringify(details)]);
 
-  async function issueDevice(tx: { query: Db['query'] }, farmId: string, userId: string, name: unknown, platform: unknown) {
+  async function issueDevice(tx: { query: Db['query'] }, farmId: string, userId: string | null, name: unknown, platform: unknown) {
     const token = newToken();
     const p = typeof platform === 'string' && PLATFORMS.has(platform) ? platform : '';
     const r = await tx.query('INSERT INTO devices (farm_id, user_id, name, platform, token_hash) VALUES ($1, $2, $3, $4, $5) RETURNING id',
@@ -206,9 +208,27 @@ export function buildApp(o: AppOptions): FastifyInstance {
 
   app.get('/me', { preHandler: signedIn }, async (req) => {
     const s = req.session;
-    const farm = (await db.query('SELECT id, name, region, manager_name, timezone FROM farms WHERE id = $1', [s.farmId])).rows[0];
-    return { userId: s.userId, deviceId: s.deviceId, role: s.role,
-             farm: { id: farm.id, name: farm.name, region: farm.region, managerName: farm.manager_name, timezone: farm.timezone } };
+    const farm = (await db.query('SELECT id, name, region, manager_name, timezone, new_devices_allowed FROM farms WHERE id = $1', [s.farmId])).rows[0];
+    const isApp = s.role === 'app';
+    return { userId: s.userId, deviceId: s.deviceId,
+             // Old app builds know no «app» role: they are told «manager».
+             role: isApp ? 'manager' : s.role, kind: isApp ? 'app' : 'owner',
+             farm: { id: farm.id, name: farm.name, region: farm.region, managerName: farm.manager_name, timezone: farm.timezone,
+                     ...(s.role === 'owner' ? { newDevicesAllowed: farm.new_devices_allowed } : {}) } };
+  });
+
+  /** A phone connects itself: no account, no password. The owner can close this with `newDevicesAllowed`. */
+  app.post('/devices/register', async (req, reply) => {
+    if (!allowRegister(`register:${req.ip}`)) return fail(reply, 429, 'Слишком много попыток, попробуйте позже');
+    const b = (req.body ?? {}) as Record<string, unknown>;
+    if (b.platform !== 'ios' && b.platform !== 'android') return fail(reply, 400, 'Платформа: ios или android');
+    // One farm: the oldest one.
+    const farm = (await db.query('SELECT id, new_devices_allowed FROM farms ORDER BY created_at LIMIT 1')).rows[0];
+    if (!farm) return fail(reply, 503, 'Хозяйство ещё не создано');
+    if (!farm.new_devices_allowed) return fail(reply, 403, 'Владелец сейчас не подключает новые устройства');
+    const d = await issueDevice(db, farm.id, null, b.name, b.platform);
+    await audit({ farmId: farm.id, userId: null, deviceId: d.deviceId, role: 'app' }, 'device.register', { platform: b.platform });
+    return reply.code(201).send({ token: d.token, deviceId: d.deviceId, farmId: farm.id, role: 'manager', kind: 'app' });
   });
 
   app.patch('/farm', { preHandler: [signedIn, ownerOnly] }, async (req, reply) => {
@@ -221,6 +241,10 @@ export function buildApp(o: AppOptions): FastifyInstance {
         values.push((b[key] as string).trim());
         set.push(`${column} = $${values.length}`);
       }
+    }
+    if (typeof b.newDevicesAllowed === 'boolean') {
+      values.push(b.newDevicesAllowed);
+      set.push(`new_devices_allowed = $${values.length}`);
     }
     if (set.length) await db.query(`UPDATE farms SET ${set.join(', ')} WHERE id = $1`, values);
     await audit(req.session, 'farm.update', b);
@@ -318,7 +342,7 @@ export function buildApp(o: AppOptions): FastifyInstance {
     const s = req.session;
     const rows = (await db.query(
       `SELECT d.id, d.name, d.platform, d.created_at, d.last_seen_at, d.revoked_at, u.email, u.login
-         FROM devices d JOIN users u ON u.id = d.user_id
+         FROM devices d LEFT JOIN users u ON u.id = d.user_id
         WHERE d.farm_id = $1 AND ($2 OR d.user_id = $3) ORDER BY d.created_at`,
       [s.farmId, s.role === 'owner', s.userId])).rows;
     return rows.map((d) => ({ id: d.id, name: d.name, platform: d.platform, email: d.email, login: d.login, createdAt: d.created_at,

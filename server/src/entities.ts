@@ -1,7 +1,7 @@
 // The record types every platform syncs, which module each belongs to, which roles may change it, and the
 // server-side checks that keep money and the herd consistent whatever the client sends.
 
-export type Role = 'owner' | 'manager' | 'timesheet' | 'coal' | 'livestock' | 'viewer';
+export type Role = 'owner' | 'manager' | 'timesheet' | 'coal' | 'livestock' | 'viewer' | 'app';
 export type Module = 'timesheet' | 'coal' | 'livestock' | 'agro' | 'farm';
 
 export const ROLES: Role[] = ['owner', 'manager', 'timesheet', 'coal', 'livestock', 'viewer'];
@@ -44,12 +44,15 @@ export function canWrite(role: Role, entity: string): boolean {
       return module === 'livestock';
     case 'viewer':
       return false;
+    // A phone that registered itself: every module, but not the settings of the farm, coal and livestock.
+    case 'app':
+      return !['farmSettings', 'coalSettings', 'livestockSettings'].includes(entity);
   }
 }
 
 export function canRead(role: Role, entity: string): boolean {
   if (!ENTITIES[entity]) return false;
-  if (role === 'owner' || role === 'manager' || role === 'viewer') return true;
+  if (role === 'owner' || role === 'manager' || role === 'viewer' || role === 'app') return true;
   return canWrite(role, entity) || ENTITIES[entity] === 'farm';
 }
 

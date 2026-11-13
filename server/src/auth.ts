@@ -32,7 +32,8 @@ export function newToken(): string {
 }
 
 export interface Session {
-  userId: string;
+  /** null for an app device (it has no account). */
+  userId: string | null;
   farmId: string;
   deviceId: string;
   role: Role;
@@ -43,12 +44,14 @@ export async function sessionOf(db: Db, token: string | undefined): Promise<Sess
   if (!token) return null;
   const r = await db.query(
     `SELECT d.id AS device_id, d.user_id, d.farm_id, m.role
-       FROM devices d JOIN memberships m ON m.farm_id = d.farm_id AND m.user_id = d.user_id
+       FROM devices d LEFT JOIN memberships m ON m.farm_id = d.farm_id AND m.user_id = d.user_id
       WHERE d.token_hash = $1 AND d.revoked_at IS NULL`, [sha256(token)]);
   if (r.rowCount === 0) return null;
   const row = r.rows[0];
+  // A user's device without a membership (removed member) is signed out; a device with no user is an app device.
+  if (row.user_id && !row.role) return null;
   await db.query('UPDATE devices SET last_seen_at = now() WHERE id = $1', [row.device_id]);
-  return { userId: row.user_id, farmId: row.farm_id, deviceId: row.device_id, role: row.role };
+  return { userId: row.user_id, farmId: row.farm_id, deviceId: row.device_id, role: row.user_id ? row.role : 'app' };
 }
 
 export function validPassword(p: unknown): p is string {
