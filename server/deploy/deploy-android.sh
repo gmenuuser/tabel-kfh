@@ -135,14 +135,14 @@ BT="$(ls -d "$SDK"/build-tools/*/ 2>/dev/null | sort -V | tail -1)"
 APKSIGNER="${KFH_APKSIGNER:-$(kfh_first_existing "$BT"apksigner.bat "$BT"apksigner)}"
 [ -n "$APKSIGNER" ] || { echo "apksigner not found under $SDK/build-tools (set ANDROID_HOME or KFH_APKSIGNER)" >&2; exit 1; }
 CERTS="$("$APKSIGNER" verify --print-certs "$(cygpath -w "$APK" 2>/dev/null || echo "$APK")")"
-GOT="$(echo "$CERTS" | sed -nE 's/^Signer #1 certificate SHA-256 digest: *([0-9a-f]+).*/\1/p' | tr -d '\r' | head -1)"
+GOT="$(echo "$CERTS" | sed -nE 's/.*certificate SHA-256 digest: *([0-9a-fA-F]+).*/\1/p' | tr -d '\r' | tr 'A-F' 'a-f' | head -1)"
 if [ "$GOT" != "$KFH_CERT_SHA256" ]; then
   echo "the apk is NOT signed by the kfh release key:" >&2
   echo "  got  ${GOT:-nothing}" >&2
   echo "  want $KFH_CERT_SHA256" >&2
   exit 1
 fi
-echo "==> signed by the kfh release key ($(echo "$CERTS" | sed -n 's/^Signer #1 certificate DN: //p' | tr -d '\r'))"
+echo "==> signed by the kfh release key ($(echo "$CERTS" | sed -nE 's/.*certificate DN: //p' | tr -d '\r' | head -1))"
 
 # 4. the version: from the apk when aapt is there, else 1000 + the run number (build.gradle.kts: versionCode = 1000 + run number)
 AAPT="$(kfh_first_existing "$BT"aapt.exe "$BT"aapt)"

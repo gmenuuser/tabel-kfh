@@ -201,7 +201,7 @@ jobs:
           APK=app/build/outputs/apk/release/app-release.apk
           APKSIGNER=$(ls "$ANDROID_HOME"/build-tools/*/apksigner | sort -V | tail -1)
           "$APKSIGNER" verify --print-certs "$APK" | tee "$RUNNER_TEMP/certs.txt"
-          got=$(sed -nE 's/^Signer #1 certificate SHA-256 digest: *([0-9a-f]+).*/\1/p' "$RUNNER_TEMP/certs.txt")
+          got=$(sed -nE 's/.*certificate SHA-256 digest: *([0-9a-fA-F]+).*/\1/p' "$RUNNER_TEMP/certs.txt" | tr 'A-F' 'a-f' | head -1)
           want=f3ab556ccd7ef9013708a71e3a50aea21aa91acfe857f88826411f7cdcc16949
           if [ "$got" != "$want" ]; then
             echo "::error::app-release.apk is signed by another key ($got), not the kfh release key ($want): check KFH_KEYSTORE_B64 and KFH_KEY_ALIAS (docs/android-signing.md)"
