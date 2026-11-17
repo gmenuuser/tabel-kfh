@@ -1,6 +1,6 @@
 import { useState } from 'react';
 
-const LINKS = [
+export const LINKS = [
   { href: '/android/', label: 'Android — скачать', download: undefined },
   { href: '/ios/TabelKFH.ipa', label: 'iPhone — скачать .ipa', download: 'TabelKFH.ipa' },
 ];

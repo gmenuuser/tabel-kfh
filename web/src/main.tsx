@@ -4,6 +4,8 @@ import './styles.css';
 import { AppProvider, SyncBadge, loadSession, saveSession, useApp } from './app.tsx';
 import type { Session } from './lib/sync.ts';
 import { LoginPage } from './pages/login.tsx';
+import { PublicPage } from './pages/public.tsx';
+import { gate } from './lib/routes.ts';
 import { HomePage } from './pages/home.tsx';
 import { TimesheetPage, MonthPage } from './pages/timesheet.tsx';
 import { EmployeesPage } from './pages/employees.tsx';
@@ -70,9 +72,17 @@ function Shell() {
 
 function Root() {
   const [session, setSession] = useState<Session | null>(loadSession);
-  const signOut = useCallback(() => { saveSession(null); setSession(null); }, []);
-  if (!session) return <LoginPage onSignedIn={(s) => { saveSession(s); setSession(s); }} />;
-  return <AppProvider key={session.deviceId} session={session} onSignedOut={signOut}><Shell /></AppProvider>;
+  const [hash, setHash] = useState(() => location.hash);
+  useEffect(() => {
+    const on = () => setHash(location.hash);
+    window.addEventListener('hashchange', on);
+    return () => window.removeEventListener('hashchange', on);
+  }, []);
+  const signOut = useCallback(() => { saveSession(null); setSession(null); location.hash = ''; }, []);
+  const where = gate(hash, !!session);
+  if (where === 'public') return <PublicPage />;
+  if (where === 'login') return <LoginPage onSignedIn={(s) => { saveSession(s); setSession(s); location.hash = ''; }} />;
+  return <AppProvider key={session!.deviceId} session={session!} onSignedOut={signOut}><Shell /></AppProvider>;
 }
 
 createRoot(document.getElementById('root')!).render(<StrictMode><Root /></StrictMode>);
