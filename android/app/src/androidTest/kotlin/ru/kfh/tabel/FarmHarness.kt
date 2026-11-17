@@ -107,7 +107,12 @@ class FarmHarness(
     /** Starts the activity over the graph (after any display or theme change of the test). */
     fun launch() {
         // The test phone pairs first, as a person does on the connect screen; the tests set the role before this.
-        kotlinx.coroutines.runBlocking { graph.session.connect("1234") }
+        // The update check rides on ON_START, which fired before the pairing — run it once more, as the app does
+        // after the phone is already paired and the process starts again.
+        kotlinx.coroutines.runBlocking {
+            graph.session.connect("1234")
+            graph.updates.check(force = true)
+        }
         scenario = ActivityScenario.launch(MainActivity::class.java)
     }
 
