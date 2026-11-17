@@ -223,7 +223,7 @@ final class SessionStore {
             let answer: PairAnswer
             do {
                 answer = try await api.send("POST", "/devices/register",
-                                            body: PairBody(code: code, name: deviceName))
+                                            body: PairBody(name: deviceName, code: code))
             } catch APIError.unauthorized {
                 // Pairing never answers 401; keep the screen's text sane if it ever does.
                 throw APIError.server(status: 401, message: "Код не принят — попросите новый")
