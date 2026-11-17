@@ -366,6 +366,72 @@ test('в списке устройств видно, чей это телефо�
   }
 });
 
+test('новый код закрывает и невыкупленный прежний', async () => {
+  const h = await harness({ keysRequired: true });
+  try {
+    const farm = await seedFarm(h.app, h.db);
+    const key = (await h.app.inject({ method: 'POST', url: '/keys', headers: ownerHeaders(farm),
+      payload: { personName: 'Иван', role: 'coal', days: 7 } })).json();
+    // Nobody typed this code yet: it must die with the reissue, or the paper it is on still works.
+    const re = await h.app.inject({ method: 'POST', url: `/keys/${key.id}/reissue`, headers: ownerHeaders(farm),
+      payload: { days: 7 } });
+    assert.equal(re.statusCode, 201);
+    assert.equal((await pair(h, { code: key.code }, '10.10.0.1')).statusCode, 403);
+    assert.equal((await pair(h, { code: re.json().code }, '10.10.0.2')).statusCode, 201);
+  } finally {
+    await h.close();
+  }
+});
+
+test('невыкупленный код не возвращает роль, которую уже сузили', async () => {
+  const h = await harness({ keysRequired: true });
+  try {
+    const farm = await seedFarm(h.app, h.db);
+    const first = (await h.app.inject({ method: 'POST', url: '/keys', headers: ownerHeaders(farm),
+      payload: { personName: 'Иван', role: 'manager', days: 7 } })).json();
+    await pair(h, { code: first.code }, '10.10.1.1');
+
+    const people = (await h.app.inject({ method: 'GET', url: '/people', headers: ownerHeaders(farm) })).json().people;
+    // The second code is made while the role is still «всё», and typed only after the narrowing.
+    const second = (await h.app.inject({ method: 'POST', url: `/people/${people[0].id}/keys`, headers: ownerHeaders(farm),
+      payload: { days: 7 } })).json();
+    const narrowed = await h.app.inject({ method: 'PATCH', url: `/people/${people[0].id}`, headers: ownerHeaders(farm),
+      payload: { role: 'viewer' } });
+    assert.equal(narrowed.statusCode, 200);
+
+    const tablet = (await pair(h, { code: second.code }, '10.10.1.2')).json();
+    assert.equal(tablet.role, 'viewer');
+    const me = (await h.app.inject({ method: 'GET', url: '/me', headers: bearer(tablet.token) })).json();
+    assert.equal(me.role, 'viewer');
+  } finally {
+    await h.close();
+  }
+});
+
+test('телефон не меняет настройки хозяйства, даже с ролью «всё»', async () => {
+  const h = await harness({ keysRequired: true });
+  try {
+    const farm = await seedFarm(h.app, h.db);
+    const key = (await h.app.inject({ method: 'POST', url: '/keys', headers: ownerHeaders(farm),
+      payload: { personName: 'Иван', role: 'manager', days: 7 } })).json();
+    const d = (await pair(h, { code: key.code }, '10.10.2.1')).json();
+    const phone = { token: d.token, farmId: d.farmId, userId: '', deviceId: d.deviceId, role: d.role };
+
+    for (const entity of ['farmSettings', 'coalSettings', 'livestockSettings']) {
+      const r = await pushOps(h.app, phone, [upsert(entity, randomUUID(), { any: 1 })]);
+      assert.equal(r[0].status, 'rejected', entity);
+    }
+    // The work itself goes through.
+    const mark = await pushOps(h.app, phone, [upsert('hoursMark', randomUUID(), { employeeId: randomUUID(), hours: 8 })]);
+    assert.equal(mark[0].status, 'applied');
+    // And the owner on the site keeps the right to change the settings.
+    const own = await pushOps(h.app, farm, [upsert('coalSettings', randomUUID(), { price: 100 })]);
+    assert.equal(own[0].status, 'applied');
+  } finally {
+    await h.close();
+  }
+});
+
 test('после смены роли телефон пишет только в свой модуль', async () => {
   const h = await harness({ keysRequired: true });
   try {

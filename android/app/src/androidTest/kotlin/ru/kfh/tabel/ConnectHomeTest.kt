@@ -12,6 +12,7 @@ import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.onRoot
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performTextInput
 import androidx.compose.ui.test.printToLog
 import androidx.test.core.app.ActivityScenario
 import androidx.test.core.app.ApplicationProvider
@@ -130,11 +131,18 @@ class ConnectHomeTest {
     private fun registers() = seen.count { it == "POST /devices/register" }
 
     @Test
-    fun connectsByItselfLoadsThenShowsEveryModule() {
+    fun asksForTheCodeThenLoadsAndShowsEveryModule() {
         holdPull = true
         launch()
 
-        // The first pull is held: «Загрузка данных…», no sign-in on the way.
+        // No token: the screen asks for the four digits — nothing connects by itself any more.
+        compose.waitUntilExactlyOneExists(hasTestTag("codeField"), 10_000)
+        assertEquals(0, registers())
+
+        compose.onNodeWithTag("codeField").performTextInput("1234")
+        compose.onNodeWithTag("connectButton").performClick()
+
+        // The first pull is held: «Загрузка данных…».
         compose.waitUntilExactlyOneExists(hasText("Загрузка данных…"), 10_000)
         pullGate.countDown()
 

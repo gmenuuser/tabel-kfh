@@ -97,6 +97,8 @@ class CoalFlowTest {
             dbName = DB,
             photosDir = File(app.cacheDir, "uitest-coal-photos"),
         )
+        // The test phone is already paired: the owner's code was typed once, as on a real installed phone.
+        kotlinx.coroutines.runBlocking { graph.session.connect("1234") }
         app.useGraph(graph)
         scenario = ActivityScenario.launch(MainActivity::class.java)
     }

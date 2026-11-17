@@ -70,8 +70,16 @@ async function applyOp(tx: Tx, s: Session, op: PushOp): Promise<OpResult> {
   return result;
 }
 
+/** Настройки хозяйства, цены угля и скота: телефон их не меняет, только владелец на сайте. */
+const SETTINGS_ONLY_BY_OWNER = new Set(['farmSettings', 'coalSettings', 'livestockSettings']);
+
 async function decide(tx: Tx, s: Session, op: PushOp): Promise<OpResult> {
   if (!canWrite(s.role, op.entity)) return { opId: op.opId, status: 'rejected', errors: ['Нет прав на изменение этих данных'] };
+  // A phone with the «manager» role may do the work but never the farm's settings: that stays the owner's, on the site.
+  const phone = s.platform === 'ios' || s.platform === 'android';
+  if (phone && SETTINGS_ONLY_BY_OWNER.has(op.entity)) {
+    return { opId: op.opId, status: 'rejected', errors: ['Настройки меняет владелец хозяйства на сайте'] };
+  }
   // One writer per record at a time, also for a record that does not exist yet.
   await tx.query('SELECT pg_advisory_xact_lock(hashtext($1))', [`${s.farmId}:${op.entity}:${op.recordId}`]);
   const found = await tx.query(

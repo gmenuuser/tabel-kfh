@@ -91,7 +91,7 @@ struct SignInView: View {
             }
             Button("Не нужно", role: .destructive) {
                 backupAnswered = true
-                signIn()
+                pair()
             }
             Button("Отмена", role: .cancel) {}
         } message: {
@@ -101,7 +101,7 @@ struct SignInView: View {
                       defaultFilename: backup.backupName) { result in
             switch result {
             case .success:
-                signIn()
+                pair()
             case .failure(let e):
                 // Not saved: no sign-in yet, the question comes again with «Войти».
                 backupAnswered = false

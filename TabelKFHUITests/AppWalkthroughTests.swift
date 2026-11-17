@@ -84,8 +84,9 @@ final class AppWalkthroughTests: XCTestCase {
         app = XCUIApplication()
         app.launchArguments = ["-uitest", "-uitest-signedout", "-AppleLanguages", "(ru)", "-AppleLocale", "ru_RU"]
         app.launch()
-        XCTAssertTrue(app.textFields["signInLogin"].waitForExistence(timeout: 15), "the sign-in screen")
-        XCTAssertTrue(element(containing: "Пароль").exists)
+        XCTAssertTrue(app.textFields["signInCode"].waitForExistence(timeout: 15), "the pairing screen")
+        XCTAssertTrue(element(containing: "Код доступа").exists)
+        XCTAssertFalse(element(containing: "Пароль").exists)
         XCTAssertFalse(app.buttons["openTimesheet"].exists)
         shot("14-sign-in")
     }

@@ -6,7 +6,7 @@ import type { Db } from './db.ts';
 import { inTransaction } from './db.ts';
 import { hashPassword, verifyPassword, newToken, sha256, sessionOf, validPassword, normalEmail, type Session } from './auth.ts';
 import { redeemKey, normalCode, createKey, KEY_ROLES, type KeyRole } from './keys.ts';
-import { ENTITIES, canRead } from './entities.ts';
+import { ENTITIES, canRead, type Role } from './entities.ts';
 import { push, pull, openConflicts, resolveConflict, type PushOp } from './sync.ts';
 
 export interface AppOptions {
@@ -239,11 +239,14 @@ export function buildApp(o: AppOptions): FastifyInstance {
       const userId = r.key.userId ?? (await tx.query(
         "INSERT INTO users (name, password_hash) VALUES ($1, '') RETURNING id", [r.key.personName])).rows[0].id as string;
       await tx.query(`INSERT INTO memberships (farm_id, user_id, role) VALUES ($1, $2, $3)
-                      ON CONFLICT (farm_id, user_id) DO UPDATE SET role = EXCLUDED.role`,
+                      ON CONFLICT (farm_id, user_id) DO NOTHING`,
         [farm.id, userId, r.key.role]);
       const d = await issueDevice(tx, farm.id, userId, b.name, b.platform);
       await tx.query('UPDATE access_keys SET user_id = $2 WHERE id = $1', [r.key.id, userId]);
-      return { ok: true as const, token: d.token, deviceId: d.deviceId, userId, role: r.key.role, personName: r.key.personName };
+      // The membership is the authority: a code made before the role was narrowed must not answer with the old role.
+      const role = (await tx.query('SELECT role FROM memberships WHERE farm_id = $1 AND user_id = $2',
+        [farm.id, userId])).rows[0].role as Role;
+      return { ok: true as const, token: d.token, deviceId: d.deviceId, userId, role, personName: r.key.personName };
     });
 
     if (!out.ok) {
@@ -407,6 +410,11 @@ export function buildApp(o: AppOptions): FastifyInstance {
       if (m && isKeyRole(m.role)) role = m.role;
       await revokePerson(k.user_id);
     }
+    // The old code dies with the reissue: a paper code that was never typed must stop working too.
+    await db.query(
+      `UPDATE access_keys SET revoked_at = now()
+        WHERE farm_id = $1 AND revoked_at IS NULL AND (id = $2 OR ($3::uuid IS NOT NULL AND user_id = $3))`,
+      [req.session.farmId, id, k.user_id]);
     const made = await createKey(db, req.session.farmId, req.session.userId ?? '',
       { personName: k.person_name, role, days: daysOf((req.body as Record<string, unknown> | undefined)?.days),
         userId: k.user_id ?? undefined });
