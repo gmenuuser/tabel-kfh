@@ -22,6 +22,8 @@ export interface Harness {
 
 export interface HarnessOptions {
   authAttemptsPerMinute?: number;
+  /** A phone must present an admin-issued code (the roll-out switch). */
+  keysRequired?: boolean;
 }
 
 /** `harness(3)` limits sign-in attempts. */
@@ -32,7 +34,8 @@ export async function harness(options: number | HarnessOptions = {}): Promise<Ha
   await migrate(db, join(import.meta.dirname, '..', 'sql'));
   await resetDb(db);
   const logs: string[] = [];
-  const app = buildApp({ db, dataDir: mkdtempSync(join(tmpdir(), 'kfh-')), log: (l) => logs.push(l), authAttemptsPerMinute });
+  const app = buildApp({ db, dataDir: mkdtempSync(join(tmpdir(), 'kfh-')), log: (l) => logs.push(l), authAttemptsPerMinute,
+                         keysRequired: o.keysRequired });
   await app.ready();
   return { app, db, logs, close: async () => { await app.close(); await db.end(); } };
 }

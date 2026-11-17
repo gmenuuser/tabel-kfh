@@ -37,13 +37,15 @@ export interface Session {
   farmId: string;
   deviceId: string;
   role: Role;
+  /** The device's platform (`ios`, `android`, `web`, `test`); absent in sessions built by hand. */
+  platform?: string;
 }
 
 /** The session of a bearer token; null for an unknown or revoked device or a member who was removed. */
 export async function sessionOf(db: Db, token: string | undefined): Promise<Session | null> {
   if (!token) return null;
   const r = await db.query(
-    `SELECT d.id AS device_id, d.user_id, d.farm_id, m.role
+    `SELECT d.id AS device_id, d.user_id, d.farm_id, d.platform, m.role
        FROM devices d LEFT JOIN memberships m ON m.farm_id = d.farm_id AND m.user_id = d.user_id
       WHERE d.token_hash = $1 AND d.revoked_at IS NULL`, [sha256(token)]);
   if (r.rowCount === 0) return null;
@@ -51,7 +53,8 @@ export async function sessionOf(db: Db, token: string | undefined): Promise<Sess
   // A user's device without a membership (removed member) is signed out; a device with no user is an app device.
   if (row.user_id && !row.role) return null;
   await db.query('UPDATE devices SET last_seen_at = now() WHERE id = $1', [row.device_id]);
-  return { userId: row.user_id, farmId: row.farm_id, deviceId: row.device_id, role: row.user_id ? row.role : 'app' };
+  return { userId: row.user_id, farmId: row.farm_id, deviceId: row.device_id, role: row.user_id ? row.role : 'app',
+           platform: row.platform };
 }
 
 export function validPassword(p: unknown): p is string {

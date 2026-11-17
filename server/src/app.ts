@@ -5,6 +5,7 @@ import { join } from 'node:path';
 import type { Db } from './db.ts';
 import { inTransaction } from './db.ts';
 import { hashPassword, verifyPassword, newToken, sha256, sessionOf, validPassword, normalEmail, type Session } from './auth.ts';
+import { redeemKey, normalCode } from './keys.ts';
 import { ENTITIES, canRead } from './entities.ts';
 import { push, pull, openConflicts, resolveConflict, type PushOp } from './sync.ts';
 
@@ -16,6 +17,8 @@ export interface AppOptions {
   log?: (line: string) => void;
   /** Sign-in attempts per address and minute (20). */
   authAttemptsPerMinute?: number;
+  /** A phone must present an admin-issued code; off during the roll-out, when old builds may still register. */
+  keysRequired?: boolean;
   /** The built site (web/dist): served from the same address, so no CORS and no second server. */
   webDir?: string;
 }
@@ -61,6 +64,13 @@ export function buildApp(o: AppOptions): FastifyInstance {
   const allow = limiter(o.authAttemptsPerMinute ?? 20);
   // Self-registration of app devices: a separate, hourly limit per address.
   const allowRegister = limiter(5, 3_600_000);
+  // Pairing with a code: 20 attempts an hour per address, else the address rests a day; 200 wrong codes an hour
+  // stop the farm for half an hour. A four-digit code is 10 000 options, so the window has to be short.
+  const allowPair = limiter(20, 3_600_000);
+  const wrongPair = limiter(200, 3_600_000);
+  const pairBlocked = new Map<string, number>();
+  const pairPaused = new Map<string, number>();
+  const PAIR_LIMIT = 'Слишком много попыток, попробуйте позже';
   mkdirSync(join(o.dataDir, 'files'), { recursive: true });
   mkdirSync(join(o.dataDir, 'backups'), { recursive: true });
 
@@ -181,26 +191,76 @@ export function buildApp(o: AppOptions): FastifyInstance {
   app.get('/me', { preHandler: signedIn }, async (req) => {
     const s = req.session;
     const farm = (await db.query('SELECT id, name, region, manager_name, timezone, new_devices_allowed FROM farms WHERE id = $1', [s.farmId])).rows[0];
-    const isApp = s.role === 'app';
+    const isAnon = s.role === 'app';
+    // A phone is an app, whatever its role: the platform decides, not the role.
+    const isPhone = s.platform === 'ios' || s.platform === 'android';
     return { userId: s.userId, deviceId: s.deviceId,
              // Old app builds know no «app» role: they are told «manager».
-             role: isApp ? 'manager' : s.role, kind: isApp ? 'app' : 'owner',
+             role: isAnon ? 'manager' : s.role, kind: isPhone || isAnon ? 'app' : 'owner',
              farm: { id: farm.id, name: farm.name, region: farm.region, managerName: farm.manager_name, timezone: farm.timezone,
                      ...(s.role === 'owner' ? { newDevicesAllowed: farm.new_devices_allowed } : {}) } };
   });
 
-  /** A phone connects itself: no account, no password. The owner can close this with `newDevicesAllowed`. */
+  /** A phone connects with an admin-issued code: the code carries the person and the role. While `keysRequired`
+   *  is off, an older build may still register itself with no code at all. */
   app.post('/devices/register', async (req, reply) => {
-    if (!allowRegister(`register:${req.ip}`)) return fail(reply, 429, 'Слишком много попыток, попробуйте позже');
     const b = (req.body ?? {}) as Record<string, unknown>;
     if (b.platform !== 'ios' && b.platform !== 'android') return fail(reply, 400, 'Платформа: ios или android');
     // One farm: the oldest one.
     const farm = (await db.query('SELECT id, new_devices_allowed FROM farms ORDER BY created_at LIMIT 1')).rows[0];
     if (!farm) return fail(reply, 503, 'Хозяйство ещё не создано');
-    if (!farm.new_devices_allowed) return fail(reply, 403, 'Владелец сейчас не подключает новые устройства');
-    const d = await issueDevice(db, farm.id, null, b.name, b.platform);
-    await audit({ farmId: farm.id, userId: null, deviceId: d.deviceId, role: 'app' }, 'device.register', { platform: b.platform });
-    return reply.code(201).send({ token: d.token, deviceId: d.deviceId, farmId: farm.id, role: 'manager', kind: 'app' });
+
+    const code = b.code === undefined ? null : normalCode(b.code);
+    const byCode = o.keysRequired === true || b.code !== undefined;
+    // Not four digits: a slip of the finger, not an attempt at the code.
+    if (byCode && !code) return fail(reply, 400, 'Укажите 4-значный код');
+    if (byCode) {
+      if ((pairBlocked.get(req.ip) ?? 0) > Date.now()) return fail(reply, 429, PAIR_LIMIT);
+      if (!allowPair(`pair:${req.ip}`)) {
+        pairBlocked.set(req.ip, Date.now() + 24 * 3_600_000);
+        return fail(reply, 429, PAIR_LIMIT);
+      }
+      if ((pairPaused.get(farm.id) ?? 0) > Date.now()) return fail(reply, 429, PAIR_LIMIT);
+    } else if (!allowRegister(`register:${req.ip}`)) {
+      return fail(reply, 429, 'Слишком много попыток, попробуйте позже');
+    }
+
+    if (!code) {
+      if (!farm.new_devices_allowed) return fail(reply, 403, 'Владелец сейчас не подключает новые устройства');
+      const d = await issueDevice(db, farm.id, null, b.name, b.platform);
+      await audit({ farmId: farm.id, userId: null, deviceId: d.deviceId, role: 'app' }, 'device.register', { platform: b.platform });
+      return reply.code(201).send({ token: d.token, deviceId: d.deviceId, farmId: farm.id, role: 'manager', kind: 'app' });
+    }
+
+    // One transaction: the code is consumed, the person and the membership appear, the device is issued.
+    const out = await inTransaction(db, async (tx) => {
+      const r = await redeemKey(tx, farm.id, code);
+      if (!r.ok) return r;
+      const userId = r.key.userId ?? (await tx.query(
+        "INSERT INTO users (name, password_hash) VALUES ($1, '') RETURNING id", [r.key.personName])).rows[0].id as string;
+      await tx.query(`INSERT INTO memberships (farm_id, user_id, role) VALUES ($1, $2, $3)
+                      ON CONFLICT (farm_id, user_id) DO UPDATE SET role = EXCLUDED.role`,
+        [farm.id, userId, r.key.role]);
+      const d = await issueDevice(tx, farm.id, userId, b.name, b.platform);
+      await tx.query('UPDATE access_keys SET user_id = $2 WHERE id = $1', [r.key.id, userId]);
+      return { ok: true as const, token: d.token, deviceId: d.deviceId, userId, role: r.key.role, personName: r.key.personName };
+    });
+
+    if (!out.ok) {
+      if (!wrongPair(`wrong:${farm.id}`)) {
+        pairPaused.set(farm.id, Date.now() + 30 * 60_000);
+        await db.query("INSERT INTO audit_log (farm_id, action, details) VALUES ($1, 'keys.bruteforce', $2)",
+          [farm.id, JSON.stringify({ attempts: 200 })]);
+        return fail(reply, 429, PAIR_LIMIT);
+      }
+      const text = out.reason === 'used' ? 'Код уже использован — попросите новый'
+        : out.reason === 'expired' ? 'Код просрочен' : 'Код неверный';
+      return fail(reply, 403, text);
+    }
+
+    await audit({ farmId: farm.id, userId: out.userId, deviceId: out.deviceId, role: out.role }, 'device.pair',
+      { personName: out.personName, platform: b.platform });
+    return reply.code(201).send({ token: out.token, deviceId: out.deviceId, farmId: farm.id, role: out.role, kind: 'app' });
   });
 
   app.patch('/farm', { preHandler: [signedIn, ownerOnly] }, async (req, reply) => {
