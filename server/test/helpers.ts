@@ -11,7 +11,7 @@ import { hashPassword } from '../src/auth.ts';
 export const TEST_URL = process.env.TEST_DATABASE_URL ?? 'postgres://kfh:kfh@127.0.0.1:55432/kfh_test';
 
 export const resetDb = (db: Db) => db.query(`TRUNCATE users, farms, memberships, devices, invites, password_resets, records,
-                  processed_ops, conflicts, files, backups, audit_log CASCADE`);
+                  processed_ops, conflicts, files, backups, audit_log, access_keys CASCADE`);
 
 export interface Harness {
   app: FastifyInstance;
