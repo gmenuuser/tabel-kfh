@@ -172,7 +172,11 @@ class ConnectHomeTest {
     fun closedShowsTheOwnersTextAndRetries() {
         closed = true
         launch()
-        compose.waitUntilExactlyOneExists(hasTestTag("connectScreen"), 10_000)
+        // No token: the code screen first, the owner's refusal comes back after the first try.
+        compose.waitUntilExactlyOneExists(hasTestTag("codeField"), 10_000)
+        typeCode()
+        compose.onNodeWithTag("connectButton").performClick()
+        compose.waitUntilExactlyOneExists(hasTestTag("connectText"), 10_000)
         compose.onNodeWithTag("connectText").assertTextEquals("Владелец сейчас не подключает новые устройства")
         compose.onNodeWithText("Повторить").assertIsDisplayed()
         shot("connect-closed")
@@ -186,8 +190,10 @@ class ConnectHomeTest {
     fun offlineShowsNoConnectionAndRetries() {
         offline = true
         launch()
-        compose.waitUntilExactlyOneExists(hasTestTag("connectScreen"), 15_000)
-        compose.onNodeWithTag("connectText").assertTextEquals("Нет связи с сервером")
+        compose.waitUntilExactlyOneExists(hasTestTag("codeField"), 15_000)
+        typeCode()
+        compose.onNodeWithTag("connectButton").performClick()
+        compose.waitUntilExactlyOneExists(hasText("Нет связи с сервером"), 15_000)
         compose.onNodeWithText("Повторить").assertIsDisplayed()
 
         offline = false
@@ -198,6 +204,9 @@ class ConnectHomeTest {
     @Test
     fun switchedOffWaitsForConnectAgain() {
         launch()
+        compose.waitUntilExactlyOneExists(hasTestTag("codeField"), 15_000)
+        typeCode()
+        compose.onNodeWithTag("connectButton").performClick()
         compose.waitUntilExactlyOneExists(hasTestTag("openTimesheet"), 15_000)
         compose.waitUntilExactlyOneExists(hasText("Все данные синхронизированы"), 10_000)
 
@@ -211,11 +220,17 @@ class ConnectHomeTest {
         assertEquals(1, registers())
         shot("connect-revoked")
 
-        // Only the button registers again.
+        // A new code from the owner is the only way back in.
         revoked = false
+        typeCode()
         compose.onNodeWithTag("connectButton").performClick()
         compose.waitUntilExactlyOneExists(hasTestTag("openTimesheet"), 15_000)
         assertEquals(2, registers())
+    }
+
+    /** The four digits the owner handed out, typed on the pairing screen. */
+    private fun typeCode() {
+        compose.onNodeWithTag("codeField").performTextInput("1234")
     }
 
     private fun shot(name: String) {
