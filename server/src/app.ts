@@ -5,7 +5,7 @@ import { join } from 'node:path';
 import type { Db } from './db.ts';
 import { inTransaction } from './db.ts';
 import { hashPassword, verifyPassword, newToken, sha256, sessionOf, validPassword, normalEmail, type Session } from './auth.ts';
-import { redeemKey, normalCode } from './keys.ts';
+import { redeemKey, normalCode, createKey, KEY_ROLES, type KeyRole } from './keys.ts';
 import { ENTITIES, canRead } from './entities.ts';
 import { push, pull, openConflicts, resolveConflict, type PushOp } from './sync.ts';
 
@@ -312,6 +312,141 @@ export function buildApp(o: AppOptions): FastifyInstance {
     const r = await db.query('UPDATE devices SET revoked_at = now() WHERE id = $1 AND farm_id = $2 AND revoked_at IS NULL', [id, s.farmId]);
     if (!r.rowCount) return fail(reply, 404, 'Устройство не найдено');
     await audit(s, 'device.revoke', { deviceId: id });
+    return { ok: true };
+  });
+
+  // MARK: Keys and people
+
+  const KEY_ROLE_SET = new Set<string>(KEY_ROLES);
+  const isKeyRole = (v: unknown): v is KeyRole => typeof v === 'string' && KEY_ROLE_SET.has(v);
+  /** 1–30 days; anything else is a day. */
+  const daysOf = (v: unknown) => {
+    const n = Number(v ?? 1);
+    return Number.isFinite(n) && n >= 1 ? Math.min(30, Math.round(n)) : 1;
+  };
+  const ROLE_HINT = 'Роль: manager, timesheet, coal, livestock или viewer';
+
+  /** Every live device of the person goes dark; a revoked key cannot be redeemed again. */
+  async function revokePerson(userId: string) {
+    await db.query('UPDATE devices SET revoked_at = now() WHERE user_id = $1 AND revoked_at IS NULL', [userId]);
+  }
+
+  app.get('/keys', { preHandler: [signedIn, ownerOnly] }, async (req) => {
+    const rows = (await db.query(
+      `SELECT k.id, k.person_name, k.role, k.expires_at, k.created_at, k.used_at, k.revoked_at, k.user_id,
+              d.name AS device_name, d.platform AS device_platform
+         FROM access_keys k
+         LEFT JOIN LATERAL (SELECT name, platform FROM devices
+                             WHERE user_id = k.user_id AND revoked_at IS NULL ORDER BY created_at DESC LIMIT 1) d ON true
+        WHERE k.farm_id = $1 ORDER BY k.created_at DESC`, [req.session.farmId])).rows;
+    return { keys: rows.map((k) => ({
+      id: k.id, personName: k.person_name, role: k.role,
+      status: k.revoked_at ? 'revoked' : k.used_at ? 'paired' : new Date(k.expires_at) <= new Date() ? 'expired' : 'free',
+      expiresAt: k.expires_at, createdAt: k.created_at, userId: k.user_id,
+      deviceName: k.device_name ?? undefined, devicePlatform: k.device_platform ?? undefined })) };
+  });
+
+  app.post('/keys', { preHandler: [signedIn, ownerOnly] }, async (req, reply) => {
+    const b = (req.body ?? {}) as Record<string, unknown>;
+    const name = typeof b.personName === 'string' ? b.personName.trim() : '';
+    if (name.length < 1 || name.length > 100) return fail(reply, 400, 'Имя — от 1 до 100 символов');
+    if (!isKeyRole(b.role)) return fail(reply, 400, ROLE_HINT);
+    const made = await createKey(db, req.session.farmId, req.session.userId ?? '',
+      { personName: name, role: b.role, days: daysOf(b.days) });
+    await audit(req.session, 'key.create', { keyId: made.id, personName: name, role: b.role });
+    return reply.code(201).send(made);
+  });
+
+  /** A second code for a person who is already paired (a tablet, a new phone — the old devices stay). */
+  app.post('/people/:userId/keys', { preHandler: [signedIn, ownerOnly] }, async (req, reply) => {
+    const { userId } = req.params as { userId: string };
+    if (!UUID.test(userId)) return fail(reply, 404, 'Человек не найден');
+    const m = (await db.query('SELECT role FROM memberships WHERE farm_id = $1 AND user_id = $2',
+      [req.session.farmId, userId])).rows[0];
+    if (!m || m.role === 'owner' || !isKeyRole(m.role)) return fail(reply, 404, 'Человек не найден');
+    const name = (await db.query('SELECT name FROM users WHERE id = $1', [userId])).rows[0]?.name ?? '';
+    const made = await createKey(db, req.session.farmId, req.session.userId ?? '',
+      { personName: name, role: m.role, days: daysOf((req.body as Record<string, unknown> | undefined)?.days), userId });
+    await audit(req.session, 'key.create', { keyId: made.id, personName: name, role: m.role, forUserId: userId });
+    return reply.code(201).send(made);
+  });
+
+  /** A code instead of a lost phone: every device of the person is cut off, a new code is issued. */
+  app.post('/keys/:id/reissue', { preHandler: [signedIn, ownerOnly] }, async (req, reply) => {
+    const { id } = req.params as { id: string };
+    if (!UUID.test(id)) return fail(reply, 404, 'Ключ не найден');
+    const k = (await db.query('SELECT id, person_name, role, user_id FROM access_keys WHERE id = $1 AND farm_id = $2',
+      [id, req.session.farmId])).rows[0];
+    if (!k) return fail(reply, 404, 'Ключ не найден');
+    let role: KeyRole = k.role as KeyRole;
+    if (k.user_id) {
+      const m = (await db.query('SELECT role FROM memberships WHERE farm_id = $1 AND user_id = $2',
+        [req.session.farmId, k.user_id])).rows[0];
+      if (m && isKeyRole(m.role)) role = m.role;
+      await revokePerson(k.user_id);
+    }
+    const made = await createKey(db, req.session.farmId, req.session.userId ?? '',
+      { personName: k.person_name, role, days: daysOf((req.body as Record<string, unknown> | undefined)?.days),
+        userId: k.user_id ?? undefined });
+    await audit(req.session, 'key.reissue', { keyId: made.id, previousId: id, userId: k.user_id });
+    return reply.code(201).send(made);
+  });
+
+  app.post('/keys/:id/revoke', { preHandler: [signedIn, ownerOnly] }, async (req, reply) => {
+    const { id } = req.params as { id: string };
+    if (!UUID.test(id)) return fail(reply, 404, 'Ключ не найден');
+    const k = (await db.query('SELECT id, user_id FROM access_keys WHERE id = $1 AND farm_id = $2',
+      [id, req.session.farmId])).rows[0];
+    if (!k) return fail(reply, 404, 'Ключ не найден');
+    await db.query(
+      `UPDATE access_keys SET revoked_at = now()
+        WHERE farm_id = $1 AND revoked_at IS NULL AND (id = $2 OR ($3::uuid IS NOT NULL AND user_id = $3))`,
+      [req.session.farmId, id, k.user_id]);
+    if (k.user_id) await revokePerson(k.user_id);
+    await audit(req.session, 'key.revoke', { keyId: id, userId: k.user_id });
+    return { ok: true };
+  });
+
+  app.delete('/keys/:id', { preHandler: [signedIn, ownerOnly] }, async (req, reply) => {
+    const { id } = req.params as { id: string };
+    if (!UUID.test(id)) return fail(reply, 404, 'Ключ не найден');
+    const k = (await db.query('SELECT id, user_id FROM access_keys WHERE id = $1 AND farm_id = $2',
+      [id, req.session.farmId])).rows[0];
+    if (!k) return fail(reply, 404, 'Ключ не найден');
+    if (k.user_id) await revokePerson(k.user_id);
+    await db.query('DELETE FROM access_keys WHERE id = $1 AND farm_id = $2', [id, req.session.farmId]);
+    await audit(req.session, 'key.revoke', { keyId: id, userId: k.user_id, deleted: true });
+    return { ok: true };
+  });
+
+  app.get('/people', { preHandler: [signedIn, ownerOnly] }, async (req) => {
+    const rows = (await db.query(
+      `SELECT u.id, u.name, m.role, count(d.id) FILTER (WHERE d.revoked_at IS NULL)::int AS devices,
+              max(d.last_seen_at) AS last_seen
+         FROM memberships m JOIN users u ON u.id = m.user_id
+         LEFT JOIN devices d ON d.user_id = u.id AND d.farm_id = m.farm_id
+        WHERE m.farm_id = $1 AND m.role <> 'owner'
+        GROUP BY u.id, u.name, m.role ORDER BY u.name`, [req.session.farmId])).rows;
+    return { people: rows.map((p) => ({ id: p.id, name: p.name, role: p.role, devices: p.devices, lastSeenAt: p.last_seen })) };
+  });
+
+  app.patch('/people/:id', { preHandler: [signedIn, ownerOnly] }, async (req, reply) => {
+    const { id } = req.params as { id: string };
+    if (!UUID.test(id)) return fail(reply, 404, 'Человек не найден');
+    const b = (req.body ?? {}) as Record<string, unknown>;
+    const m = (await db.query('SELECT role FROM memberships WHERE farm_id = $1 AND user_id = $2',
+      [req.session.farmId, id])).rows[0];
+    if (!m || m.role === 'owner') return fail(reply, 404, 'Человек не найден');
+    if (b.name !== undefined) {
+      const name = typeof b.name === 'string' ? b.name.trim() : '';
+      if (name.length < 1 || name.length > 100) return fail(reply, 400, 'Имя — от 1 до 100 символов');
+      await db.query('UPDATE users SET name = $2 WHERE id = $1', [id, name]);
+    }
+    if (b.role !== undefined) {
+      if (!isKeyRole(b.role)) return fail(reply, 400, ROLE_HINT);
+      await db.query('UPDATE memberships SET role = $3 WHERE farm_id = $1 AND user_id = $2', [req.session.farmId, id, b.role]);
+    }
+    await audit(req.session, 'person.update', { userId: id, ...b });
     return { ok: true };
   });
 

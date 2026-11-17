@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { harness, owner as seedFarm, auth } from './helpers.ts';
+import { harness, owner as seedFarm, auth, pushOps, upsert, randomUUID } from './helpers.ts';
 import { createKey, redeemKey, normalCode, codeHash } from '../src/keys.ts';
 
 // Task 1: the schema of access keys, and a person with no e-mail and no password.
@@ -200,6 +200,156 @@ test('лимит: 201 неверная попытка за час останав
 
     const logged = (await h.db.query("SELECT count(*)::int AS n FROM audit_log WHERE action = 'keys.bruteforce'")).rows[0].n;
     assert.equal(logged, 1);
+  } finally {
+    await h.close();
+  }
+});
+
+// Task 4: the admin's keys and people.
+
+const ownerHeaders = (farm: { token: string }) => bearer(farm.token);
+
+test('владелец заводит ключ и видит его в списке без самого кода', async () => {
+  const h = await harness({ keysRequired: true });
+  try {
+    const farm = await seedFarm(h.app, h.db);
+    const created = await h.app.inject({ method: 'POST', url: '/keys', headers: ownerHeaders(farm),
+      payload: { personName: 'Иван', role: 'timesheet', days: 7 } });
+    assert.equal(created.statusCode, 201);
+    const { id, code } = created.json();
+    assert.match(code, /^\d{4}$/);
+
+    const list = (await h.app.inject({ method: 'GET', url: '/keys', headers: ownerHeaders(farm) })).json().keys;
+    assert.equal(list.length, 1);
+    assert.equal(list[0].id, id);
+    assert.equal(list[0].personName, 'Иван');
+    assert.equal(list[0].role, 'timesheet');
+    assert.equal(list[0].status, 'free');
+    assert.equal(JSON.stringify(list).includes(code), false, 'сам код в списке не показывается');
+
+    // Only the owner may look.
+    const key = await createKey(h.db, farm.farmId, farm.userId, { personName: 'Пётр', role: 'coal', days: 1 });
+    const phone = (await pair(h, { code: key.code }, '10.7.0.1')).json();
+    assert.equal((await h.app.inject({ method: 'GET', url: '/keys', headers: bearer(phone.token) })).statusCode, 403);
+  } finally {
+    await h.close();
+  }
+});
+
+test('второй код существующему человеку не заводит второго человека', async () => {
+  const h = await harness({ keysRequired: true });
+  try {
+    const farm = await seedFarm(h.app, h.db);
+    const first = (await h.app.inject({ method: 'POST', url: '/keys', headers: ownerHeaders(farm),
+      payload: { personName: 'Иван', role: 'coal', days: 7 } })).json();
+    const phone = (await pair(h, { code: first.code }, '10.7.1.1')).json();
+
+    const people = (await h.app.inject({ method: 'GET', url: '/people', headers: ownerHeaders(farm) })).json().people;
+    assert.equal(people.length, 1);
+    assert.equal(people[0].name, 'Иван');
+    assert.equal(people[0].devices, 1);
+
+    const second = await h.app.inject({ method: 'POST', url: `/people/${people[0].id}/keys`, headers: ownerHeaders(farm),
+      payload: { days: 7 } });
+    assert.equal(second.statusCode, 201);
+    const tablet = (await pair(h, { code: second.json().code }, '10.7.1.2')).json();
+    assert.equal(tablet.role, 'coal');
+
+    const after = (await h.app.inject({ method: 'GET', url: '/people', headers: ownerHeaders(farm) })).json().people;
+    assert.equal(after.length, 1);
+    assert.equal(after[0].devices, 2);
+    // The first phone is still connected.
+    assert.equal((await h.app.inject({ method: 'GET', url: '/me', headers: bearer(phone.token) })).statusCode, 200);
+  } finally {
+    await h.close();
+  }
+});
+
+test('новый код взамен утерянного гасит прежние устройства', async () => {
+  const h = await harness({ keysRequired: true });
+  try {
+    const farm = await seedFarm(h.app, h.db);
+    const key = (await h.app.inject({ method: 'POST', url: '/keys', headers: ownerHeaders(farm),
+      payload: { personName: 'Иван', role: 'coal', days: 7 } })).json();
+    const phone = (await pair(h, { code: key.code }, '10.7.2.1')).json();
+    assert.equal((await h.app.inject({ method: 'GET', url: '/me', headers: bearer(phone.token) })).statusCode, 200);
+
+    const re = await h.app.inject({ method: 'POST', url: `/keys/${key.id}/reissue`, headers: ownerHeaders(farm),
+      payload: { days: 7 } });
+    assert.equal(re.statusCode, 201);
+    assert.match(re.json().code, /^\d{4}$/);
+    // The lost phone is out; the new code works.
+    assert.equal((await h.app.inject({ method: 'GET', url: '/me', headers: bearer(phone.token) })).statusCode, 401);
+    assert.equal((await pair(h, { code: re.json().code }, '10.7.2.2')).statusCode, 201);
+  } finally {
+    await h.close();
+  }
+});
+
+test('отзыв гасит устройства и закрывает все ключи человека', async () => {
+  const h = await harness({ keysRequired: true });
+  try {
+    const farm = await seedFarm(h.app, h.db);
+    const key = (await h.app.inject({ method: 'POST', url: '/keys', headers: ownerHeaders(farm),
+      payload: { personName: 'Иван', role: 'coal', days: 7 } })).json();
+    const phone = (await pair(h, { code: key.code }, '10.7.3.1')).json();
+    const free = (await h.app.inject({ method: 'POST', url: `/people/${(await h.db.query('SELECT user_id FROM access_keys WHERE id = $1', [key.id])).rows[0].user_id}/keys`,
+      headers: ownerHeaders(farm), payload: { days: 7 } })).json();
+
+    const revoked = await h.app.inject({ method: 'POST', url: `/keys/${key.id}/revoke`, headers: ownerHeaders(farm) });
+    assert.equal(revoked.statusCode, 200);
+    assert.equal((await h.app.inject({ method: 'GET', url: '/me', headers: bearer(phone.token) })).statusCode, 401);
+    // A key that was never used dies with the person too.
+    assert.equal((await pair(h, { code: free.code }, '10.7.3.2')).statusCode, 403);
+
+    const list = (await h.app.inject({ method: 'GET', url: '/keys', headers: ownerHeaders(farm) })).json().keys;
+    assert.equal(list.every((k: { status: string }) => k.status === 'revoked'), true);
+  } finally {
+    await h.close();
+  }
+});
+
+test('удаление убирает ключ из списка', async () => {
+  const h = await harness({ keysRequired: true });
+  try {
+    const farm = await seedFarm(h.app, h.db);
+    const key = (await h.app.inject({ method: 'POST', url: '/keys', headers: ownerHeaders(farm),
+      payload: { personName: 'Иван', role: 'coal', days: 7 } })).json();
+    const removed = await h.app.inject({ method: 'DELETE', url: `/keys/${key.id}`, headers: ownerHeaders(farm) });
+    assert.equal(removed.statusCode, 200);
+    const list = (await h.app.inject({ method: 'GET', url: '/keys', headers: ownerHeaders(farm) })).json().keys;
+    assert.equal(list.length, 0);
+    // The code is dead too.
+    assert.equal((await pair(h, { code: key.code }, '10.7.5.1')).statusCode, 403);
+  } finally {
+    await h.close();
+  }
+});
+
+test('после смены роли телефон пишет только в свой модуль', async () => {
+  const h = await harness({ keysRequired: true });
+  try {
+    const farm = await seedFarm(h.app, h.db);
+    const key = (await h.app.inject({ method: 'POST', url: '/keys', headers: ownerHeaders(farm),
+      payload: { personName: 'Иван', role: 'coal', days: 7 } })).json();
+    const d = (await pair(h, { code: key.code }, '10.7.4.1')).json();
+    const phone = { token: d.token, farmId: d.farmId, userId: '', deviceId: d.deviceId, role: d.role };
+
+    const people = (await h.app.inject({ method: 'GET', url: '/people', headers: ownerHeaders(farm) })).json().people;
+    const patched = await h.app.inject({ method: 'PATCH', url: `/people/${people[0].id}`, headers: ownerHeaders(farm),
+      payload: { role: 'timesheet', name: 'Иван Петрович' } });
+    assert.equal(patched.statusCode, 200);
+
+    const me = (await h.app.inject({ method: 'GET', url: '/me', headers: bearer(d.token) })).json();
+    assert.equal(me.role, 'timesheet');
+
+    const hours = await pushOps(h.app, phone, [upsert('hoursMark', randomUUID(), { employeeId: randomUUID(), hours: 8 })]);
+    assert.equal(hours[0].status, 'applied');
+    const coal = await pushOps(h.app, phone, [upsert('coalSale', randomUUID(), { amount: 100 })]);
+    assert.equal(coal[0].status, 'rejected');
+
+    const renamed = (await h.app.inject({ method: 'GET', url: '/people', headers: ownerHeaders(farm) })).json().people[0];
+    assert.equal(renamed.name, 'Иван Петрович');
   } finally {
     await h.close();
   }
