@@ -1,27 +1,25 @@
 import SwiftUI
 import SwiftData
 
-/// «Табель КФХ»: «Почта или логин», «Пароль», «Войти». The farm is created on the site; helpers get their login
-/// from the owner. When the phone still has its own data, signing in first offers to save a copy to «Файлы»: the
-/// sign-in replaces it with the farm's data from the server.
+/// «Табель КФХ»: «Код доступа» — four digits from the owner — and «Подключиться». There is no login and no
+/// password: the code pairs this phone with the farm once, and the phone keeps its own key afterwards. When the
+/// phone still has its own data, pairing first offers to save a copy to «Файлы»: the pairing replaces it with the
+/// farm's data from the server.
 struct SignInView: View {
     @Environment(SessionStore.self) private var session
     @Environment(\.modelContext) private var context
 
-    @State private var login = ""
-    @State private var password = ""
+    @State private var code = ""
     @State private var busy = false
     @State private var error: String?
     @State private var askBackup = false
     /// The copy question was answered on this screen.
     @State private var backupAnswered = false
     @State private var backup = BackupFlow()
-    @FocusState private var focus: Field?
-
-    private enum Field { case login, password }
+    @FocusState private var focused: Bool
 
     private var canSubmit: Bool {
-        !busy && !login.trimmingCharacters(in: .whitespaces).isEmpty && !password.isEmpty
+        !busy && code.count == 4
     }
 
     var body: some View {
@@ -39,29 +37,20 @@ struct SignInView: View {
                         .accessibilityIdentifier("signOutNotice")
                 }
                 VStack(alignment: .leading, spacing: 6) {
-                    Text("Почта или логин").font(.subheadline).foregroundStyle(.secondary)
-                    TextField("Почта или логин", text: $login)
-                        .textContentType(.username)
-                        .keyboardType(.emailAddress)
-                        .textInputAutocapitalization(.never)
-                        .autocorrectionDisabled()
-                        .submitLabel(.next)
-                        .focused($focus, equals: .login)
-                        .onSubmit { focus = .password }
+                    Text("Код доступа").font(.subheadline).foregroundStyle(.secondary)
+                    TextField("0000", text: $code)
+                        .keyboardType(.numberPad)
+                        .multilineTextAlignment(.center)
+                        .font(.system(size: 34, weight: .semibold, design: .monospaced))
+                        .textContentType(.oneTimeCode)
+                        .focused($focused)
+                        .onChange(of: code) { _, text in
+                            // Four digits, nothing else: the server knows no other codes.
+                            code = String(text.filter(\.isNumber).prefix(4))
+                        }
                         .padding(12)
                         .background(Theme.card, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
-                        .accessibilityIdentifier("signInLogin")
-                }
-                VStack(alignment: .leading, spacing: 6) {
-                    Text("Пароль").font(.subheadline).foregroundStyle(.secondary)
-                    SecureField("Пароль", text: $password)
-                        .textContentType(.password)
-                        .submitLabel(.go)
-                        .focused($focus, equals: .password)
-                        .onSubmit(submit)
-                        .padding(12)
-                        .background(Theme.card, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
-                        .accessibilityIdentifier("signInPassword")
+                        .accessibilityIdentifier("signInCode")
                 }
                 if let error {
                     Label(error, systemImage: "exclamationmark.triangle.fill")
@@ -70,13 +59,13 @@ struct SignInView: View {
                 }
                 VStack(spacing: 8) {
                     Button(action: submit) {
-                        if busy { ProgressView().tint(.white) } else { Text("Войти") }
+                        if busy { ProgressView().tint(.white) } else { Text("Подключиться") }
                     }
                     .buttonStyle(BigButtonStyle())
                     .disabled(!canSubmit)
                     .opacity(canSubmit || busy ? 1 : 0.5)
                     .accessibilityIdentifier("signInButton")
-                    Text("Логин выдаёт владелец хозяйства")
+                    Text("Четыре цифры выдаёт владелец хозяйства")
                         .font(.footnote)
                         .foregroundStyle(.secondary)
                         .frame(maxWidth: .infinity)
@@ -127,16 +116,16 @@ struct SignInView: View {
         if !backupAnswered && session.hasLocalData {
             askBackup = true
         } else {
-            signIn()
+            pair()
         }
     }
 
-    private func signIn() {
+    private func pair() {
         busy = true
-        focus = nil
+        focused = false
         Task {
             do {
-                try await session.signIn(login: login.trimmingCharacters(in: .whitespaces), password: password)
+                try await session.pair(code: code)
             } catch {
                 self.error = error.localizedDescription
             }

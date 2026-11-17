@@ -76,9 +76,9 @@ class ApiTest {
     }
 
     @Test
-    fun registerSendsPlatformAndNameWithoutToken() = runBlocking {
+    fun registerSendsPlatformNameAndCodeWithoutToken() = runBlocking {
         answer("""{"token":"tok-app","deviceId":"d9","farmId":"f1","role":"manager","kind":"app"}""", 201)
-        val t = api.register("Honor X8")
+        val t = api.register("Honor X8", "1234")
 
         assertEquals("tok-app", t)
         val r = server.seen.single()
@@ -87,6 +87,7 @@ class ApiTest {
         assertNull(r.authorization)
         assertEquals("android", r.json["platform"]?.jsonPrimitive?.content)
         assertEquals("Honor X8", r.json["name"]?.jsonPrimitive?.content)
+        assertEquals("1234", r.json["code"]?.jsonPrimitive?.content)
     }
 
     /** Registration closed by the owner: 403 with the server's text, never [Unauthorized]. */

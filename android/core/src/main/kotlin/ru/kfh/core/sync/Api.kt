@@ -54,10 +54,12 @@ class Api(base: String, private val client: OkHttpClient, private val token: () 
      * `POST /devices/register`: the phone connects itself, no account; returns the device token. The owner closing
      * new devices is an [ApiError] 403 with the server's text; too many attempts — 429.
      */
-    suspend fun register(name: String): String {
+    suspend fun register(name: String, code: String = ""): String {
         val body = buildJsonObject {
             put("platform", "android")
             put("name", name.take(MAX_DEVICE_NAME))
+            // An empty code is left out: that is the server's old open-registration path, kept for the roll-out.
+            if (code.isNotEmpty()) put("code", code)
         }
         return parse(send("POST", "/devices/register", body, signedIn = false)) { it.obj.str("token")!! }
     }

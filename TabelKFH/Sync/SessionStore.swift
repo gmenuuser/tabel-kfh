@@ -210,22 +210,23 @@ final class SessionStore {
         for model in try context.fetch(FetchDescriptor<T>()) { context.delete(model) }
     }
 
-    // MARK: Sign in
+    // MARK: Pairing
 
-    /// `POST /auth/login` → token → `GET /me` (role, farm, zone) → wipe → the first download → signed in.
-    /// A wrong password, no network or no farm: signed out, the phone unchanged, the error has the server's text.
-    /// The first download failing (offline): signed in all the same, the data comes with a later sync.
-    func signIn(login: String, password: String) async throws {
+    /// `POST /devices/register` with the owner's four digits → token → `GET /me` (role, farm, zone) → wipe → the
+    /// first download → signed in. A wrong, expired or already used code, no network or no farm: signed out, the
+    /// phone unchanged, the error carries the server's text. The first download failing (offline): signed in all
+    /// the same, the data comes with a later sync.
+    func pair(code: String) async throws {
         guard !offline else { return }
         let me: Me
         do {
-            let answer: LoginAnswer
+            let answer: PairAnswer
             do {
-                answer = try await api.send("POST", "/auth/login",
-                                            body: LoginBody(login: login, password: password, deviceName: deviceName))
+                answer = try await api.send("POST", "/devices/register",
+                                            body: PairBody(code: code, name: deviceName))
             } catch APIError.unauthorized {
-                // The login's 401 is a wrong login or password, not a revoked device.
-                throw APIError.server(status: 401, message: "Неверный логин или пароль")
+                // Pairing never answers 401; keep the screen's text sane if it ever does.
+                throw APIError.server(status: 401, message: "Код не принят — попросите новый")
             }
             do {
                 try tokens.save(answer.token)
@@ -456,16 +457,14 @@ final class SessionStore {
 
 // MARK: - Wire
 
-private struct LoginBody: Encodable {
-    let login: String
-    let password: String
-    let deviceName: String
+private struct PairBody: Encodable {
     let platform = "ios"
+    let name: String
+    let code: String
 }
 
-private struct LoginAnswer: Decodable {
+private struct PairAnswer: Decodable {
     let token: String
-    let role: String
 }
 
 private struct Me: Decodable {

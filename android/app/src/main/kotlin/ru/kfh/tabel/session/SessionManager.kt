@@ -30,6 +30,18 @@ enum class ConnectReason {
     /** No network or no answer: «Нет связи с сервером», «Повторить» (and again by itself when the network returns). */
     Offline,
 
+    /** No code yet (the first launch after install, or after «Выйти»): the screen asks for the four digits. */
+    NeedsCode,
+
+    /** The four digits match no live key: «Код неверный — попросите новый». */
+    CodeWrong,
+
+    /** That code lived past its date: «Код просрочен — попросите новый». */
+    CodeExpired,
+
+    /** Someone already paired with that code: every code connects one phone. */
+    CodeUsed,
+
     /** The owner lets no new devices in: «Владелец сейчас не подключает новые устройства», «Повторить». */
     Closed,
 
@@ -132,26 +144,32 @@ class SessionManager(
             endSession(SessionState.NotConnected(ConnectReason.Revoked), notice = null)
             return@withLock
         }
-        connectLocked()
+        // No token: a code from the owner is the way in. Nothing connects by itself any more.
+        endSession(SessionState.NotConnected(ConnectReason.NeedsCode), notice = null)
     }
 
     // MARK: Connect
 
     /**
-     * «Повторить», «Подключиться снова», the launch without a token: `POST /devices/register` (or the token already
-     * kept) → `GET /me` → wipe → `Me` saved → the first full pull («Загрузка данных…») → connected. Returns null, or
-     * the error text. No network, closed, a server error: not connected, the phone unchanged. The first pull failing
-     * offline: connected all the same. Already connected: nothing, null.
+     * «Подключиться» with the four digits the owner handed out: `POST /devices/register` → `GET /me` → wipe → `Me`
+     * saved → the first full pull («Загрузка данных…») → connected. A token already on the phone is used instead of
+     * the code (the code is then ignored): an installed phone reconnects without asking again. Returns null, or the
+     * error text. No network, a wrong/expired/used code: not connected, the phone unchanged. Already connected:
+     * nothing, null.
      */
-    suspend fun connect(): String? = off { mutex.withLock { connectLocked() } }
+    suspend fun connect(code: String): String? = off { mutex.withLock { connectLocked(code) } }
 
-    private suspend fun connectLocked(): String? {
+    private suspend fun connectLocked(code: String? = null): String? {
         if (_state.value is SessionState.SignedIn) return null
         retryBySync = false
         // A token kept from a connect whose /me never answered: that device exists, it is not registered twice.
         val kept = try { readToken() } catch (e: Exception) { if (e is CancellationException) throw e; null }
+        if (kept == null && code == null) {
+            // Nothing to reconnect with: the screen has to ask for a code first.
+            return notConnected(ConnectReason.NeedsCode, null)
+        }
         val token = kept ?: try {
-            Api(base, client) { null }.register(deviceName)
+            Api(base, client) { null }.register(deviceName, code!!)
         } catch (e: Exception) {
             return failed(e)
         }
@@ -204,13 +222,22 @@ class SessionManager(
     }
 
     /**
-     * A request of the connect failed. 403: closed. No network, an answer that cannot be read, a server error (5xx):
-     * offline, tried again by the sync triggers. Any other answer (429 «Слишком много попыток…»): its text, and only
-     * the button asks again — every attempt counts towards the server's limit.
+     * A request of the connect failed. 403: a bad code (wrong / expired / already used) or, in the old open mode,
+     * a closed farm. No network, an answer that cannot be read, a server error (5xx): offline, tried again by the
+     * sync triggers. Any other answer (429 «Слишком много попыток…»): its text, and only the button asks again —
+     * every attempt counts towards the server's limit.
      */
     private fun failed(e: Exception): String {
         if (e is CancellationException) throw e
-        if (e is ApiError && e.status == 403) return notConnected(ConnectReason.Closed, null, e.text)
+        if (e is ApiError && e.status == 403) {
+            val reason = when {
+                e.text.contains("просрочен", ignoreCase = true) -> ConnectReason.CodeExpired
+                e.text.contains("использован", ignoreCase = true) -> ConnectReason.CodeUsed
+                e.text.contains("Код неверный", ignoreCase = true) -> ConnectReason.CodeWrong
+                else -> ConnectReason.Closed
+            }
+            return notConnected(reason, null, e.text)
+        }
         val text = errorText(e)
         val result = notConnected(ConnectReason.Offline, text.takeIf { it != OFFLINE }, text)
         retryBySync = e is IOException || (e is ApiError && (e.status >= 500 || e.status == 200))
@@ -242,8 +269,8 @@ class SessionManager(
      */
     suspend fun signOut(force: Boolean): Int = off {
         val n = signOutLocked(force)
-        // Signed out just now (Loading): the phone connects again; nothing is left on «Загрузка данных…».
-        if (n == 0) mutex.withLock { if (_state.value == SessionState.Loading) connectLocked() }
+        // Signed out just now: the next way in is a new code from the owner.
+        if (n == 0) mutex.withLock { if (_state.value == SessionState.Loading) endSession(SessionState.NotConnected(ConnectReason.NeedsCode), notice = null) }
         n
     }
 
@@ -510,6 +537,10 @@ class SessionManager(
 
     companion object {
         const val OFFLINE = "Нет связи с сервером"
+        const val NEEDS_CODE = "Введите код доступа — его выдаёт владелец хозяйства"
+        const val CODE_WRONG = "Код неверный — попросите новый"
+        const val CODE_EXPIRED = "Код просрочен — попросите новый"
+        const val CODE_USED = "Код уже использован — попросите новый"
         const val CLOSED = "Владелец сейчас не подключает новые устройства"
         const val REVOKED = "Это устройство отключено владельцем"
         const val TOKEN_NOT_SAVED = "Не удалось сохранить подключение на телефоне"

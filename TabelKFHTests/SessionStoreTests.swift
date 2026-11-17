@@ -36,15 +36,15 @@ private final class FakeServer {
 
     func handle(_ r: StubURLProtocol.Request) throws -> (Int, Data) {
         lock.lock(); defer { lock.unlock() }
-        if revoked && r.path != "/auth/login" { return (401, Data(#"{"error":"Нужно войти заново"}"#.utf8)) }
+        if revoked && r.path != "/devices/register" { return (401, Data(#"{"error":"Нужно войти заново"}"#.utf8)) }
         switch r.path {
-        case "/auth/login":
+        case "/devices/register":
             let body = (r.body.flatMap { try? JSONSerialization.jsonObject(with: $0) } as? [String: Any]) ?? [:]
-            guard body["login"] as? String == "ivan", body["password"] as? String == "secret-pass",
-                  body["platform"] as? String == "ios", body["deviceName"] is String else {
-                return (401, Data(#"{"error":"Неверный логин или пароль"}"#.utf8))
+            guard body["code"] as? String == "1234", body["platform"] as? String == "ios",
+                  body["name"] is String else {
+                return (403, Data(#"{"error":"Код неверный"}"#.utf8))
             }
-            return (200, Data(#"{"token":"tok-1","deviceId":"d1","farmId":"f1","userId":"u1","role":"owner","farms":[{"farmId":"f1","role":"owner"}]}"#.utf8))
+            return (201, Data(#"{"token":"tok-1","deviceId":"d1","farmId":"f1","role":"owner","kind":"app"}"#.utf8))
         case "/me":
             if meFails { return (500, Data(#"{"error":"Ошибка сервера"}"#.utf8)) }
             return (200, Data(#"{"userId":"u1","deviceId":"d1","role":"owner","farm":{"id":"f1","name":"КФХ Зубахин А.В.","region":"Приаргунский район","managerName":"Зубахин А. В.","timezone":"\#(timezone)"}}"#.utf8))
@@ -133,7 +133,7 @@ final class SessionStoreTests: XCTestCase {
     func testUpdateFarmShowsTheNewNamesWhenMeFails() async throws {
         let server = FakeServer()
         let session = makeSession(server)
-        try await session.signIn(login: "ivan", password: "secret-pass")
+        try await session.pair(code: "1234")
         server.failMe()
 
         try await session.updateFarm(name: "КФХ Новое", managerName: "Петров П. П.")
@@ -156,7 +156,7 @@ final class SessionStoreTests: XCTestCase {
         XCTAssertEqual(session.state, .signedOut)
         XCTAssertTrue(session.hasLocalData)
 
-        try await session.signIn(login: "ivan", password: "secret-pass")
+        try await session.pair(code: "1234")
 
         XCTAssertEqual(session.state, .signedIn(role: "owner"))
         XCTAssertEqual(try employees().map(\.lastName), ["Новый"])
@@ -179,20 +179,20 @@ final class SessionStoreTests: XCTestCase {
         let session = makeSession(FakeServer(timezone: "Asia/Chita"))
         Calendar.useFarmTimeZone(TimeZone(identifier: "Europe/Moscow")!)
 
-        try await session.signIn(login: "ivan", password: "secret-pass")
+        try await session.pair(code: "1234")
 
         XCTAssertEqual(Calendar.farm.timeZone.identifier, "Asia/Chita")
         XCTAssertEqual(FarmTimeZone(defaults: defaults).stored?.identifier, "Asia/Chita")
     }
 
-    func testWrongPasswordShowsServerMessage() async throws {
+    func testWrongCodeShowsServerMessage() async throws {
         try localEmployee("Свой")
         let session = makeSession(FakeServer())
         do {
-            try await session.signIn(login: "ivan", password: "wrong")
-            XCTFail("signed in with a wrong password")
+            try await session.pair(code: "0000")
+            XCTFail("connected with a wrong code")
         } catch {
-            XCTAssertEqual(error.localizedDescription, "Неверный логин или пароль")
+            XCTAssertEqual(error.localizedDescription, "Код неверный")
         }
         XCTAssertEqual(session.state, .signedOut)
         XCTAssertNil(tokens.stored)
@@ -202,7 +202,7 @@ final class SessionStoreTests: XCTestCase {
 
     func testSignOutWipesEverything() async throws {
         let session = makeSession(FakeServer(pulls: [FakeServer.employeePage(UUID(), lastName: "Новый", next: 3)]))
-        try await session.signIn(login: "ivan", password: "secret-pass")
+        try await session.pair(code: "1234")
         // An unsent change: the queue is not empty.
         try localEmployee("Не отправлен")
         XCTAssertEqual(session.pendingChanges, 1)
@@ -226,7 +226,7 @@ final class SessionStoreTests: XCTestCase {
     func testRevokedDeviceSignsOutWithoutAsking() async throws {
         let server = FakeServer(pulls: [FakeServer.employeePage(UUID(), lastName: "Новый", next: 3)])
         let session = makeSession(server)
-        try await session.signIn(login: "ivan", password: "secret-pass")
+        try await session.pair(code: "1234")
         try localEmployee("Не отправлен")
         server.revoke()
 
@@ -250,7 +250,7 @@ final class SessionStoreTests: XCTestCase {
     func testSignOutStopsTheRunInFlight() async throws {
         let server = FakeServer(pulls: [FakeServer.employeePage(UUID(), lastName: "Первый", next: 3)])
         let session = makeSession(server)
-        try await session.signIn(login: "ivan", password: "secret-pass")
+        try await session.pair(code: "1234")
         // The next pull is answered only after the sign-out, with a page of the farm.
         server.addPull(FakeServer.employeePage(UUID(), lastName: "Поздний", next: 9))
         let release = DispatchSemaphore(value: 0)
@@ -317,7 +317,7 @@ final class SessionStoreTests: XCTestCase {
         tokens.failSave = true
         let session = makeSession(FakeServer())
         do {
-            try await session.signIn(login: "ivan", password: "secret-pass")
+            try await session.pair(code: "1234")
             XCTFail("signed in without a stored token")
         } catch {
             XCTAssertEqual(error.localizedDescription, "Не удалось сохранить вход на телефоне")
@@ -361,7 +361,7 @@ final class SessionStoreTests: XCTestCase {
 
     func testSignOutDuringSyncAsksNoMe() async throws {
         let session = makeSession(FakeServer())
-        try await session.signIn(login: "ivan", password: "secret-pass")
+        try await session.pair(code: "1234")
         let meBefore = requests("/me").count
         let pullRelease = DispatchSemaphore(value: 0)
         let logoutRelease = DispatchSemaphore(value: 0)
@@ -396,7 +396,7 @@ final class SessionStoreTests: XCTestCase {
     func testLateMeOfAnEarlierSignInIsIgnored() async throws {
         let server = FakeServer()
         let session = makeSession(server)
-        try await session.signIn(login: "ivan", password: "secret-pass")
+        try await session.pair(code: "1234")
         // The /me of the sync below is answered (401) only after a sign-out and a new sign-in.
         let lock = NSLock()
         var meSeen = 0
@@ -422,7 +422,7 @@ final class SessionStoreTests: XCTestCase {
         let sync = Task { await session.syncNow() }
         await fulfillment(of: [asked], timeout: 10)
         await session.signOut(force: false)
-        try await session.signIn(login: "ivan", password: "secret-pass")
+        try await session.pair(code: "1234")
         lock.lock(); refuseMe = true; lock.unlock()
         release.signal()
         await sync.value
@@ -450,7 +450,7 @@ final class SessionStoreTests: XCTestCase {
 
     func testDeleteRefusedChangePullsFromStart() async throws {
         let session = makeSession(FakeServer(pulls: [FakeServer.employeePage(UUID(), lastName: "С сервера", next: 3)]))
-        try await session.signIn(login: "ivan", password: "secret-pass")
+        try await session.pair(code: "1234")
         try localEmployee("Не принят")
         let op = try XCTUnwrap(context.fetch(FetchDescriptor<SyncOp>()).first)
         op.state = "error"
@@ -467,7 +467,7 @@ final class SessionStoreTests: XCTestCase {
 
     func testResyncFromStartAfterServerRestore() async throws {
         let session = makeSession(FakeServer(pulls: [FakeServer.employeePage(UUID(), lastName: "Первый", next: 3)]))
-        try await session.signIn(login: "ivan", password: "secret-pass")
+        try await session.pair(code: "1234")
         XCTAssertEqual(SyncState.current(in: context).cursor, 3)
 
         await session.resyncFromStart()
@@ -477,7 +477,7 @@ final class SessionStoreTests: XCTestCase {
 
     func testOwnerRequestsGoWithTheToken() async throws {
         let session = makeSession(FakeServer())
-        try await session.signIn(login: "ivan", password: "secret-pass")
+        try await session.pair(code: "1234")
 
         let members: [MemberDTO] = try await session.send("GET", "/members")
 

@@ -31,6 +31,10 @@ services:
       DATABASE_URL: postgres://kfh:${POSTGRES_PASSWORD}@db:5432/kfh
       DATA_DIR: /data
       PORT: "8080"
+      # Ключи доступа: код обязателен для нового телефона (после выпуска приложений ставится true).
+      KEYS_REQUIRED: ${KEYS_REQUIRED:-false}
+      # «Перец» для хеша 4-значного кода: длинная случайная строка, своя у каждого сервера.
+      KEYS_PEPPER: ${KEYS_PEPPER:-}
     volumes:
       - apidata:/data
     ports:

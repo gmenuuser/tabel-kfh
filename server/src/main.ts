@@ -11,7 +11,9 @@ if (!url) {
 const db = createPool(url);
 await migrate(db, join(import.meta.dirname, '..', 'sql'));
 const app = buildApp({ db, dataDir: process.env.DATA_DIR ?? join(import.meta.dirname, '..', 'data'),
-                      webDir: process.env.WEB_DIR ?? join(import.meta.dirname, '..', '..', 'web', 'dist') });
+                      webDir: process.env.WEB_DIR ?? join(import.meta.dirname, '..', '..', 'web', 'dist'),
+                      // The roll-out switch: phones pair with a code; while it is off an old build may register itself.
+                      keysRequired: process.env.KEYS_REQUIRED === 'true' });
 const port = Number(process.env.PORT ?? 8080);
 await app.listen({ port, host: '0.0.0.0' });
 console.log(`КФХ — Учёт API on :${port}`);

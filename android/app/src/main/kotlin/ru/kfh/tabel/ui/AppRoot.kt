@@ -137,8 +137,8 @@ fun AppRoot(graph: AppGraph) {
             val notice by graph.session.notice.collectAsState()
             // The connect runs in the app's scope: as soon as it reaches «Загрузка данных…» this screen is gone,
             // and a connect in the screen's own scope would be cancelled in the middle of the first download.
-            ConnectScreen(s.reason, notice) {
-                graph.scope.async { graph.session.connect() }.await()
+            ConnectScreen(s.reason, notice) { code ->
+                graph.scope.async { graph.session.connect(code) }.await()
             }
         }
         SessionState.Loading -> LoadingScreen()
