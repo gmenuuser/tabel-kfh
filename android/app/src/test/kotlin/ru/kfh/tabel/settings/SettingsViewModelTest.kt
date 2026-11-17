@@ -36,6 +36,7 @@ import ru.kfh.tabel.db.RoomLocalStore
 import ru.kfh.tabel.db.TabelDb
 import ru.kfh.tabel.db.obj
 import ru.kfh.tabel.db.openTestDb
+import ru.kfh.tabel.session.ConnectReason
 import ru.kfh.tabel.session.FarmServer
 import ru.kfh.tabel.session.MemoryTokenStore
 import ru.kfh.tabel.session.SessionManager
@@ -149,10 +150,10 @@ class SettingsViewModelTest {
         assertEquals(1, db.outbox().count())
 
         assertEquals(0, vm.signOut(force = true))
-        // Wiped, then connected again as a new device.
-        assertTrue(session.state.value is SessionState.SignedIn)
+        // Wiped, and the phone waits for a new code from the owner — it no longer registers itself.
+        assertEquals(SessionState.NotConnected(ConnectReason.NeedsCode), session.state.value)
         assertEquals(0, db.outbox().count())
-        assertEquals(2, server.requests("/devices/register").size)
+        assertEquals(1, server.requests("/devices/register").size)
     }
 
     @Test
