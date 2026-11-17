@@ -4,6 +4,7 @@ import type { QueuedOp } from '../lib/db.ts';
 import { download } from '../lib/xlsx.ts';
 import { AppLinks } from './app-links.tsx';
 import { DevicesSection } from './devices.tsx';
+import { KeysSection } from './keys.tsx';
 
 const ENTITY: Record<string, string> = { employee: 'Сотрудник', hoursMark: 'Часы', coalSale: 'Продажа угля', driver: 'Водитель',
   driverPayment: 'Выплата', deliveryLocation: 'Населённый пункт', coalSettings: 'Цена угля', coalWorkDay: 'Рабочий день',
@@ -45,6 +46,8 @@ export function SettingsPage() {
         ))}
         {owner && <button onClick={() => act(async () => { await engine.call('/farm', { method: 'PATCH', body: JSON.stringify({ name: form.name, managerName: form.managerName, region: form.region, timezone: form.timezone }) }); setFarm({ ...farm, name: form.name, managerName: form.managerName, region: form.region, timezone: form.timezone }); }, 'Сохранено')}>Сохранить</button>}
       </section>
+
+      <KeysSection note={setNote} />
 
       <section className="card">
         <h3>Синхронизация</h3>

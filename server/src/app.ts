@@ -283,14 +283,23 @@ export function buildApp(o: AppOptions): FastifyInstance {
     return { ok: true };
   });
 
-  /** Every device of the farm: phones (`app`, no account) and the owner's site sessions (`owner`). */
+  /** Every device of the farm: phones (paired, with a person) and the owner's site sessions. */
   app.get('/devices', { preHandler: [signedIn, ownerOnly] }, async (req) => {
     const s = req.session;
     const rows = (await db.query(
-      `SELECT id, name, platform, user_id, created_at, last_seen_at, revoked_at FROM devices WHERE farm_id = $1 ORDER BY created_at`,
+      `SELECT d.id, d.name, d.platform, d.user_id, d.created_at, d.last_seen_at, d.revoked_at,
+              u.name AS person_name, m.role AS person_role
+         FROM devices d
+         LEFT JOIN users u ON u.id = d.user_id
+         LEFT JOIN memberships m ON m.farm_id = d.farm_id AND m.user_id = d.user_id
+        WHERE d.farm_id = $1 ORDER BY d.created_at`,
       [s.farmId])).rows;
-    return rows.map((d) => ({ id: d.id, name: d.name, platform: d.platform, kind: d.user_id ? 'owner' : 'app', createdAt: d.created_at,
-                              lastSeenAt: d.last_seen_at, revoked: !!d.revoked_at, current: d.id === s.deviceId }));
+    // The kind follows the platform: a paired phone has a real role but is still an app device.
+    return rows.map((d) => ({ id: d.id, name: d.name, platform: d.platform,
+                              kind: d.platform === 'ios' || d.platform === 'android' ? 'app' : 'owner',
+                              personName: d.person_name ?? undefined, role: d.person_role ?? undefined,
+                              createdAt: d.created_at, lastSeenAt: d.last_seen_at, revoked: !!d.revoked_at,
+                              current: d.id === s.deviceId }));
   });
 
   app.patch('/devices/:id', { preHandler: [signedIn, ownerOnly] }, async (req, reply) => {

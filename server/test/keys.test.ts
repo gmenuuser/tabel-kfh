@@ -347,6 +347,25 @@ test('безымянные устройства отключаются отде�
   }
 });
 
+test('в списке устройств видно, чей это телефон', async () => {
+  const h = await harness({ keysRequired: true });
+  try {
+    const farm = await seedFarm(h.app, h.db);
+    const key = (await h.app.inject({ method: 'POST', url: '/keys', headers: ownerHeaders(farm),
+      payload: { personName: 'Иван', role: 'coal', days: 7 } })).json();
+    await pair(h, { code: key.code }, '10.9.0.1');
+
+    const devices = (await h.app.inject({ method: 'GET', url: '/devices', headers: ownerHeaders(farm) })).json();
+    const phone = devices.find((d: { platform: string }) => d.platform === 'android');
+    assert.equal(phone.personName, 'Иван');
+    assert.equal(phone.role, 'coal');
+    // A paired phone is an app device; its role is a real one, but the kind follows the platform.
+    assert.equal(phone.kind, 'app');
+  } finally {
+    await h.close();
+  }
+});
+
 test('после смены роли телефон пишет только в свой модуль', async () => {
   const h = await harness({ keysRequired: true });
   try {
