@@ -101,13 +101,13 @@ class FarmHarness(
             packageFacts = packageFacts ?: ru.kfh.tabel.update.AndroidPackageFacts(app), updatesDir = updatesDir,
             lastUpdateCheck = MemoryLastCheck(),
         )
-        // The test phone is already paired: the owner's code was typed once, as on a real installed phone.
-        kotlinx.coroutines.runBlocking { graph.session.connect("1234") }
         app.useGraph(graph)
     }
 
     /** Starts the activity over the graph (after any display or theme change of the test). */
     fun launch() {
+        // The test phone pairs first, as a person does on the connect screen; the tests set the role before this.
+        kotlinx.coroutines.runBlocking { graph.session.connect("1234") }
         scenario = ActivityScenario.launch(MainActivity::class.java)
     }
 

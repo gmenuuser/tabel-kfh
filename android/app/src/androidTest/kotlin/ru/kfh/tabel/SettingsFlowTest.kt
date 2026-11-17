@@ -108,9 +108,12 @@ class SettingsFlowTest {
             dbName = DB,
             photosDir = File(app.cacheDir, "uitest-photos"),
         )
-        // The test phone is already paired: the owner's code was typed once, as on a real installed phone.
-        kotlinx.coroutines.runBlocking { graph.session.connect("1234") }
         app.useGraph(graph)
+    }
+
+    /** The test phone pairs first: the tests set their role before this, as the owner's code decides it. */
+    private fun launch() {
+        kotlinx.coroutines.runBlocking { graph.session.connect("1234") }
         scenario = ActivityScenario.launch(MainActivity::class.java)
     }
 
@@ -125,6 +128,7 @@ class SettingsFlowTest {
 
     /** The phone connects itself at launch (`/me` answers [role] as for a device of the old builds). */
     private fun connectAndOpenSettings() {
+        launch()
         compose.waitUntilExactlyOneExists(hasTestTag("openSettings"), 15_000)
         compose.onNodeWithTag("openSettings").performClick()
         compose.waitUntilExactlyOneExists(hasTestTag("signOut"), 5_000)
@@ -181,10 +185,13 @@ class SettingsFlowTest {
         compose.waitUntilExactlyOneExists(hasTestTag("signOut"), 5_000)
         compose.waitUntilDoesNotExist(hasTestTag("openConflicts"), 10_000)
 
-        // «Выйти»: the question, then the phone forgets the farm and connects again as a new device.
+        // «Выйти»: the question, then the phone forgets the farm and asks for a new code.
         compose.onNodeWithTag("signOut").performScrollTo().performClick()
         compose.waitUntilExactlyOneExists(hasText("Выйти из хозяйства?"), 5_000)
         compose.onNodeWithTag("confirm").performClick()
+        compose.waitUntilExactlyOneExists(hasTestTag("codeField"), 15_000)
+        compose.onNodeWithTag("codeField").performTextInput("1234")
+        compose.onNodeWithTag("connectButton").performClick()
         compose.waitUntilExactlyOneExists(hasTestTag("openTimesheet"), 15_000)
         assertTrue(seen.contains("POST /auth/logout"))
         assertEquals(2, seen.count { it == "POST /devices/register" })
