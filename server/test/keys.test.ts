@@ -326,6 +326,27 @@ test('удаление убирает ключ из списка', async () => {
   }
 });
 
+test('безымянные устройства отключаются отдельной кнопкой, сессия владельца жива', async () => {
+  const h = await harness();
+  try {
+    const farm = await seedFarm(h.app, h.db);      // the owner's site session is a device too
+    await pair(h, {}, '10.8.0.1');                 // two anonymous phones
+    await pair(h, {}, '10.8.0.2');
+
+    const unconfirmed = await h.app.inject({ method: 'POST', url: '/devices/revoke-anonymous',
+      headers: ownerHeaders(farm), payload: {} });
+    assert.equal(unconfirmed.statusCode, 400);
+
+    const r = await h.app.inject({ method: 'POST', url: '/devices/revoke-anonymous',
+      headers: ownerHeaders(farm), payload: { confirm: true } });
+    assert.equal(r.statusCode, 200);
+    assert.equal(r.json().revoked, 2);
+    assert.equal((await h.app.inject({ method: 'GET', url: '/me', headers: ownerHeaders(farm) })).statusCode, 200);
+  } finally {
+    await h.close();
+  }
+});
+
 test('после смены роли телефон пишет только в свой модуль', async () => {
   const h = await harness({ keysRequired: true });
   try {

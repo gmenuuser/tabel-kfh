@@ -315,6 +315,19 @@ export function buildApp(o: AppOptions): FastifyInstance {
     return { ok: true };
   });
 
+  /** «Отключить все безымянные устройства»: the phones that paired themselves before codes. Explicit and
+   *  confirmed — a phone treats 401 as «wipe the local database», so this is never a side effect of a switch. */
+  app.post('/devices/revoke-anonymous', { preHandler: [signedIn, ownerOnly] }, async (req, reply) => {
+    if ((req.body as Record<string, unknown> | undefined)?.confirm !== true) {
+      return fail(reply, 400, 'Подтвердите: confirm = true');
+    }
+    const r = await db.query(
+      'UPDATE devices SET revoked_at = now() WHERE farm_id = $1 AND user_id IS NULL AND revoked_at IS NULL',
+      [req.session.farmId]);
+    await audit(req.session, 'devices.revoke.anonymous', { revoked: r.rowCount });
+    return { revoked: r.rowCount };
+  });
+
   // MARK: Keys and people
 
   const KEY_ROLE_SET = new Set<string>(KEY_ROLES);
