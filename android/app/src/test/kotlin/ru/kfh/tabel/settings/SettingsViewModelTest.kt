@@ -81,11 +81,12 @@ class SettingsViewModelTest {
 
     private fun test(body: suspend CoroutineScope.() -> Unit) = runBlocking { withTimeout(20_000) { body() } }
 
-    /** The launch connects the phone; `/me` answers [role] as for a device of the old builds (no `kind`). */
+    /** The launch waits for a code; the test types one, as a person does on the pairing screen. */
     private suspend fun signedIn(role: String = "owner") {
         server.kind = null
         server.role = role
         session.restore()
+        session.connect("1234")
         assertTrue(session.state.value is SessionState.SignedIn)
     }
 
