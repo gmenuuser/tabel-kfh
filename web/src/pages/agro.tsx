@@ -3,6 +3,7 @@ import { useApp, useRecords } from '../app.tsx';
 import { canEdit } from '../lib/roles.ts';
 import { KINDS, choices, complete, compute, fields, type Inputs } from '../lib/agro.ts';
 import { dayKey, shortDate, timeText } from '../lib/time.ts';
+import { ClearPeriod } from '../components/ClearPeriod.tsx';
 
 /** «Агрономические калькуляторы»: the result right under the fields; saved calculations are shared. */
 export function AgroPage() {
@@ -106,6 +107,7 @@ export function AgroPage() {
         {complete(r) && 'share' in navigator && <button onClick={() => navigator.share({ text }).catch(() => {})}>Поделиться</button>}
       </div>
       {note && <p className="note">{note}</p>}
+      <ClearPeriod section="agro" />
     </>
   );
 }

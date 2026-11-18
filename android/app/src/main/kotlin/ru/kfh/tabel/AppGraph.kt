@@ -120,6 +120,9 @@ class AppGraph(
     /** «Агрономические калькуляторы»: the saved calculations and the drafts (in `SharedPreferences`). */
     val agro: AgroViewModel by lazy { AgroViewModel(db.records(), writer, session.farmTime, scope, PrefsAgroDraftStore(app), farmInfo = farmInfo) }
 
+    /** «Очистка данных» (owner): стирает записи раздела за день или месяц. */
+    val clear: ru.kfh.tabel.clear.ClearViewModel by lazy { ru.kfh.tabel.clear.ClearViewModel(db, writer, session.farmTime) }
+
     /** «Настройки»: the farm's details, the sync, the owner's lists, the copy to a file, «Выйти». */
     val settings: SettingsViewModel by lazy {
         SettingsViewModel(session, db, writer, scope, photos, backupDir = LocalBackup.dir(app), appVersion = appVersion(app),

@@ -72,6 +72,7 @@ class SettingsLinks(
     val openHelpers: () -> Unit,
     val openDevices: () -> Unit,
     val openServerBackups: () -> Unit,
+    val openClearData: () -> Unit,
 )
 
 /**
@@ -150,6 +151,8 @@ fun SettingsScreen(vm: SettingsViewModel, me: Me, links: SettingsLinks, onBack: 
                     NavRow("Устройства", tag = "openDevices", onClick = links.openDevices)
                     RowDivider()
                     NavRow("Копии на сервере", tag = "openServerBackups", onClick = links.openServerBackups)
+                    RowDivider()
+                    NavRow("Очистка данных", tag = "openClearData", onClick = links.openClearData)
                 }
             }
 

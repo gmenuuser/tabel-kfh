@@ -5,6 +5,7 @@ import { canWrite } from '../lib/roles.ts';
 import { ADDITIONS, DECREASES, OPERATION_KINDS, SPECIES, herdBalances, herdShortage, heads, parseTons, tons } from '../lib/domain.ts';
 import { stableId } from '../lib/ids.ts';
 import { dayKey, shortDate, todayKey, dayStartISO } from '../lib/time.ts';
+import { ClearPeriod } from '../components/ClearPeriod.tsx';
 
 const REASONS: [string, string][] = [['meat', 'На мясо'], ['forced', 'Вынужденный забой'], ['other', 'Другое']];
 
@@ -161,6 +162,7 @@ export function LivestockPage() {
           </div>
         </div>
       )}
+      <ClearPeriod section="livestock" />
     </>
   );
 }

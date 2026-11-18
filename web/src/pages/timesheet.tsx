@@ -6,6 +6,7 @@ import { HOURS, hoursTotals } from '../lib/domain.ts';
 import { stableId } from '../lib/ids.ts';
 import { MONTHS, WEEKDAYS_SHORT, addDays, dayKey, dayStartISO, daysInMonth, longDate, todayKey, weekday } from '../lib/time.ts';
 import { xlsx, download, type Cell } from '../lib/xlsx.ts';
+import { ClearPeriod } from '../components/ClearPeriod.tsx';
 
 export const fullName = (e: LocalRecord) =>
   [e.data.lastName, e.data.firstName, e.data.patronymic].filter(Boolean).join(' ');
@@ -222,6 +223,7 @@ export function MonthPage() {
           </div>
         </div>
       )}
+      <ClearPeriod section="timesheet" />
     </>
   );
 }

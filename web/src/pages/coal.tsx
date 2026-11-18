@@ -5,6 +5,7 @@ import type { LocalRecord } from '../lib/db.ts';
 import { coalAmount, coalTotals, driverAccounts, driverDebt, parseRubles, parseTons, rubles, rublesField, tons, type Data } from '../lib/domain.ts';
 import { stableId } from '../lib/ids.ts';
 import { addDays, dayKey, dayStartISO, longDate, shortDate, timeText, todayKey } from '../lib/time.ts';
+import { ClearPeriod } from '../components/ClearPeriod.tsx';
 
 export const SETTINGS_ID = stableId('coalSettings');
 const DEFAULT_LOCATIONS: [string, number][] = [['Новоцурухайтуй', 100000], ['Приаргунск', 120000]];
@@ -242,6 +243,7 @@ export function DriversPage() {
           </div>
         </div>
       )}
+      <ClearPeriod section="coal" />
     </>
   );
 }

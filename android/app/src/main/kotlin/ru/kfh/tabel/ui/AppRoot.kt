@@ -47,6 +47,7 @@ import ru.kfh.tabel.ui.settings.DevicesScreen
 import ru.kfh.tabel.ui.settings.HelpersScreen
 import ru.kfh.tabel.ui.settings.ServerBackupsScreen
 import ru.kfh.tabel.ui.settings.SettingsLinks
+import ru.kfh.tabel.ui.settings.ClearDataScreen
 import ru.kfh.tabel.ui.settings.SettingsScreen
 import ru.kfh.tabel.ui.signin.ConnectScreen
 import ru.kfh.tabel.ui.timesheet.DayScreen
@@ -65,6 +66,7 @@ object Routes {
     const val SETTINGS_DEVICES = "settings/devices"
     const val SETTINGS_CONFLICTS = "settings/conflicts"
     const val SETTINGS_BACKUPS = "settings/backups"
+    const val SETTINGS_CLEAR = "settings/clear"
     const val MODULE = "module/{name}"
     const val TIMESHEET_DAY = "timesheet/day"
     const val TIMESHEET_MONTH = "timesheet/month"
@@ -180,6 +182,7 @@ private fun FarmRoot(graph: AppGraph, me: Me) {
                     openHelpers = { nav.navigate(Routes.SETTINGS_HELPERS) },
                     openDevices = { nav.navigate(Routes.SETTINGS_DEVICES) },
                     openServerBackups = { nav.navigate(Routes.SETTINGS_BACKUPS) },
+                    openClearData = { nav.navigate(Routes.SETTINGS_CLEAR) },
                 ),
                 onBack = { nav.popBackStack() },
                 installer = graph.installer,
@@ -189,6 +192,7 @@ private fun FarmRoot(graph: AppGraph, me: Me) {
         composable(Routes.SETTINGS_DEVICES) { DevicesScreen(graph.settings, onBack = { nav.popBackStack() }) }
         composable(Routes.SETTINGS_CONFLICTS) { ConflictsScreen(graph.settings, onBack = { nav.popBackStack() }) }
         composable(Routes.SETTINGS_BACKUPS) { ServerBackupsScreen(graph.settings, onBack = { nav.popBackStack() }) }
+        composable(Routes.SETTINGS_CLEAR) { ClearDataScreen(graph.clear, onBack = { nav.popBackStack() }) }
         composable(Routes.MODULE, arguments = listOf(navArgument("name") { type = NavType.StringType })) { entry ->
             val m = entry.arguments?.getString("name")?.let { n -> Module.entries.firstOrNull { it.name == n } }
             // A module without a screen of its own: only the title and «Назад».
