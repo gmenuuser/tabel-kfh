@@ -23,7 +23,8 @@ import java.time.YearMonth
 class ClearViewModel(
     private val db: TabelDb,
     private val writer: RecordWriter,
-    private val time: FarmTime,
+    /** The farm's clock and zone: the phone's own zone is not the farm's (`session.farmTime`). */
+    private val time: StateFlow<FarmTime>,
 ) : ViewModel() {
 
     data class State(
@@ -42,7 +43,8 @@ class ClearViewModel(
     }
 
     private val _state = MutableStateFlow(
-        State(section = ClearSection.Timesheet, mode = PeriodMode.Month, day = time.today(), month = YearMonth.from(time.today())),
+        State(section = ClearSection.Timesheet, mode = PeriodMode.Month, day = time.value.today(),
+              month = YearMonth.from(time.value.today())),
     )
     val state: StateFlow<State> = _state.asStateFlow()
 
@@ -76,7 +78,7 @@ class ClearViewModel(
             val s = _state.value
             val (from, to) = bounds(s.mode, s.day, s.month)
             val rows = withContext(Dispatchers.IO) { db.records().all() }
-            _state.update { it.copy(count = countInPeriod(rows, s.section, from, to, time.zone)) }
+            _state.update { it.copy(count = countInPeriod(rows, s.section, from, to, time.value.zone)) }
         }
     }
 
@@ -91,12 +93,12 @@ class ClearViewModel(
                 var touched = 0
                 // Забои ищутся до удаления операций: после него связь уже не восстановить.
                 val slaughters = if (s.section == ClearSection.Livestock) {
-                    slaughterOfClearedOps(rows, from, to, time.zone)
+                    slaughterOfClearedOps(rows, from, to, time.value.zone)
                 } else {
                     emptyList()
                 }
                 for (target in CLEAR_TARGETS.getValue(s.section)) {
-                    for (row in rowsInPeriod(rows, target, from, to, time.zone)) {
+                    for (row in rowsInPeriod(rows, target, from, to, time.value.zone)) {
                         writer.delete(target.entity, row.id)
                         touched++
                     }
@@ -112,7 +114,7 @@ class ClearViewModel(
             val rows = withContext(Dispatchers.IO) { db.records().all() }
             val (from, to) = bounds(s.mode, s.day, s.month)
             _state.update {
-                it.copy(busy = false, typed = "", note = note, count = countInPeriod(rows, s.section, from, to, time.zone))
+                it.copy(busy = false, typed = "", note = note, count = countInPeriod(rows, s.section, from, to, time.value.zone))
             }
         }
     }

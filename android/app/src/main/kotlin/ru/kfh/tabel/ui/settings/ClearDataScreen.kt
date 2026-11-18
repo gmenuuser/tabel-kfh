@@ -37,16 +37,16 @@ import java.time.format.DateTimeFormatter
 import java.time.format.TextStyle
 import java.util.Locale
 
-private val dayFormat = DateTimeFormatter.ofPattern("dd.MM.yyyy")
-private val RU = Locale("ru", "RU")
+private val clearDayFormat = DateTimeFormatter.ofPattern("dd.MM.yyyy")
+private val CLEAR_RU = Locale("ru", "RU")
 
 /** «17.11.2026, вторник» — чтобы промах датой был виден до нажатия. */
-private fun dayText(day: LocalDate): String =
-    "${day.format(dayFormat)}, ${day.dayOfWeek.getDisplayName(TextStyle.FULL, RU)}"
+private fun clearDayText(day: LocalDate): String =
+    "${day.format(clearDayFormat)}, ${day.dayOfWeek.getDisplayName(TextStyle.FULL, CLEAR_RU)}"
 
 /** «ноябрь 2026». */
-private fun monthText(month: YearMonth): String =
-    month.month.getDisplayName(TextStyle.FULL, RU) + " " + month.year
+private fun clearMonthText(month: YearMonth): String =
+    month.month.getDisplayName(TextStyle.FULL, CLEAR_RU) + " " + month.year
 
 /**
  * «Очистка данных» (owner): стирает записи раздела за день или месяц. Месяц требует набрать «очистить»;
@@ -94,7 +94,7 @@ fun ClearDataScreen(vm: ClearViewModel, onBack: () -> Unit) {
                     modifier = Modifier.testTag("clearPrev"),
                 ) { Text("‹") }
                 Text(
-                    if (s.mode == PeriodMode.Day) dayText(s.day) else monthText(s.month),
+                    if (s.mode == PeriodMode.Day) clearDayText(s.day) else clearMonthText(s.month),
                     style = MaterialTheme.typography.bodyLarge,
                     modifier = Modifier.testTag("clearPeriod"),
                 )
@@ -127,7 +127,7 @@ fun ClearDataScreen(vm: ClearViewModel, onBack: () -> Unit) {
                 enabled = s.ready,
                 colors = ButtonDefaults.buttonColors(containerColor = Tabel.colors.error),
                 modifier = Modifier.fillMaxWidth().testTag("clearGo"),
-            ) { Text("Очистить ${s.mode.title.lowercase(RU)}") }
+            ) { Text("Очистить ${s.mode.title.lowercase(CLEAR_RU)}") }
 
             s.note?.let {
                 Text(it, color = Tabel.colors.secondaryText, modifier = Modifier.testTag("clearNote"))
@@ -137,7 +137,7 @@ fun ClearDataScreen(vm: ClearViewModel, onBack: () -> Unit) {
         if (asking) {
             ConfirmDialog(
                 title = "Очистить ${s.section.title}?",
-                message = "Период: ${if (s.mode == PeriodMode.Day) dayText(s.day) else monthText(s.month)}. " +
+                message = "Период: ${if (s.mode == PeriodMode.Day) clearDayText(s.day) else clearMonthText(s.month)}. " +
                     "Записей: ${s.count}. Отменить это будет нельзя.",
                 confirm = "Очистить",
                 onConfirm = { asking = false; vm.clear() },
