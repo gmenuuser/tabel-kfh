@@ -2,7 +2,7 @@
 // server-side checks that keep money and the herd consistent whatever the client sends.
 
 export type Role = 'owner' | 'manager' | 'timesheet' | 'coal' | 'livestock' | 'viewer' | 'app';
-export type Module = 'timesheet' | 'coal' | 'livestock' | 'agro' | 'farm';
+export type Module = 'timesheet' | 'coal' | 'livestock' | 'agro' | 'fields' | 'farm';
 
 export const ROLES: Role[] = ['owner', 'manager', 'timesheet', 'coal', 'livestock', 'viewer'];
 
@@ -24,6 +24,7 @@ export const ENTITIES: Record<string, Module> = {
   slaughterRecord: 'livestock',
   livestockSettings: 'livestock',
   agroCalculation: 'agro',
+  field: 'fields',
 };
 
 /** Money, sales, payments, slaughter and herd movements: never last-writer-wins. */
@@ -94,6 +95,14 @@ export function validate(entity: string, d: Data): string[] {
       if (d.kind === 'transfer') need(typeof d.targetCategoryId === 'string' && d.targetCategoryId !== d.categoryId,
         'Перевод — в другую категорию');
       break;
+    case 'field': {
+      const name = typeof d.name === 'string' ? d.name.trim() : '';
+      need(name.length > 0 && name.length <= 60, 'Название поля — от 1 до 60 символов');
+      need(positiveInt(d.areaSqM), 'Площадь — целое число м² больше нуля');
+      if (d.culture != null) need(typeof d.culture === 'string' && (d.culture as string).length <= 60, 'Культура — до 60 символов');
+      if (d.note != null) need(typeof d.note === 'string' && (d.note as string).length <= 200, 'Заметка — до 200 символов');
+      break;
+    }
   }
   return errors;
 }
