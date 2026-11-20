@@ -1,9 +1,9 @@
 // Which modules of the site a role may see. The same rule as `canRead` in server/src/entities.ts:
 // owner, manager and viewer read everything; a helper reads the module of its role.
 
-export type Module = 'timesheet' | 'coal' | 'livestock' | 'agro';
+export type Module = 'timesheet' | 'coal' | 'livestock' | 'agro' | 'fields';
 
-const ALL: Module[] = ['timesheet', 'coal', 'livestock', 'agro'];
+const ALL: Module[] = ['timesheet', 'coal', 'livestock', 'agro', 'fields'];
 
 export function modulesFor(role: string): Module[] {
   switch (role) {
@@ -18,7 +18,7 @@ export function modulesFor(role: string): Module[] {
 /** The page ids of the site (first part of the route) and the module each one needs; null = everyone. */
 const PAGE_MODULE: Record<string, Module | 'reports' | null> = {
   home: null, settings: null, timesheet: 'timesheet', employees: 'timesheet', coal: 'coal', livestock: 'livestock',
-  agro: 'agro', reports: 'reports',
+  fields: 'fields', agro: 'agro', reports: 'reports',
 };
 
 /** May this role open the page (the first part of the route)? Unknown pages are the home page, which is open. */
@@ -40,7 +40,7 @@ const ENTITY_MODULE: Record<string, Module | 'farm'> = {
   farmSettings: 'farm',
   coalSettings: 'coal', deliveryLocation: 'coal', driver: 'coal', coalSale: 'coal', driverPayment: 'coal', coalWorkDay: 'coal',
   livestockCategory: 'livestock', livestockOperation: 'livestock', slaughterRecord: 'livestock', livestockSettings: 'livestock',
-  agroCalculation: 'agro',
+  agroCalculation: 'agro', field: 'fields',
 };
 
 /** May this role change records of this type? The same rule as `canWrite` in server/src/entities.ts: anything else

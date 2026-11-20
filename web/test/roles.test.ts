@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { canEdit, canOpen, canWrite, modulesFor } from '../src/lib/roles.ts';
 import { ENTITIES, ROLES, canWrite as serverCanWrite } from '../../server/src/entities.ts';
 
-const pages = ['home', 'timesheet', 'employees', 'coal', 'livestock', 'agro', 'reports', 'settings'];
+const pages = ['home', 'timesheet', 'employees', 'coal', 'livestock', 'fields', 'agro', 'reports', 'settings'];
 const open = (role: string) => pages.filter((p) => canOpen(role, p));
 
 test('owner, manager and viewer see every page', () => {
@@ -16,6 +16,9 @@ test('a helper sees only the pages of its module, reports of it, and settings', 
   assert.deepEqual(open('livestock'), ['home', 'livestock', 'reports', 'settings']);
   assert.deepEqual(modulesFor('coal'), ['coal']);
   assert.equal(canOpen('coal', 'agro'), false);
+  assert.equal(canOpen('timesheet', 'fields'), false, 'поля — не раздел помощника');
+  assert.equal(canOpen('coal', 'fields'), false);
+  assert.equal(canOpen('livestock', 'fields'), false);
   assert.equal(canOpen('coal', 'no-such-page'), true, 'unknown route is the home page');
 });
 
