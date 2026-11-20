@@ -12,12 +12,13 @@ import { EmployeesPage } from './pages/employees.tsx';
 import { CoalPage, DriversPage, PricesPage } from './pages/coal.tsx';
 import { LivestockPage } from './pages/livestock.tsx';
 import { AgroPage } from './pages/agro.tsx';
+import { FieldsPage } from './pages/fields.tsx';
 import { ReportsPage } from './pages/reports.tsx';
 import { SettingsPage } from './pages/settings.tsx';
 import { canEdit, canOpen } from './lib/roles.ts';
 
 const NAV: [string, string][] = [
-  ['home', 'Главная'], ['timesheet', 'Табель'], ['coal', 'Уголь'], ['livestock', 'Скот'], ['agro', 'Калькуляторы'],
+  ['home', 'Главная'], ['timesheet', 'Табель'], ['coal', 'Уголь'], ['livestock', 'Скот'], ['fields', 'Поля'], ['agro', 'Калькуляторы'],
   ['reports', 'Отчёты'], ['settings', 'Админка'],
 ];
 
@@ -48,6 +49,7 @@ function Shell() {
       case 'coal/drivers': return <DriversPage />;
       case 'coal/prices': return <PricesPage />;
       case 'livestock': return <LivestockPage />;
+      case 'fields': return <FieldsPage />;
       case 'agro': return <AgroPage />;
       case 'reports': return <ReportsPage />;
       case 'settings': return <SettingsPage />;
