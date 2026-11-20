@@ -80,7 +80,7 @@ class RecordCodecTest {
             setOf(
                 "employee", "hoursMark", "attendanceRecord", "timesheetSnapshot", "farmSettings", "coalSettings",
                 "deliveryLocation", "driver", "coalSale", "driverPayment", "coalWorkDay", "livestockCategory",
-                "livestockOperation", "slaughterRecord", "livestockSettings", "agroCalculation",
+                "livestockOperation", "slaughterRecord", "livestockSettings", "agroCalculation", "field",
             ),
             Entities.ALL,
         )
@@ -289,6 +289,7 @@ class RecordCodecTest {
                 "operationId", "reason", "liveWeightGrams", "carcassWeightGrams", "meatWeightGrams", "createdAt",
             ),
             "agroCalculation" to setOf("kind", "title", "inputs", "lines", "createdAt", "updatedAt"),
+            "field" to setOf("name", "areaSqM", "culture", "note"),
         )
         // Written by the iPhone (SyncCodec.swift) and not by the site; the site ignores them.
         val iphoneOnly = mapOf(
@@ -314,6 +315,7 @@ class RecordCodecTest {
             "livestockCategory" to LivestockCategory(), "livestockOperation" to LivestockOperation(),
             "slaughterRecord" to SlaughterRecord(), "livestockSettings" to LivestockSettings(),
             "agroCalculation" to AgroCalculation(),
+            "field" to Field(),
         )
         assertEquals(Entities.ALL, defaults.keys)
         for ((entity, record) in defaults) {

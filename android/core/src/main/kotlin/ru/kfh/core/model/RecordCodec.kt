@@ -60,6 +60,7 @@ object RecordCodec {
         spec(Entities.slaughterRecord, SlaughterRecord.serializer()) { r, id -> r.copy(id = id) },
         spec(Entities.livestockSettings, LivestockSettings.serializer()) { r, id -> r.copy(id = id) },
         spec(Entities.agroCalculation, AgroCalculation.serializer()) { r, id -> r.copy(id = id) },
+        spec(Entities.field, Field.serializer()) { r, id -> r.copy(id = id) },
     ).associateBy { it.entity }
 
     /** The record of an entity from the `data` the server holds; [id] becomes the record's `id`. */

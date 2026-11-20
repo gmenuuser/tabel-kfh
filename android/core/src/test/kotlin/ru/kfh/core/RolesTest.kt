@@ -11,7 +11,7 @@ import ru.kfh.core.roles.isReadOnly
 import ru.kfh.core.roles.modules
 
 class RolesTest {
-    private val everything = setOf(Module.timesheet, Module.coal, Module.livestock, Module.agro, Module.reports)
+    private val everything = setOf(Module.timesheet, Module.coal, Module.livestock, Module.fields, Module.agro, Module.reports)
 
     @Test
     fun modulesPerRole() {
@@ -47,13 +47,19 @@ class RolesTest {
         val timesheet = listOf("employee", "hoursMark", "attendanceRecord", "timesheetSnapshot")
         val coal = listOf("coalSettings", "deliveryLocation", "driver", "coalSale", "driverPayment", "coalWorkDay")
         val livestock = listOf("livestockCategory", "livestockOperation", "slaughterRecord", "livestockSettings")
+        val fields = listOf("field")
         val others = listOf("farmSettings", "agroCalculation")
-        for (e in timesheet + coal + livestock + others) {
+        for (e in timesheet + coal + livestock + fields + others) {
             assertTrue(e, Role.owner.canWrite(e))
             assertTrue(e, Role.manager.canWrite(e))
             assertEquals(e, e in timesheet, Role.timesheet.canWrite(e))
             assertEquals(e, e in coal, Role.coal.canWrite(e))
             assertEquals(e, e in livestock, Role.livestock.canWrite(e))
+            if (e in fields) {
+                assertFalse(e, Role.timesheet.canWrite(e))
+                assertFalse(e, Role.coal.canWrite(e))
+                assertFalse(e, Role.livestock.canWrite(e))
+            }
         }
         assertFalse(Role.owner.canWrite("нечто"))
     }
@@ -66,7 +72,7 @@ class RolesTest {
         for (e in listOf("farmSettings", "coalSettings", "livestockSettings")) assertFalse(e, Role.app.canWrite(e))
         for (e in listOf("employee", "hoursMark", "attendanceRecord", "timesheetSnapshot", "deliveryLocation", "driver",
                          "coalSale", "driverPayment", "coalWorkDay", "livestockCategory", "livestockOperation",
-                         "slaughterRecord", "agroCalculation")) assertTrue(e, Role.app.canWrite(e))
+                         "slaughterRecord", "agroCalculation", "field")) assertTrue(e, Role.app.canWrite(e))
         assertFalse(Role.app.canWrite("нечто"))
         assertFalse(Role.app in Role.helperRoles)
     }

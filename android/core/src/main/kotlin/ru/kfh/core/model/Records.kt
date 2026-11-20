@@ -27,11 +27,12 @@ object Entities {
     const val slaughterRecord = "slaughterRecord"
     const val livestockSettings = "livestockSettings"
     const val agroCalculation = "agroCalculation"
+    const val field = "field"
 
     val ALL: Set<String> = setOf(
         employee, hoursMark, attendanceRecord, timesheetSnapshot, farmSettings, coalSettings, deliveryLocation,
         driver, coalSale, driverPayment, coalWorkDay, livestockCategory, livestockOperation, slaughterRecord,
-        livestockSettings, agroCalculation,
+        livestockSettings, agroCalculation, field,
     )
 
     /** Money, sales, payments, slaughter and herd movements: the server never resolves them by last-writer-wins. */
