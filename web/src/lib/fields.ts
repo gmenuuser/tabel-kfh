@@ -6,6 +6,11 @@ export const FIELD_NAME_MAX = 60;
 export const FIELD_CULTURE_MAX = 60;
 export const FIELD_NOTE_MAX = 200;
 
+/** A farm field is at most 100 000 га; the cap keeps m² a safe integer on every client. */
+export const AREA_MAX_SQ_M = 1_000_000_000;
+
+export const AREA_ERROR = 'Площадь — целое число м² больше нуля, не больше 100 000 га';
+
 export interface FieldRow { id: string; data: Record<string, unknown> }
 
 /** «12,5» → 125000 м²; «0,0001» → 1; пусто, «0», мусор и больше четырёх знаков — null. */
@@ -15,7 +20,7 @@ export function parseAreaSqM(text: string): number | null {
   const [whole = '', frac = ''] = clean.split('.');
   if (frac.length > 4 || whole.length > 12) return null;
   const sqM = Number(whole || '0') * 10000 + Number((frac + '0000').slice(0, 4));
-  return sqM > 0 ? sqM : null;
+  return sqM > 0 && sqM <= AREA_MAX_SQ_M ? sqM : null;
 }
 
 /** 125000 → «12,5»; 10000 → «1»; 12345 → «1,2345». */
@@ -37,7 +42,7 @@ export function fieldErrors(d: Record<string, unknown>): string[] {
   const name = typeof d.name === 'string' ? d.name.trim() : '';
   if (name.length === 0 || name.length > FIELD_NAME_MAX) errors.push(`Название поля — от 1 до ${FIELD_NAME_MAX} символов`);
   const area = d.areaSqM;
-  if (typeof area !== 'number' || !Number.isInteger(area) || area <= 0) errors.push('Площадь — целое число м² больше нуля');
+  if (typeof area !== 'number' || !Number.isSafeInteger(area) || area <= 0 || area > AREA_MAX_SQ_M) errors.push(AREA_ERROR);
   if (d.culture != null && (typeof d.culture !== 'string' || d.culture.length > FIELD_CULTURE_MAX)) {
     errors.push(`Культура — до ${FIELD_CULTURE_MAX} символов`);
   }

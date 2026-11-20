@@ -15,6 +15,8 @@ class FieldTextTest {
         assertNull(FieldText.parseAreaSqM(""))
         assertNull(FieldText.parseAreaSqM("abc"))
         assertNull(FieldText.parseAreaSqM("1,23456"))
+        assertEquals(1_000_000_000L, FieldText.parseAreaSqM("100000"))
+        assertNull("больше 100 000 га — не поле", FieldText.parseAreaSqM("100001"))
     }
 
     @Test
@@ -29,7 +31,8 @@ class FieldTextTest {
     fun `the name is required and short enough`() {
         assertEquals(listOf("Название поля — от 1 до 60 символов"), FieldText.errors("   ", 100, null, null))
         assertEquals(listOf("Название поля — от 1 до 60 символов"), FieldText.errors("я".repeat(61), 100, null, null))
-        assertEquals(listOf("Площадь — целое число м² больше нуля"), FieldText.errors("Поле 1", 0, null, null))
+        assertEquals(listOf(FieldText.AREA_ERROR), FieldText.errors("Поле 1", 0, null, null))
+        assertEquals(listOf(FieldText.AREA_ERROR), FieldText.errors("Поле 1", 1_000_000_001, null, null))
         assertEquals(listOf("Культура — до 60 символов"), FieldText.errors("Поле 1", 100, "к".repeat(61), null))
         assertEquals(emptyList<String>(), FieldText.errors("Поле 1", 100, null, null))
     }

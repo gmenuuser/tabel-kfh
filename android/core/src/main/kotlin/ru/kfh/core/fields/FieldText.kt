@@ -13,6 +13,10 @@ object FieldText {
     const val CULTURE_MAX = 60
     const val NOTE_MAX = 200
 
+    /** A farm field is at most 100 000 га (the site's `AREA_MAX_SQ_M`); the cap keeps m² a whole wide number. */
+    const val AREA_MAX_SQ_M = 1_000_000_000L
+    const val AREA_ERROR = "Площадь — целое число м² больше нуля, не больше 100 000 га"
+
     private val SHAPE = Regex("^\\d*\\.?\\d*$")
     private val SPACES = Regex("[\\s\\u00a0\\u202f]")
 
@@ -25,7 +29,7 @@ object FieldText {
         val frac = if (dot >= 0) clean.substring(dot + 1) else ""
         if (frac.length > 4 || whole.length > 12) return null
         val sqM = whole.ifEmpty { "0" }.toLong() * 10000 + (frac + "0000").take(4).toLong()
-        return if (sqM > 0) sqM else null
+        return if (sqM > 0 && sqM <= AREA_MAX_SQ_M) sqM else null
     }
 
     /** 125000 → «12,5»; 10000 → «1»; 12345 → «1,2345». */
@@ -43,7 +47,7 @@ object FieldText {
     fun errors(name: String, areaSqM: Long, culture: String?, note: String?): List<String> = buildList {
         val clean = name.trim()
         if (clean.isEmpty() || clean.length > NAME_MAX) add("Название поля — от 1 до $NAME_MAX символов")
-        if (areaSqM <= 0) add("Площадь — целое число м² больше нуля")
+        if (areaSqM <= 0 || areaSqM > AREA_MAX_SQ_M) add(AREA_ERROR)
         if (culture != null && culture.length > CULTURE_MAX) add("Культура — до $CULTURE_MAX символов")
         if (note != null && note.length > NOTE_MAX) add("Заметка — до $NOTE_MAX символов")
     }

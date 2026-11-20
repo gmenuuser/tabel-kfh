@@ -98,7 +98,9 @@ export function validate(entity: string, d: Data): string[] {
     case 'field': {
       const name = typeof d.name === 'string' ? d.name.trim() : '';
       need(name.length > 0 && name.length <= 60, 'Название поля — от 1 до 60 символов');
-      need(positiveInt(d.areaSqM), 'Площадь — целое число м² больше нуля');
+      // 100 000 га — the same cap as the site and the phone: the claim is a whole number of m².
+      need(positiveInt(d.areaSqM) && (d.areaSqM as number) <= 1_000_000_000,
+        'Площадь — целое число м² больше нуля, не больше 100 000 га');
       if (d.culture != null) need(typeof d.culture === 'string' && (d.culture as string).length <= 60, 'Культура — до 60 символов');
       if (d.note != null) need(typeof d.note === 'string' && (d.note as string).length <= 200, 'Заметка — до 200 символов');
       break;

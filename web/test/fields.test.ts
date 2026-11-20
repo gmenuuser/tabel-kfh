@@ -10,6 +10,8 @@ test('площадь: запятая, точка, четыре знака, но�
   assert.equal(parseAreaSqM(''), null);
   assert.equal(parseAreaSqM('abc'), null);
   assert.equal(parseAreaSqM('1,23456'), null, 'пять знаков — больше, чем нужно');
+  assert.equal(parseAreaSqM('100000'), 1_000_000_000, '100 000 га — предел');
+  assert.equal(parseAreaSqM('100001'), null, 'больше 100 000 га — не поле');
 });
 
 test('показ площади — до четырёх знаков без хвостовых нулей', () => {
@@ -20,10 +22,12 @@ test('показ площади — до четырёх знаков без хв
 });
 
 test('проверки: пустое имя, пробельное имя, длинное имя, площадь', () => {
-  assert.deepEqual(fieldErrors({ name: '', areaSqM: 0 }), ['Название поля — от 1 до 60 символов', 'Площадь — целое число м² больше нуля']);
+  const areaError = 'Площадь — целое число м² больше нуля, не больше 100 000 га';
+  assert.deepEqual(fieldErrors({ name: '', areaSqM: 0 }), ['Название поля — от 1 до 60 символов', areaError]);
   assert.deepEqual(fieldErrors({ name: '   ', areaSqM: 100 }), ['Название поля — от 1 до 60 символов']);
   assert.deepEqual(fieldErrors({ name: 'я'.repeat(61), areaSqM: 100 }), ['Название поля — от 1 до 60 символов']);
-  assert.deepEqual(fieldErrors({ name: 'Поле 1', areaSqM: 12.5 }), ['Площадь — целое число м² больше нуля']);
+  assert.deepEqual(fieldErrors({ name: 'Поле 1', areaSqM: 12.5 }), [areaError]);
+  assert.deepEqual(fieldErrors({ name: 'Поле 1', areaSqM: 1_000_000_001 }), [areaError]);
   assert.deepEqual(fieldErrors({ name: 'Поле 1', areaSqM: 100, culture: 'к'.repeat(61) }), ['Культура — до 60 символов']);
   assert.deepEqual(fieldErrors({ name: 'Поле 1', areaSqM: 100 }), []);
 });
