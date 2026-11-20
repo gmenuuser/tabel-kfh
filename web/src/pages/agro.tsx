@@ -121,7 +121,7 @@ export function AgroPage() {
       <div className="row">
         <button className="big" disabled={!editable || !complete(r)} onClick={() => save()}>{editingId ? 'Сохранить изменения' : 'Сохранить'}</button>
         {editingId && <button disabled={!editable || !complete(r)} onClick={() => save(true)}>Сохранить как новый</button>}
-        <button className="big secondary" onClick={() => { setInputs({}); setTitle(''); localStorage.removeItem(`kfh.agro.${kind}`); }}>Очистить</button>
+        <button className="big secondary" onClick={() => { setInputs({}); setTitle(''); setPicked(''); localStorage.removeItem(`kfh.agro.${kind}`); }}>Очистить</button>
         {complete(r) && <button onClick={() => { navigator.clipboard?.writeText(text); setNote('Результат скопирован'); }}>Копировать результат</button>}
         {complete(r) && 'share' in navigator && <button onClick={() => navigator.share({ text }).catch(() => {})}>Поделиться</button>}
       </div>

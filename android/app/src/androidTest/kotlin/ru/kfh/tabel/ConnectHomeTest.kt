@@ -150,7 +150,7 @@ class ConnectHomeTest {
         compose.onNodeWithText("КФХ Зубахин").assertIsDisplayed()
         // A phone that connected itself has no role to name.
         compose.onNodeWithText("Ваша роль", substring = true).assertDoesNotExist()
-        for (tag in listOf("openTimesheet", "openCoal", "openLivestock", "openAgro", "openReports", "openSettings")) {
+        for (tag in listOf("openTimesheet", "openCoal", "openLivestock", "openFields", "openAgro", "openReports", "openSettings")) {
             compose.onNodeWithTag(tag).assertExists()
         }
         compose.waitUntilExactlyOneExists(hasText("Все данные синхронизированы"), 10_000)

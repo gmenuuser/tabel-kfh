@@ -81,6 +81,7 @@ class SmallScreenLargeFontTest {
             "openTimesheet" to "ТАБЕЛЬ РАБОТНИКОВ",
             "openCoal" to "ПРОДАЖА УГЛЯ",
             "openLivestock" to "СКОТ И ЗАБОЙ",
+            "openFields" to "ПОЛЯ",
             "openAgro" to "АГРОНОМИЧЕСКИЕ КАЛЬКУЛЯТОРЫ",
             "openReports" to "ОТЧЁТЫ",
         )

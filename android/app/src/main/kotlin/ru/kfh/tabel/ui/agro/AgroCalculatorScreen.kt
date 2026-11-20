@@ -132,6 +132,7 @@ fun AgroCalculatorScreen(vm: AgroViewModel, kind: AgroKind, savedId: String?, on
         inputs = inputs.filterKeys { k -> kind.choices.any { it.key == k } }
         title = ""
         note = null
+        pickedField = ""
         if (isNew) vm.clearDraft(kind)
     }
 

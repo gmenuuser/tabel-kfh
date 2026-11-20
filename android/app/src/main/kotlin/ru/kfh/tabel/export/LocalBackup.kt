@@ -33,8 +33,11 @@ import java.util.Locale
 
 /**
  * «Сохранить копию в файл» (`BackupService.makeBackup`): everything on the phone — the records of every module and
- * the employee photos — as the iPhone's backup file ([BackupCodec]). The file is written to `cache/Backup/` (as the
- * reports to `cache/Export/`) and then copied where the person chose (`ACTION_CREATE_DOCUMENT`).
+ * the employee photos — as the iPhone's backup file ([BackupCodec]). Fields (`field`) stay out on purpose: the format
+ * is shared with the iPhone and lists its entities by hand, so a field in it is a schema change and ships with the
+ * iPhone's «Поля». The site keeps the fields; a restore gets them on the next sync.
+ * The file is written to `cache/Backup/` (as the reports to `cache/Export/`) and then copied where the person chose
+ * (`ACTION_CREATE_DOCUMENT`).
  */
 object LocalBackup {
     /** The phone's data as the codec takes it. */

@@ -1,13 +1,16 @@
 package ru.kfh.tabel.ui.fields
 
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.AssistChip
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -23,6 +26,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.launch
 import ru.kfh.core.fields.FieldText
 import ru.kfh.tabel.ui.common.BigButton
@@ -86,6 +90,22 @@ fun FieldFormScreen(vm: FieldsViewModel, id: String?, onBack: () -> Unit) {
                 value = note, onValueChange = { note = it }, label = { Text("Заметка (необязательно)") },
                 modifier = Modifier.fillMaxWidth().testTag("fieldNote"),
             )
+            // What the farm already has, a tap away: names and cultures repeat, and a typo makes a second «Поле 3».
+            val knownNames = all.orEmpty().map { it.name.trim() }.filter { it.isNotEmpty() && !it.equals(name.trim(), true) }.distinct().take(6)
+            val knownCultures = FieldText.cultures(all.orEmpty()).filter { !it.equals(culture.trim(), true) }.take(6)
+            if (knownNames.isNotEmpty() || knownCultures.isNotEmpty()) {
+                Text("Уже есть", color = Tabel.colors.secondaryText)
+                if (knownNames.isNotEmpty()) {
+                    Row(modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        for (n in knownNames) AssistChip(onClick = { name = n }, label = { Text(n) })
+                    }
+                }
+                if (knownCultures.isNotEmpty()) {
+                    Row(modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        for (c in knownCultures) AssistChip(onClick = { culture = c }, label = { Text(c) })
+                    }
+                }
+            }
             for (e in errors) Text(e, color = Tabel.colors.error)
             BigButton(
                 if (id == null) "Добавить поле" else "Сохранить",
@@ -96,8 +116,10 @@ fun FieldFormScreen(vm: FieldsViewModel, id: String?, onBack: () -> Unit) {
                             try {
                                 vm.save(id, name, sqM, culture, note)
                                 onBack()
-                            } catch (e: IllegalStateException) {
-                                message = e.message
+                            } catch (e: CancellationException) {
+                                throw e
+                            } catch (e: Exception) {
+                                message = e.message ?: "Не получилось сохранить поле"
                             } finally {
                                 saving = false
                             }

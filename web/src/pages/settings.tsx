@@ -8,7 +8,8 @@ import { KeysSection } from './keys.tsx';
 
 const ENTITY: Record<string, string> = { employee: 'Сотрудник', hoursMark: 'Часы', coalSale: 'Продажа угля', driver: 'Водитель',
   driverPayment: 'Выплата', deliveryLocation: 'Населённый пункт', coalSettings: 'Цена угля', coalWorkDay: 'Рабочий день',
-  livestockCategory: 'Категория скота', livestockOperation: 'Операция со скотом', slaughterRecord: 'Забой', agroCalculation: 'Расчёт' };
+  livestockCategory: 'Категория скота', livestockOperation: 'Операция со скотом', slaughterRecord: 'Забой', agroCalculation: 'Расчёт',
+  field: 'Поле' };
 
 export function SettingsPage() {
   const { engine, session, farm, setFarm, signOut } = useApp();

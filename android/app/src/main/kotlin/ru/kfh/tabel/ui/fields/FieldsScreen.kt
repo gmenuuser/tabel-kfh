@@ -28,6 +28,7 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.launch
 import ru.kfh.core.fields.FieldText
 import ru.kfh.core.model.Field
@@ -60,7 +61,8 @@ fun FieldsScreen(vm: FieldsViewModel, onBack: () -> Unit, onAdd: () -> Unit, onE
         Column(modifier = Modifier.fillMaxSize().padding(padding).padding(horizontal = 16.dp)) {
             if (list != null && list.isEmpty()) {
                 Text(
-                    "Полей пока нет. Добавьте поле — калькуляторы возьмут из него площадь.",
+                    if (canSave) "Полей пока нет. Добавьте поле — калькуляторы возьмут из него площадь."
+                    else "Полей пока нет.",
                     color = Tabel.colors.secondaryText, textAlign = TextAlign.Center,
                     modifier = Modifier.fillMaxWidth().padding(vertical = 24.dp).testTag("emptyText"),
                 )
@@ -93,7 +95,18 @@ fun FieldsScreen(vm: FieldsViewModel, onBack: () -> Unit, onAdd: () -> Unit, onE
     deleting?.let { f ->
         ConfirmDialog(
             "Удалить поле?", "${f.name} — расчёты, где оно выбрано, останутся.", "Удалить",
-            onConfirm = { deleting = null; scope.launch { vm.remove(f.id) } },
+            onConfirm = {
+                deleting = null
+                scope.launch {
+                    try {
+                        vm.remove(f.id)
+                    } catch (e: CancellationException) {
+                        throw e
+                    } catch (e: Exception) {
+                        message = e.message ?: "Не получилось удалить поле"
+                    }
+                }
+            },
             onDismiss = { deleting = null },
         )
     }

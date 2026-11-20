@@ -29,6 +29,7 @@ object RefusedChanges {
         Entities.slaughterRecord -> "Забой"
         Entities.livestockSettings -> "Настройки скота"
         Entities.agroCalculation -> "Расчёт"
+        Entities.field -> "Поле"
         else -> entity
     }
 

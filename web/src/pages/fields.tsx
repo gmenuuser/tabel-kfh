@@ -15,6 +15,7 @@ export function FieldsPage() {
   const fields = sortFields(useRecords('field'));
   const [editing, setEditing] = useState<{ id: string | null; d: Draft } | null>(null);
   const cultures = culturesOf(fields);
+  const names = [...new Set(fields.map((f) => String(f.data.name ?? '').trim()).filter(Boolean))];
 
   const open = (f: LocalRecord | null) => setEditing(f ? { id: f.id, d: {
     name: String(f.data.name ?? ''), area: areaHa(Number(f.data.areaSqM ?? 0)),
@@ -27,15 +28,15 @@ export function FieldsPage() {
     if (!editing || sqM === null || errors.length) return;
     await engine.save('field', editing.id, {
       name: editing.d.name.trim(), areaSqM: sqM,
-      culture: editing.d.culture.trim(), note: editing.d.note.trim(),
+      culture: editing.d.culture.trim() || null, note: editing.d.note.trim() || null,
     });
     setEditing(null);
   }
 
-  const field = (k: keyof Draft, title: string, unit = '') => (
+  const field = (k: keyof Draft, title: string, unit = '', hints = '') => (
     <label>{title}
       <span className={unit ? 'unit-input' : undefined}>
-        <input value={editing!.d[k]} list={k === 'culture' ? 'field-cultures' : undefined}
+        <input value={editing!.d[k]} list={hints || undefined}
                onChange={(e) => setEditing({ ...editing!, d: { ...editing!.d, [k]: e.target.value } })} />
         {unit && <span>{unit}</span>}
       </span>
@@ -48,7 +49,9 @@ export function FieldsPage() {
         <h2>Поля</h2>
         {editable && <button className="big" onClick={() => open(null)}>+ Добавить поле</button>}
       </div>
-      {!fields.length && <p className="muted">Полей пока нет. Добавьте поле — калькуляторы возьмут из него площадь.</p>}
+      {!fields.length && <p className="muted">{editable
+        ? 'Полей пока нет. Добавьте поле — калькуляторы возьмут из него площадь.'
+        : 'Полей пока нет.'}</p>}
       {fields.map((f) => (
         <section key={f.id} className="card row between">
           <div>
@@ -66,10 +69,11 @@ export function FieldsPage() {
         <div className="modal" onClick={() => setEditing(null)}>
           <form className="card form" onClick={(ev) => ev.stopPropagation()} onSubmit={(ev) => { ev.preventDefault(); save(); }}>
             <h3>{editing.id ? 'Поле' : 'Новое поле'}</h3>
-            {field('name', 'Название или номер')}
+            {field('name', 'Название или номер', '', 'field-names')}
             {field('area', 'Площадь', 'га')}
-            {field('culture', 'Культура (необязательно)')}
+            {field('culture', 'Культура (необязательно)', '', 'field-cultures')}
             {field('note', 'Заметка (необязательно)')}
+            <datalist id="field-names">{names.map((n) => <option key={n} value={n} />)}</datalist>
             <datalist id="field-cultures">{cultures.map((c) => <option key={c} value={c} />)}</datalist>
             {errors.map((e) => <div key={e} className="error">{e}</div>)}
             <div className="row">
