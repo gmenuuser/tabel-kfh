@@ -14,6 +14,7 @@ import androidx.compose.material.icons.filled.Build
 import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.List
 import androidx.compose.material.icons.filled.Person
+import androidx.compose.material.icons.filled.Place
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.ShoppingCart
 import androidx.compose.material3.CenterAlignedTopAppBar
@@ -53,7 +54,7 @@ private val RU: Locale = Locale.forLanguageTag("ru")
 /** The big buttons of the main screen for [role], in the iPhone's order (`Roles.destinations`). Never settings. */
 fun homeButtons(role: Role): List<Module> {
     val shown = role.modules()
-    return listOf(Module.timesheet, Module.coal, Module.livestock, Module.agro, Module.reports).filter { it in shown }
+    return listOf(Module.timesheet, Module.coal, Module.livestock, Module.fields, Module.agro, Module.reports).filter { it in shown }
 }
 
 /** «Табель, продажи угля, выплаты водителям, скот и забой — PDF и Excel», only what [role] sees (`reportsSubtitle`). */
@@ -72,6 +73,7 @@ fun moduleTitle(m: Module): String = when (m) {
     Module.timesheet -> "Табель работников"
     Module.coal -> "Продажа угля"
     Module.livestock -> "Скот и забой"
+    Module.fields -> "Поля"
     Module.agro -> "Агрономические калькуляторы"
     Module.reports -> "Отчёты"
     Module.settings -> "Настройки"
@@ -166,6 +168,7 @@ private fun buttonTitle(m: Module): String = when (m) {
     Module.timesheet -> "ТАБЕЛЬ РАБОТНИКОВ"
     Module.coal -> "ПРОДАЖА УГЛЯ"
     Module.livestock -> "СКОТ И ЗАБОЙ"
+    Module.fields -> "ПОЛЯ"
     Module.agro -> "АГРОНОМИЧЕСКИЕ КАЛЬКУЛЯТОРЫ"
     Module.reports -> "ОТЧЁТЫ"
     Module.settings -> "НАСТРОЙКИ"
@@ -175,6 +178,7 @@ private fun subtitle(m: Module): String = when (m) {
     Module.timesheet -> "Отметки за день, табель за месяц, сотрудники"
     Module.coal -> "Новая продажа, продажи за сегодня, итоги дня"
     Module.livestock -> "Поголовье, забой, приплод, история"
+    Module.fields -> "Справочник: площадь, культура, заметка"
     Module.agro -> "Посев, удобрения, опрыскивание, урожай и другие"
     Module.reports, Module.settings -> ""
 }
@@ -185,6 +189,7 @@ private fun look(m: Module): Pair<ImageVector, Color> = when (m) {
     Module.timesheet -> Icons.Filled.Person to Tabel.colors.primary
     Module.coal -> Icons.Filled.ShoppingCart to Tabel.colors.accent
     Module.livestock -> Icons.Filled.Favorite to Tabel.colors.livestock
+    Module.fields -> Icons.Filled.Place to Tabel.colors.fields
     Module.agro -> Icons.Filled.Build to Tabel.colors.agro
     Module.reports, Module.settings -> Icons.Filled.List to Tabel.colors.reports
 }

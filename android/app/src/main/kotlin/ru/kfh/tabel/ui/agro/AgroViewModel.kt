@@ -91,6 +91,13 @@ class AgroViewModel(
 
     fun calculation(id: String): Flow<AgroCalculation?> = calculations.map { list -> list.firstOrNull { it.id.equals(id, ignoreCase = true) } }
 
+    /** The farm's fields for the «Поле» picker: choosing one types its area into «Площадь поля», nothing is linked. */
+    val fieldOptions: Flow<List<ru.kfh.core.model.Field>> = dao.observe(ru.kfh.core.model.Entities.field)
+        .map { rows ->
+            ru.kfh.core.fields.FieldText.sort(rows.map { ru.kfh.core.model.RecordCodec.decode<ru.kfh.core.model.Field>(ru.kfh.core.model.Entities.field, it.id, it.json()) })
+        }
+        .flowOn(Dispatchers.Default)
+
     /** The history filtered as `AgroService.history`: by calculator, a text, and the farm's day / month / year of [day]. */
     fun history(
         items: List<AgroCalculation>, kind: AgroKind? = null, search: String = "", period: LivestockPeriod? = null, day: LocalDate = farm.today(),

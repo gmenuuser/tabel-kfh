@@ -4,6 +4,7 @@ import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Intent
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -21,6 +22,8 @@ import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.filled.Warning
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -33,6 +36,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -57,6 +61,7 @@ import ru.kfh.core.agro.AgroEngine
 import ru.kfh.core.agro.AgroField
 import ru.kfh.core.agro.AgroKind
 import ru.kfh.core.agro.AgroPlots
+import ru.kfh.core.fields.FieldText
 import ru.kfh.core.model.AgroCalculation
 import ru.kfh.tabel.ui.common.BigButton
 import ru.kfh.tabel.ui.common.Card
@@ -91,6 +96,9 @@ fun AgroCalculatorScreen(vm: AgroViewModel, kind: AgroKind, savedId: String?, on
     var message by remember { mutableStateOf<String?>(null) }
     val canSave = vm.canSave
     val isNew = currentId == null
+    val fieldOptions by vm.fieldOptions.collectAsState(initial = emptyList())
+    var fieldMenu by remember { mutableStateOf(false) }
+    var pickedField by rememberSaveable { mutableStateOf("") }
 
     LaunchedEffect(currentId) {
         val id = currentId
@@ -186,6 +194,31 @@ fun AgroCalculatorScreen(vm: AgroViewModel, kind: AgroKind, savedId: String?, on
                 }
             }
             if (kind == AgroKind.AREA) Plots(inputs, ::set, ::removePlot)
+            // The farm's own area: picking a field types it in, the calculation keeps only the text.
+            if (kind != AgroKind.AREA && kind.fields(inputs).any { it.key == "area" } && fieldOptions.isNotEmpty()) {
+                Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    LivestockCaption("Поле")
+                    Box {
+                        OutlinedButton(onClick = { fieldMenu = true }, modifier = Modifier.fillMaxWidth().testTag("pickField")) {
+                            Text(pickedField.ifEmpty { "— не выбрано —" })
+                        }
+                        DropdownMenu(expanded = fieldMenu, onDismissRequest = { fieldMenu = false }) {
+                            for (f in fieldOptions) {
+                                DropdownMenuItem(
+                                    text = { Text(FieldText.fieldLabel(f.name, f.areaSqM)) },
+                                    onClick = {
+                                        fieldMenu = false
+                                        pickedField = FieldText.fieldLabel(f.name, f.areaSqM)
+                                        set("area", FieldText.areaHa(f.areaSqM))
+                                        if (title.isBlank()) { title = f.name; storeDraft() }
+                                    },
+                                    modifier = Modifier.testTag("fieldOption-${f.id}"),
+                                )
+                            }
+                        }
+                    }
+                }
+            }
             for (f in kind.fields(inputs)) {
                 InputRow(f, inputs[f.key] ?: "") { set(f.key, it) }
             }

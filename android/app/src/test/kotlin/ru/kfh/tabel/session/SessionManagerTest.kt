@@ -140,7 +140,7 @@ class SessionManagerTest {
         connected()
         assertEquals(Role.app, session.role)
         assertEquals(
-            listOf(Module.timesheet, Module.coal, Module.livestock, Module.agro, Module.reports),
+            listOf(Module.timesheet, Module.coal, Module.livestock, Module.fields, Module.agro, Module.reports),
             homeButtons(Role.app),
         )
         assertTrue(writer.canWrite("coalSale"))
@@ -269,7 +269,7 @@ class SessionManagerTest {
         assertFalse(writer.canWrite("coalSale"))
 
         assertEquals(
-            listOf(Module.timesheet, Module.coal, Module.livestock, Module.agro, Module.reports),
+            listOf(Module.timesheet, Module.coal, Module.livestock, Module.fields, Module.agro, Module.reports),
             homeButtons(Role.owner),
         )
         assertEquals("Табель, продажи угля, выплаты водителям, скот и забой — PDF и Excel", reportsSubtitle(Role.owner))

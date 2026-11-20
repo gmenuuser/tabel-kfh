@@ -120,6 +120,9 @@ class AppGraph(
     /** «Агрономические калькуляторы»: the saved calculations and the drafts (in `SharedPreferences`). */
     val agro: AgroViewModel by lazy { AgroViewModel(db.records(), writer, session.farmTime, scope, PrefsAgroDraftStore(app), farmInfo = farmInfo) }
 
+    /** «Поля»: справочник полей хозяйства — площадь берут из него агро-калькуляторы. */
+    val fields: ru.kfh.tabel.ui.fields.FieldsViewModel by lazy { ru.kfh.tabel.ui.fields.FieldsViewModel(db.records(), writer) }
+
     /** «Очистка данных» (owner): стирает записи раздела за день или месяц. */
     val clear: ru.kfh.tabel.clear.ClearViewModel by lazy { ru.kfh.tabel.clear.ClearViewModel(db, writer, session.farmTime) }
 

@@ -21,6 +21,8 @@ import ru.kfh.tabel.ui.agro.AgroCalculatorScreen
 import ru.kfh.tabel.ui.agro.AgroHistoryScreen
 import ru.kfh.tabel.ui.agro.AgroHomeScreen
 import ru.kfh.tabel.ui.coal.CloseDayScreen
+import ru.kfh.tabel.ui.fields.FieldFormScreen
+import ru.kfh.tabel.ui.fields.FieldsScreen
 import ru.kfh.tabel.ui.coal.CoalDaySummaryScreen
 import ru.kfh.tabel.ui.coal.CoalHistoryScreen
 import ru.kfh.tabel.ui.coal.CoalSaleFormScreen
@@ -91,6 +93,8 @@ object Routes {
     const val AGRO = "agro"
     const val AGRO_HISTORY = "agro/history"
     const val AGRO_CALCULATOR = "agro/{kind}?id={id}"
+    const val FIELDS = "fields"
+    const val FIELDS_FORM = "fields/form?id={id}"
     const val REPORTS = "reports"
     const val REPORTS_TIMESHEET = "reports/timesheet"
     const val REPORTS_COAL = "reports/coal"
@@ -100,6 +104,7 @@ object Routes {
         Module.timesheet -> TIMESHEET_DAY
         Module.coal -> COAL
         Module.livestock -> LIVESTOCK
+        Module.fields -> FIELDS
         Module.agro -> AGRO
         Module.reports -> REPORTS
         else -> "module/${m.name}"
@@ -128,6 +133,9 @@ object Routes {
 
     /** The form of [id], or of a new employee without one. */
     fun employeeForm(id: String?) = if (id == null) "employeeForm" else "employeeForm?id=$id"
+
+    /** The form of the field [id], or of a new one without it. */
+    fun fieldForm(id: String?) = if (id == null) "fields/form" else "fields/form?id=$id"
 }
 
 /** Not connected: the connect screen; loading: «Загрузка данных…»; connected: the farm (`AppRootView`). */
@@ -340,6 +348,20 @@ private fun FarmRoot(graph: AppGraph, me: Me) {
             )
         }
         composable(Routes.LIVESTOCK_REPORTS) { LivestockReportsScreen(graph.livestock, onBack = { nav.popBackStack() }) }
+        composable(Routes.FIELDS) {
+            FieldsScreen(
+                vm = graph.fields,
+                onBack = { nav.popBackStack() },
+                onAdd = { nav.navigate(Routes.fieldForm(null)) },
+                onEdit = { id -> nav.navigate(Routes.fieldForm(id)) },
+            )
+        }
+        composable(
+            Routes.FIELDS_FORM,
+            arguments = listOf(navArgument("id") { type = NavType.StringType; nullable = true; defaultValue = null }),
+        ) { entry ->
+            FieldFormScreen(graph.fields, entry.arguments?.getString("id"), onBack = { nav.popBackStack() })
+        }
         composable(Routes.AGRO) {
             AgroHomeScreen(
                 graph.agro,
