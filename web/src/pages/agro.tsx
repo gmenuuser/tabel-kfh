@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { useApp, useRecords } from '../app.tsx';
 import { canEdit } from '../lib/roles.ts';
 import { KINDS, choices, complete, compute, fields, type Inputs } from '../lib/agro.ts';
+import { areaHa, fieldLabel, sortFields } from '../lib/fields.ts';
 import { dayKey, shortDate, timeText } from '../lib/time.ts';
 import { ClearPeriod } from '../components/ClearPeriod.tsx';
 
@@ -10,15 +11,17 @@ export function AgroPage() {
   const { engine, session } = useApp();
   const editable = canEdit(session.role);
   const saved = useRecords('agroCalculation');
+  const fieldRecords = sortFields(useRecords('field'));
   const [kind, setKind] = useState<string | null>(null);
   const [inputs, setInputs] = useState<Inputs>({});
   const [title, setTitle] = useState('');
   const [editingId, setEditingId] = useState<string | null>(null);
   const [note, setNote] = useState('');
   const [search, setSearch] = useState('');
+  const [picked, setPicked] = useState('');
 
   const open = (k: string, id: string | null = null, i: Inputs = {}, t = '') => {
-    setKind(k); setEditingId(id); setTitle(t); setNote('');
+    setKind(k); setEditingId(id); setTitle(t); setNote(''); setPicked('');
     setInputs(id ? i : JSON.parse(localStorage.getItem(`kfh.agro.${k}`) ?? '{}'));
   };
   const change = (k: string, v: string) => {
@@ -57,6 +60,8 @@ export function AgroPage() {
 
   const r = compute(kind, inputs);
   const plots = Math.max(1, Number(inputs.plots ?? 1) || 1);
+  // The field's area is the farm's own number: picking a field types it in, nothing is linked.
+  const hasArea = kind !== 'area' && fields(kind, inputs).some((f) => f.key === 'area');
   async function save(asNew = false) {
     if (!complete(r)) return;
     const clean = Object.fromEntries(Object.entries(inputs).filter(([, v]) => String(v).trim()));
@@ -85,6 +90,20 @@ export function AgroPage() {
           </div>
         ))}
         {kind === 'area' && <button onClick={() => change('plots', String(plots + 1))}>+ Добавить участок</button>}
+        {hasArea && fieldRecords.length > 0 && (
+          <label>Поле
+            <select value={picked} onChange={(e) => {
+              setPicked(e.target.value);
+              const f = fieldRecords.find((row) => row.id === e.target.value);
+              if (!f) return;
+              change('area', areaHa(Number(f.data.areaSqM)));
+              if (!title.trim()) setTitle(String(f.data.name));
+            }}>
+              <option value="">— не выбрано —</option>
+              {fieldRecords.map((f) => <option key={f.id} value={f.id}>{fieldLabel(String(f.data.name), Number(f.data.areaSqM))}</option>)}
+            </select>
+          </label>
+        )}
         {fields(kind, inputs).map((f) => (
           <label key={f.key}>{f.title}{f.optional ? ' (необязательно)' : ''}
             <span className="unit-input"><input inputMode="decimal" value={inputs[f.key] ?? ''} onChange={(e) => change(f.key, e.target.value)} /><span>{f.unit}</span></span>
